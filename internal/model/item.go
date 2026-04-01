@@ -11,7 +11,8 @@ type Item struct {
 	ID          string     `gorm:"primaryKey;type:varchar(36)" json:"id"`
 	TenantID    string     `gorm:"index;type:varchar(36);not null;default:'default'" json:"tenant_id"`
 	Name        string     `gorm:"type:varchar(255);not null" json:"name"`
-	Category    string     `gorm:"type:varchar(100);default:''" json:"category"`
+	CategoryID  string     `gorm:"type:varchar(10);index" json:"category_id"`
+	Category    *Category  `gorm:"foreignKey:CategoryID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;" json:"category"`
 	Quantity    float64    `gorm:"default:1" json:"quantity"`
 	Unit        string     `gorm:"type:varchar(20);not null;default:'个'" json:"unit"`
 	Location    string     `gorm:"type:varchar(100);default:''" json:"location"`

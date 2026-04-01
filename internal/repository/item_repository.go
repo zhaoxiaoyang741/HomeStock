@@ -11,9 +11,9 @@ import (
 
 // ItemFilter constrains list queries for inventory items.
 type ItemFilter struct {
-	TenantID string
-	Location string
-	Category string
+	TenantID   string
+	Location   string
+	CategoryID string
 }
 
 // ItemRepository stores and fetches inventory items.
@@ -28,13 +28,18 @@ func NewItemRepository(db *gorm.DB) *ItemRepository {
 
 // Create inserts a new item record.
 func (r *ItemRepository) Create(item *model.Item) error {
+	item.TenantID = normalizeTenantID(item.TenantID)
+	if err := r.validateCategoryID(item.TenantID, item.CategoryID); err != nil {
+		return err
+	}
+
 	return r.db.Create(item).Error
 }
 
 // Get returns a single item by id and tenant.
 func (r *ItemRepository) Get(id string, tenantID string) (*model.Item, error) {
 	var item model.Item
-	if err := r.scopedItems(tenantID).Where("id = ?", id).First(&item).Error; err != nil {
+	if err := r.scopedItems(tenantID).Where("id = ?", id).Preload("Category").First(&item).Error; err != nil {
 		return nil, err
 	}
 
@@ -49,12 +54,12 @@ func (r *ItemRepository) List(filter ItemFilter) ([]model.Item, error) {
 		query = query.Where("location = ?", filter.Location)
 	}
 
-	if filter.Category != "" {
-		query = query.Where("category = ?", filter.Category)
+	if filter.CategoryID != "" {
+		query = query.Where("category_id = ?", filter.CategoryID)
 	}
 
 	var items []model.Item
-	if err := query.Order("created_at DESC").Find(&items).Error; err != nil {
+	if err := query.Preload("Category").Order("created_at DESC").Find(&items).Error; err != nil {
 		return nil, err
 	}
 
@@ -63,6 +68,11 @@ func (r *ItemRepository) List(filter ItemFilter) ([]model.Item, error) {
 
 // Update persists changes to an item.
 func (r *ItemRepository) Update(item *model.Item) error {
+	item.TenantID = normalizeTenantID(item.TenantID)
+	if err := r.validateCategoryID(item.TenantID, item.CategoryID); err != nil {
+		return err
+	}
+
 	return r.db.Save(item).Error
 }
 
@@ -80,15 +90,29 @@ func (r *ItemRepository) Delete(id string, tenantID string) error {
 }
 
 func (r *ItemRepository) scopedItems(tenantID string) *gorm.DB {
-	trimmedTenantID := strings.TrimSpace(tenantID)
-	if trimmedTenantID == "" {
-		trimmedTenantID = "default"
-	}
-
-	return r.db.Model(&model.Item{}).Where("tenant_id = ?", trimmedTenantID)
+	return r.db.Model(&model.Item{}).Where("tenant_id = ?", normalizeTenantID(tenantID))
 }
 
 // IsNotFound reports whether the error means the record was not found.
 func IsNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
+}
+
+func (r *ItemRepository) validateCategoryID(tenantID string, categoryID string) error {
+	trimmedCategoryID := strings.TrimSpace(categoryID)
+	if trimmedCategoryID == "" {
+		return nil
+	}
+
+	var count int64
+	if err := r.db.Model(&model.Category{}).
+		Where("id = ? AND tenant_id = ?", trimmedCategoryID, normalizeTenantID(tenantID)).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return ErrInvalidCategoryID
+	}
+
+	return nil
 }

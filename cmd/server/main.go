@@ -41,8 +41,9 @@ func main() {
 	}
 	defer sqlDB.Close()
 
+	categoryHandler := handler.NewCategoryHandler(repository.NewCategoryRepository(db))
 	itemHandler := handler.NewItemHandler(repository.NewItemRepository(db))
-	server := httpserver.New(cfg.Server, itemHandler.RegisterRoutes)
+	server := httpserver.New(cfg.Server, categoryHandler.RegisterRoutes, itemHandler.RegisterRoutes)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

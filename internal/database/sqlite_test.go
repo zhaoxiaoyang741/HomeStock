@@ -33,10 +33,12 @@ func TestOpenAndMigrateSQLite(t *testing.T) {
 		t.Fatalf("sqlite file was not created: %v", err)
 	}
 
+	if !db.Migrator().HasTable(&model.Category{}) {
+		t.Fatal("categories table was not created")
+	}
 	if !db.Migrator().HasTable(&model.Item{}) {
 		t.Fatal("items table was not created")
 	}
-
 	if !db.Migrator().HasTable(&model.Notification{}) {
 		t.Fatal("notifications table was not created")
 	}
@@ -83,7 +85,7 @@ func TestOpenCreatesNestedSQLiteDirectory(t *testing.T) {
 	}
 }
 
-func TestItemAndNotificationDefaults(t *testing.T) {
+func TestCategoryItemAndNotificationDefaults(t *testing.T) {
 	db, err := OpenAndMigrate(appconfig.DatabaseConfig{
 		Driver: "sqlite",
 		DSN:    ":memory:",
@@ -100,8 +102,23 @@ func TestItemAndNotificationDefaults(t *testing.T) {
 		_ = sqlDB.Close()
 	})
 
+	category := &model.Category{Name: "food"}
+	if err := db.Create(category).Error; err != nil {
+		t.Fatalf("Create(category) error = %v", err)
+	}
+	if len(category.ID) != 10 {
+		t.Fatalf("category ID length = %d", len(category.ID))
+	}
+	if category.ID[:3] != "cat" {
+		t.Fatalf("category ID prefix = %q", category.ID[:3])
+	}
+	if category.TenantID != "default" {
+		t.Fatalf("category TenantID = %q", category.TenantID)
+	}
+
 	item := &model.Item{
-		Name: "鸡蛋",
+		Name:       "eggs",
+		CategoryID: category.ID,
 	}
 	if err := db.Create(item).Error; err != nil {
 		t.Fatalf("Create(item) error = %v", err)
@@ -121,6 +138,9 @@ func TestItemAndNotificationDefaults(t *testing.T) {
 	}
 	if item.PurchasedAt.IsZero() {
 		t.Fatal("expected PurchasedAt to be populated")
+	}
+	if item.CategoryID != category.ID {
+		t.Fatalf("CategoryID = %q", item.CategoryID)
 	}
 
 	notification := &model.Notification{

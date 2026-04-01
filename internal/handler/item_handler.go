@@ -32,7 +32,7 @@ func (h *ItemHandler) RegisterRoutes(api *gin.RouterGroup) {
 
 type createItemRequest struct {
 	Name        string  `json:"name" binding:"required"`
-	Category    string  `json:"category"`
+	CategoryID  string  `json:"category_id"`
 	Quantity    float64 `json:"quantity"`
 	Unit        string  `json:"unit"`
 	Location    string  `json:"location"`
@@ -43,7 +43,7 @@ type createItemRequest struct {
 
 type updateItemRequest struct {
 	Name        *string  `json:"name"`
-	Category    *string  `json:"category"`
+	CategoryID  *string  `json:"category_id"`
 	Quantity    *float64 `json:"quantity"`
 	Unit        *string  `json:"unit"`
 	Location    *string  `json:"location"`
@@ -63,13 +63,13 @@ func (h *ItemHandler) Create(c *gin.Context) {
 	}
 
 	item := &model.Item{
-		TenantID: tenantIDFromRequest(c),
-		Name:     strings.TrimSpace(req.Name),
-		Category: strings.TrimSpace(req.Category),
-		Quantity: req.Quantity,
-		Unit:     strings.TrimSpace(req.Unit),
-		Location: strings.TrimSpace(req.Location),
-		Notes:    strings.TrimSpace(req.Notes),
+		TenantID:   tenantIDFromRequest(c),
+		Name:       strings.TrimSpace(req.Name),
+		CategoryID: strings.TrimSpace(req.CategoryID),
+		Quantity:   req.Quantity,
+		Unit:       strings.TrimSpace(req.Unit),
+		Location:   strings.TrimSpace(req.Location),
+		Notes:      strings.TrimSpace(req.Notes),
 	}
 
 	if req.PurchasedAt != "" {
@@ -95,26 +95,28 @@ func (h *ItemHandler) Create(c *gin.Context) {
 	}
 
 	if err := h.repo.Create(item); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "create item failed",
-		})
+		handleItemRepositoryError(c, err, "create item failed")
 		return
 	}
 
-	c.JSON(http.StatusCreated, item)
+	createdItem, err := h.repo.Get(item.ID, item.TenantID)
+	if err != nil {
+		handleItemRepositoryError(c, err, "get item failed")
+		return
+	}
+
+	c.JSON(http.StatusCreated, createdItem)
 }
 
 // List handles GET /items.
 func (h *ItemHandler) List(c *gin.Context) {
 	items, err := h.repo.List(repository.ItemFilter{
-		TenantID: tenantIDFromRequest(c),
-		Location: strings.TrimSpace(c.Query("location")),
-		Category: strings.TrimSpace(c.Query("category")),
+		TenantID:   tenantIDFromRequest(c),
+		Location:   strings.TrimSpace(c.Query("location")),
+		CategoryID: strings.TrimSpace(c.Query("category_id")),
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "list items failed",
-		})
+		handleItemRepositoryError(c, err, "list items failed")
 		return
 	}
 
@@ -128,7 +130,7 @@ func (h *ItemHandler) List(c *gin.Context) {
 func (h *ItemHandler) Get(c *gin.Context) {
 	item, err := h.repo.Get(strings.TrimSpace(c.Param("id")), tenantIDFromRequest(c))
 	if err != nil {
-		handleRepositoryError(c, err, "get item failed")
+		handleItemRepositoryError(c, err, "get item failed")
 		return
 	}
 
@@ -147,7 +149,7 @@ func (h *ItemHandler) Update(c *gin.Context) {
 
 	item, err := h.repo.Get(strings.TrimSpace(c.Param("id")), tenantIDFromRequest(c))
 	if err != nil {
-		handleRepositoryError(c, err, "get item failed")
+		handleItemRepositoryError(c, err, "get item failed")
 		return
 	}
 
@@ -160,8 +162,8 @@ func (h *ItemHandler) Update(c *gin.Context) {
 			return
 		}
 	}
-	if req.Category != nil {
-		item.Category = strings.TrimSpace(*req.Category)
+	if req.CategoryID != nil {
+		item.CategoryID = strings.TrimSpace(*req.CategoryID)
 	}
 	if req.Quantity != nil {
 		item.Quantity = *req.Quantity
@@ -208,7 +210,13 @@ func (h *ItemHandler) Update(c *gin.Context) {
 	}
 
 	if err := h.repo.Update(item); err != nil {
-		handleRepositoryError(c, err, "update item failed")
+		handleItemRepositoryError(c, err, "update item failed")
+		return
+	}
+
+	item, err = h.repo.Get(item.ID, item.TenantID)
+	if err != nil {
+		handleItemRepositoryError(c, err, "get item failed")
 		return
 	}
 
@@ -218,7 +226,7 @@ func (h *ItemHandler) Update(c *gin.Context) {
 // Delete handles DELETE /items/:id.
 func (h *ItemHandler) Delete(c *gin.Context) {
 	if err := h.repo.Delete(strings.TrimSpace(c.Param("id")), tenantIDFromRequest(c)); err != nil {
-		handleRepositoryError(c, err, "delete item failed")
+		handleItemRepositoryError(c, err, "delete item failed")
 		return
 	}
 
@@ -234,15 +242,13 @@ func tenantIDFromRequest(c *gin.Context) string {
 	return tenantID
 }
 
-func handleRepositoryError(c *gin.Context, err error, fallbackMessage string) {
-	if repository.IsNotFound(err) {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "item not found",
-		})
-		return
+func handleItemRepositoryError(c *gin.Context, err error, fallbackMessage string) {
+	switch {
+	case repository.IsNotFound(err):
+		c.JSON(http.StatusNotFound, gin.H{"error": "item not found"})
+	case err == repository.ErrInvalidCategoryID:
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fallbackMessage})
 	}
-
-	c.JSON(http.StatusInternalServerError, gin.H{
-		"error": fallbackMessage,
-	})
 }

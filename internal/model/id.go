@@ -5,6 +5,8 @@ import (
 	"fmt"
 )
 
+const categoryAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+
 func newID() (string, error) {
 	var raw [16]byte
 
@@ -23,4 +25,22 @@ func newID() (string, error) {
 		raw[8:10],
 		raw[10:16],
 	), nil
+}
+
+func newCategoryID() (string, error) {
+	const prefix = "cat"
+	const randomLen = 7
+
+	var raw [randomLen]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", fmt.Errorf("generate category id: %w", err)
+	}
+
+	buf := make([]byte, 0, len(prefix)+randomLen)
+	buf = append(buf, prefix...)
+	for _, b := range raw {
+		buf = append(buf, categoryAlphabet[int(b)%len(categoryAlphabet)])
+	}
+
+	return string(buf), nil
 }

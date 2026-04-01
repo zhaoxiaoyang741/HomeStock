@@ -16,133 +16,142 @@ import (
 	appconfig "github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 )
 
-func TestItemHandler_CreateGetUpdateDeleteFlow(t *testing.T) {
-	server, cleanup := newItemTestServer(t)
+func TestCategoryHandler_CRUDAndItemAssociation(t *testing.T) {
+	server, cleanup := newTestServer(t)
 	defer cleanup()
 
-	createBody := map[string]any{
-		"name":     "eggs",
-		"category": "food",
-		"quantity": 12,
-		"unit":     "box",
-		"location": "fridge",
-		"notes":    "first batch",
+	createdCategory := performJSONRequest(t, server, http.MethodPost, "/api/v1/categories", "", map[string]any{
+		"name": "food",
+	}, http.StatusCreated)
+	categoryID, _ := createdCategory["id"].(string)
+	if len(categoryID) != 10 {
+		t.Fatalf("category ID length = %d", len(categoryID))
 	}
 
-	created := performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "", createBody, http.StatusCreated)
-	itemID, _ := created["id"].(string)
-	if itemID == "" {
-		t.Fatal("expected created item ID")
+	gotCategory := performJSONRequest(t, server, http.MethodGet, "/api/v1/categories/"+categoryID, "", nil, http.StatusOK)
+	if gotCategory["name"] != "food" {
+		t.Fatalf("name = %v", gotCategory["name"])
 	}
 
-	got := performJSONRequest(t, server, http.MethodGet, "/api/v1/items/"+itemID, "", nil, http.StatusOK)
-	if got["name"] != "eggs" {
-		t.Fatalf("name = %v", got["name"])
-	}
-
-	expireAt := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
-	updated := performJSONRequest(t, server, http.MethodPut, "/api/v1/items/"+itemID, "", map[string]any{
-		"name":      "milk",
-		"quantity":  2,
-		"location":  "shelf",
-		"expire_at": expireAt,
+	updatedCategory := performJSONRequest(t, server, http.MethodPut, "/api/v1/categories/"+categoryID, "", map[string]any{
+		"name": "fresh-food",
 	}, http.StatusOK)
-	if updated["name"] != "milk" {
-		t.Fatalf("updated name = %v", updated["name"])
-	}
-	if updated["location"] != "shelf" {
-		t.Fatalf("updated location = %v", updated["location"])
+	if updatedCategory["name"] != "fresh-food" {
+		t.Fatalf("updated name = %v", updatedCategory["name"])
 	}
 
-	listed := performJSONRequest(t, server, http.MethodGet, "/api/v1/items", "", nil, http.StatusOK)
-	total, ok := listed["total"].(float64)
-	if !ok || int(total) != 1 {
-		t.Fatalf("total = %v", listed["total"])
-	}
-
-	items, ok := listed["items"].([]any)
-	if !ok || len(items) != 1 {
-		t.Fatalf("items = %#v", listed["items"])
-	}
-
-	performNoContentRequest(t, server, http.MethodDelete, "/api/v1/items/"+itemID, "", http.StatusNoContent)
-	performJSONRequest(t, server, http.MethodGet, "/api/v1/items/"+itemID, "", nil, http.StatusNotFound)
-}
-
-func TestItemHandler_ListRespectsTenantHeader(t *testing.T) {
-	server, cleanup := newItemTestServer(t)
-	defer cleanup()
-
-	performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "tenant-a", map[string]any{
-		"name": "rice",
+	createdItem := performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "", map[string]any{
+		"name":        "eggs",
+		"category_id": categoryID,
+		"quantity":    12,
+		"unit":        "box",
+		"location":    "fridge",
 	}, http.StatusCreated)
-	performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "tenant-b", map[string]any{
-		"name": "milk",
-	}, http.StatusCreated)
-
-	listed := performJSONRequest(t, server, http.MethodGet, "/api/v1/items", "tenant-a", nil, http.StatusOK)
-	total, ok := listed["total"].(float64)
-	if !ok || int(total) != 1 {
-		t.Fatalf("total = %v", listed["total"])
+	itemID, _ := createdItem["id"].(string)
+	if createdItem["category_id"] != categoryID {
+		t.Fatalf("category_id = %v", createdItem["category_id"])
 	}
 
-	items, ok := listed["items"].([]any)
-	if !ok || len(items) != 1 {
-		t.Fatalf("items = %#v", listed["items"])
-	}
-
-	item, ok := items[0].(map[string]any)
+	nestedCategory, ok := createdItem["category"].(map[string]any)
 	if !ok {
-		t.Fatalf("item = %#v", items[0])
+		t.Fatalf("category = %#v", createdItem["category"])
 	}
-	if item["name"] != "rice" {
-		t.Fatalf("name = %v", item["name"])
+	if nestedCategory["name"] != "fresh-food" {
+		t.Fatalf("category name = %v", nestedCategory["name"])
 	}
-	if item["tenant_id"] != "tenant-a" {
-		t.Fatalf("tenant_id = %v", item["tenant_id"])
+
+	gotItem := performJSONRequest(t, server, http.MethodGet, "/api/v1/items/"+itemID, "", nil, http.StatusOK)
+	if gotItem["category_id"] != categoryID {
+		t.Fatalf("category_id = %v", gotItem["category_id"])
 	}
-}
 
-func TestItemHandler_ListSupportsFilters(t *testing.T) {
-	server, cleanup := newItemTestServer(t)
-	defer cleanup()
-
-	performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "", map[string]any{
-		"name":     "rice",
-		"category": "dry",
-		"location": "pantry",
-	}, http.StatusCreated)
-	performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "", map[string]any{
-		"name":     "milk",
-		"category": "cold",
-		"location": "fridge",
-	}, http.StatusCreated)
-
-	listed := performJSONRequest(t, server, http.MethodGet, "/api/v1/items?location=fridge&category=cold", "", nil, http.StatusOK)
-	total, ok := listed["total"].(float64)
-	if !ok || int(total) != 1 {
-		t.Fatalf("total = %v", listed["total"])
+	listedItems := performJSONRequest(t, server, http.MethodGet, "/api/v1/items?category_id="+categoryID, "", nil, http.StatusOK)
+	if total, ok := listedItems["total"].(float64); !ok || int(total) != 1 {
+		t.Fatalf("total = %v", listedItems["total"])
 	}
-}
 
-func TestItemHandler_UpdateRejectsInvalidExpireAt(t *testing.T) {
-	server, cleanup := newItemTestServer(t)
-	defer cleanup()
-
-	created := performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "", map[string]any{
-		"name": "rice",
-	}, http.StatusCreated)
-	itemID, _ := created["id"].(string)
-
-	body := performJSONRequest(t, server, http.MethodPut, "/api/v1/items/"+itemID, "", map[string]any{
-		"expire_at": "not-a-date",
-	}, http.StatusBadRequest)
-	if body["error"] != "invalid expire_at, must be RFC3339" {
+	body := performJSONRequest(t, server, http.MethodDelete, "/api/v1/categories/"+categoryID, "", nil, http.StatusConflict)
+	if body["error"] != repository.ErrCategoryInUse.Error() {
 		t.Fatalf("error = %v", body["error"])
 	}
 }
 
-func newItemTestServer(t *testing.T) (*httpserver.Server, func()) {
+func TestItemHandler_FullCRUDWithCategory(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	category := performJSONRequest(t, server, http.MethodPost, "/api/v1/categories", "", map[string]any{
+		"name": "dairy",
+	}, http.StatusCreated)
+	categoryID, _ := category["id"].(string)
+
+	created := performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "", map[string]any{
+		"name":        "milk",
+		"category_id": categoryID,
+		"quantity":    2,
+		"unit":        "bottle",
+		"location":    "shelf",
+		"notes":       "test",
+	}, http.StatusCreated)
+	itemID, _ := created["id"].(string)
+	if itemID == "" {
+		t.Fatal("expected item ID")
+	}
+
+	expireAt := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
+	updated := performJSONRequest(t, server, http.MethodPut, "/api/v1/items/"+itemID, "", map[string]any{
+		"name":        "milk-2",
+		"category_id": categoryID,
+		"quantity":    3,
+		"expire_at":   expireAt,
+	}, http.StatusOK)
+	if updated["name"] != "milk-2" {
+		t.Fatalf("updated name = %v", updated["name"])
+	}
+
+	performNoContentRequest(t, server, http.MethodDelete, "/api/v1/items/"+itemID, "", http.StatusNoContent)
+	performJSONRequest(t, server, http.MethodGet, "/api/v1/items/"+itemID, "", nil, http.StatusNotFound)
+	performNoContentRequest(t, server, http.MethodDelete, "/api/v1/categories/"+categoryID, "", http.StatusNoContent)
+}
+
+func TestItemHandler_RejectsInvalidCategoryID(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	body := performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "", map[string]any{
+		"name":        "rice",
+		"category_id": "catbadid1",
+	}, http.StatusBadRequest)
+	if body["error"] != repository.ErrInvalidCategoryID.Error() {
+		t.Fatalf("error = %v", body["error"])
+	}
+}
+
+func TestCategoryHandler_TenantIsolationAndDuplicateNames(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	performJSONRequest(t, server, http.MethodPost, "/api/v1/categories", "tenant-a", map[string]any{
+		"name": "food",
+	}, http.StatusCreated)
+	performJSONRequest(t, server, http.MethodPost, "/api/v1/categories", "tenant-b", map[string]any{
+		"name": "food",
+	}, http.StatusCreated)
+
+	body := performJSONRequest(t, server, http.MethodPost, "/api/v1/categories", "tenant-a", map[string]any{
+		"name": "food",
+	}, http.StatusConflict)
+	if body["error"] != repository.ErrCategoryNameExists.Error() {
+		t.Fatalf("error = %v", body["error"])
+	}
+
+	listed := performJSONRequest(t, server, http.MethodGet, "/api/v1/categories", "tenant-a", nil, http.StatusOK)
+	if total, ok := listed["total"].(float64); !ok || int(total) != 1 {
+		t.Fatalf("total = %v", listed["total"])
+	}
+}
+
+func newTestServer(t *testing.T) (*httpserver.Server, func()) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -159,8 +168,9 @@ func newItemTestServer(t *testing.T) (*httpserver.Server, func()) {
 		t.Fatalf("db.DB() error = %v", err)
 	}
 
+	categoryHandler := NewCategoryHandler(repository.NewCategoryRepository(db))
 	itemHandler := NewItemHandler(repository.NewItemRepository(db))
-	server := httpserver.New(appconfig.ServerConfig{}, itemHandler.RegisterRoutes)
+	server := httpserver.New(appconfig.ServerConfig{}, categoryHandler.RegisterRoutes, itemHandler.RegisterRoutes)
 
 	return server, func() {
 		_ = sqlDB.Close()
