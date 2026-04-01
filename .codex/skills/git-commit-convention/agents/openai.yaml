@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Commit Convention"
+  short_description: "Draft Conventional Commits for HomeStock changes."
+  default_prompt: "Use $git-commit-convention to draft a Conventional Commit message for the current HomeStock changes."
