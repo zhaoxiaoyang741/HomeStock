@@ -242,7 +242,7 @@ func assertDefaultConfig(t *testing.T, cfg *Config) {
 	if cfg.Database.Driver != "sqlite" {
 		t.Fatalf("Database.Driver = %q", cfg.Database.Driver)
 	}
-	if cfg.Database.DSN != "/data/inventory.db" {
+	if cfg.Database.DSN != "./data/inventory.db" {
 		t.Fatalf("Database.DSN = %q", cfg.Database.DSN)
 	}
 	if cfg.Notify.FeishuWebhook != "" {

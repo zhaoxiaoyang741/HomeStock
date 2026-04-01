@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -15,92 +16,134 @@ import (
 	appconfig "github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 )
 
-func TestItemHandler_CreateAndList(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	db, err := database.OpenAndMigrate(appconfig.DatabaseConfig{
-		Driver: "sqlite",
-		DSN:    ":memory:",
-	})
-	if err != nil {
-		t.Fatalf("OpenAndMigrate() error = %v", err)
-	}
-
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("db.DB() error = %v", err)
-	}
-	t.Cleanup(func() {
-		_ = sqlDB.Close()
-	})
-
-	itemHandler := NewItemHandler(repository.NewItemRepository(db))
-	server := httpserver.New(appconfig.ServerConfig{}, itemHandler.RegisterRoutes)
+func TestItemHandler_CreateGetUpdateDeleteFlow(t *testing.T) {
+	server, cleanup := newItemTestServer(t)
+	defer cleanup()
 
 	createBody := map[string]any{
-		"name":     "鸡蛋",
-		"category": "食材",
+		"name":     "eggs",
+		"category": "food",
 		"quantity": 12,
-		"location": "冰箱",
-		"notes":    "一盒",
+		"unit":     "box",
+		"location": "fridge",
+		"notes":    "first batch",
 	}
 
-	body, err := json.Marshal(createBody)
-	if err != nil {
-		t.Fatalf("json.Marshal() error = %v", err)
+	created := performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "", createBody, http.StatusCreated)
+	itemID, _ := created["id"].(string)
+	if itemID == "" {
+		t.Fatal("expected created item ID")
 	}
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/items", bytes.NewReader(body))
-	createReq.Header.Set("Content-Type", "application/json")
-	createRec := httptest.NewRecorder()
-
-	server.Engine().ServeHTTP(createRec, createReq)
-
-	if createRec.Code != http.StatusCreated {
-		t.Fatalf("create status = %d, body = %q", createRec.Code, createRec.Body.String())
+	got := performJSONRequest(t, server, http.MethodGet, "/api/v1/items/"+itemID, "", nil, http.StatusOK)
+	if got["name"] != "eggs" {
+		t.Fatalf("name = %v", got["name"])
 	}
 
-	var created map[string]any
-	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
-		t.Fatalf("json.Unmarshal(create) error = %v", err)
+	expireAt := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
+	updated := performJSONRequest(t, server, http.MethodPut, "/api/v1/items/"+itemID, "", map[string]any{
+		"name":      "milk",
+		"quantity":  2,
+		"location":  "shelf",
+		"expire_at": expireAt,
+	}, http.StatusOK)
+	if updated["name"] != "milk" {
+		t.Fatalf("updated name = %v", updated["name"])
+	}
+	if updated["location"] != "shelf" {
+		t.Fatalf("updated location = %v", updated["location"])
 	}
 
-	if created["name"] != "鸡蛋" {
-		t.Fatalf("created name = %v", created["name"])
-	}
-	if created["tenant_id"] != "default" {
-		t.Fatalf("created tenant_id = %v", created["tenant_id"])
-	}
-
-	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/items", nil)
-	listRec := httptest.NewRecorder()
-
-	server.Engine().ServeHTTP(listRec, listReq)
-
-	if listRec.Code != http.StatusOK {
-		t.Fatalf("list status = %d, body = %q", listRec.Code, listRec.Body.String())
+	listed := performJSONRequest(t, server, http.MethodGet, "/api/v1/items", "", nil, http.StatusOK)
+	total, ok := listed["total"].(float64)
+	if !ok || int(total) != 1 {
+		t.Fatalf("total = %v", listed["total"])
 	}
 
-	var listed struct {
-		Items []map[string]any `json:"items"`
-		Total int              `json:"total"`
-	}
-	if err := json.Unmarshal(listRec.Body.Bytes(), &listed); err != nil {
-		t.Fatalf("json.Unmarshal(list) error = %v", err)
+	items, ok := listed["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("items = %#v", listed["items"])
 	}
 
-	if listed.Total != 1 {
-		t.Fatalf("total = %d", listed.Total)
-	}
-	if len(listed.Items) != 1 {
-		t.Fatalf("len(items) = %d", len(listed.Items))
-	}
-	if listed.Items[0]["location"] != "冰箱" {
-		t.Fatalf("location = %v", listed.Items[0]["location"])
-	}
+	performNoContentRequest(t, server, http.MethodDelete, "/api/v1/items/"+itemID, "", http.StatusNoContent)
+	performJSONRequest(t, server, http.MethodGet, "/api/v1/items/"+itemID, "", nil, http.StatusNotFound)
 }
 
 func TestItemHandler_ListRespectsTenantHeader(t *testing.T) {
+	server, cleanup := newItemTestServer(t)
+	defer cleanup()
+
+	performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "tenant-a", map[string]any{
+		"name": "rice",
+	}, http.StatusCreated)
+	performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "tenant-b", map[string]any{
+		"name": "milk",
+	}, http.StatusCreated)
+
+	listed := performJSONRequest(t, server, http.MethodGet, "/api/v1/items", "tenant-a", nil, http.StatusOK)
+	total, ok := listed["total"].(float64)
+	if !ok || int(total) != 1 {
+		t.Fatalf("total = %v", listed["total"])
+	}
+
+	items, ok := listed["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("items = %#v", listed["items"])
+	}
+
+	item, ok := items[0].(map[string]any)
+	if !ok {
+		t.Fatalf("item = %#v", items[0])
+	}
+	if item["name"] != "rice" {
+		t.Fatalf("name = %v", item["name"])
+	}
+	if item["tenant_id"] != "tenant-a" {
+		t.Fatalf("tenant_id = %v", item["tenant_id"])
+	}
+}
+
+func TestItemHandler_ListSupportsFilters(t *testing.T) {
+	server, cleanup := newItemTestServer(t)
+	defer cleanup()
+
+	performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "", map[string]any{
+		"name":     "rice",
+		"category": "dry",
+		"location": "pantry",
+	}, http.StatusCreated)
+	performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "", map[string]any{
+		"name":     "milk",
+		"category": "cold",
+		"location": "fridge",
+	}, http.StatusCreated)
+
+	listed := performJSONRequest(t, server, http.MethodGet, "/api/v1/items?location=fridge&category=cold", "", nil, http.StatusOK)
+	total, ok := listed["total"].(float64)
+	if !ok || int(total) != 1 {
+		t.Fatalf("total = %v", listed["total"])
+	}
+}
+
+func TestItemHandler_UpdateRejectsInvalidExpireAt(t *testing.T) {
+	server, cleanup := newItemTestServer(t)
+	defer cleanup()
+
+	created := performJSONRequest(t, server, http.MethodPost, "/api/v1/items", "", map[string]any{
+		"name": "rice",
+	}, http.StatusCreated)
+	itemID, _ := created["id"].(string)
+
+	body := performJSONRequest(t, server, http.MethodPut, "/api/v1/items/"+itemID, "", map[string]any{
+		"expire_at": "not-a-date",
+	}, http.StatusBadRequest)
+	if body["error"] != "invalid expire_at, must be RFC3339" {
+		t.Fatalf("error = %v", body["error"])
+	}
+}
+
+func newItemTestServer(t *testing.T) (*httpserver.Server, func()) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	db, err := database.OpenAndMigrate(appconfig.DatabaseConfig{
@@ -115,57 +158,83 @@ func TestItemHandler_ListRespectsTenantHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db.DB() error = %v", err)
 	}
-	t.Cleanup(func() {
-		_ = sqlDB.Close()
-	})
 
 	itemHandler := NewItemHandler(repository.NewItemRepository(db))
 	server := httpserver.New(appconfig.ServerConfig{}, itemHandler.RegisterRoutes)
 
-	for _, tc := range []struct {
-		tenant string
-		name   string
-	}{
-		{tenant: "tenant-a", name: "大米"},
-		{tenant: "tenant-b", name: "牛奶"},
-	} {
-		body, err := json.Marshal(map[string]any{"name": tc.name})
+	return server, func() {
+		_ = sqlDB.Close()
+	}
+}
+
+func performJSONRequest(
+	t *testing.T,
+	server *httpserver.Server,
+	method string,
+	path string,
+	tenantID string,
+	body any,
+	wantStatus int,
+) map[string]any {
+	t.Helper()
+
+	var bodyReader *bytes.Reader
+	if body == nil {
+		bodyReader = bytes.NewReader(nil)
+	} else {
+		raw, err := json.Marshal(body)
 		if err != nil {
 			t.Fatalf("json.Marshal() error = %v", err)
 		}
+		bodyReader = bytes.NewReader(raw)
+	}
 
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/items", bytes.NewReader(body))
+	req := httptest.NewRequest(method, path, bodyReader)
+	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Tenant-ID", tc.tenant)
-		rec := httptest.NewRecorder()
-		server.Engine().ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusCreated {
-			t.Fatalf("create status = %d, body = %q", rec.Code, rec.Body.String())
-		}
+	}
+	if tenantID != "" {
+		req.Header.Set("X-Tenant-ID", tenantID)
 	}
 
-	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/items", nil)
-	listReq.Header.Set("X-Tenant-ID", "tenant-a")
-	listRec := httptest.NewRecorder()
-	server.Engine().ServeHTTP(listRec, listReq)
+	rec := httptest.NewRecorder()
+	server.Engine().ServeHTTP(rec, req)
 
-	if listRec.Code != http.StatusOK {
-		t.Fatalf("list status = %d, body = %q", listRec.Code, listRec.Body.String())
+	if rec.Code != wantStatus {
+		t.Fatalf("%s %s status = %d, body = %q", method, path, rec.Code, rec.Body.String())
 	}
 
-	var listed struct {
-		Items []map[string]any `json:"items"`
-		Total int              `json:"total"`
-	}
-	if err := json.Unmarshal(listRec.Body.Bytes(), &listed); err != nil {
-		t.Fatalf("json.Unmarshal(list) error = %v", err)
+	if rec.Body.Len() == 0 {
+		return map[string]any{}
 	}
 
-	if listed.Total != 1 {
-		t.Fatalf("total = %d", listed.Total)
+	var decoded map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v, body = %q", err, rec.Body.String())
 	}
-	if listed.Items[0]["name"] != "大米" {
-		t.Fatalf("name = %v", listed.Items[0]["name"])
+
+	return decoded
+}
+
+func performNoContentRequest(
+	t *testing.T,
+	server *httpserver.Server,
+	method string,
+	path string,
+	tenantID string,
+	wantStatus int,
+) {
+	t.Helper()
+
+	req := httptest.NewRequest(method, path, nil)
+	if tenantID != "" {
+		req.Header.Set("X-Tenant-ID", tenantID)
+	}
+
+	rec := httptest.NewRecorder()
+	server.Engine().ServeHTTP(rec, req)
+
+	if rec.Code != wantStatus {
+		t.Fatalf("%s %s status = %d, body = %q", method, path, rec.Code, rec.Body.String())
 	}
 }
