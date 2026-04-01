@@ -86,7 +86,7 @@ func defaultConfig() *Config {
 		},
 		Database: DatabaseConfig{
 			Driver: "sqlite",
-			DSN:    "/data/inventory.db",
+			DSN:    "./data/inventory.db",
 		},
 		Notify: NotifyConfig{
 			FeishuWebhook: "",
