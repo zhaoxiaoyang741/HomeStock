@@ -142,7 +142,7 @@ func DisableFileLogging() {
 
 func getCallerSkip() int {
 	for i := 2; i < 15; i++ {
-		pc, file, _, ok := runtime.Caller(i)
+		pc, _, _, ok := runtime.Caller(i)
 		if !ok {
 			continue
 		}
