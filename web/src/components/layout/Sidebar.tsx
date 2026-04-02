@@ -70,7 +70,7 @@ export default function Sidebar() {
       <div className="px-2 py-4 border-t border-outline-variant shrink-0">
         <button
           className={cn(
-            'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors',
+            'flex items-center cursor-pointer gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors',
             collapsed ? 'justify-center' : ''
           )}
           title={collapsed ? '退出登录' : undefined}

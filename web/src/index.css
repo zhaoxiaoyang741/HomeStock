@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/forms";
 
+@variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* Primary — 绿色系 */
   --color-primary: #0d631b;
@@ -60,9 +62,56 @@
   --radius-lg: 0.75rem;
 }
 
+.dark {
+  --color-primary: #88d982;
+  --color-primary-container: #0d631b;
+  --color-on-primary: #00390a;
+  --color-on-primary-container: #a3f69c;
+  --color-primary-fixed: #a3f69c;
+  --color-inverse-primary: #0d631b;
+
+  --color-secondary: #81d98b;
+  --color-secondary-container: #19722b;
+  --color-on-secondary: #00390d;
+  --color-on-secondary-container: #9cf49c;
+
+  --color-tertiary: #ffb951;
+  --color-tertiary-container: #5b3a00;
+  --color-on-tertiary: #422b00;
+  --color-on-tertiary-container: #ffddb4;
+  --color-tertiary-fixed: #ffddb4;
+
+  --color-error: #ffb4ab;
+  --color-error-container: #93000a;
+  --color-on-error: #690005;
+  --color-on-error-container: #ffdad6;
+
+  --color-background: #10141a;
+  --color-surface: #10141a;
+  --color-surface-dim: #10141a;
+  --color-surface-container-lowest: #0b0f15;
+  --color-surface-container-low: #191d24;
+  --color-surface-container: #1d2129;
+  --color-surface-container-high: #272c34;
+  --color-surface-container-highest: #32373f;
+  --color-surface-variant: #3f4940;
+  --color-inverse-surface: #e1e3e4;
+  --color-inverse-on-surface: #2e3132;
+
+  --color-on-surface: #e1e3e4;
+  --color-on-surface-variant: #bfcaba;
+  --color-on-background: #e1e3e4;
+
+  --color-outline: #899481;
+  --color-outline-variant: #3f4940;
+}
+
 @layer utilities {
   .bg-gradient-primary {
     background: linear-gradient(135deg, #0d631b 0%, #2e7d32 100%);
+  }
+  .dark .bg-gradient-primary {
+    background: linear-gradient(135deg, #1a5c24 0%, #88d982 100%);
   }
   .glass-effect {
     backdrop-filter: blur(24px);

@@ -1,11 +1,13 @@
-import { Bell, Moon, PanelLeftClose, PanelLeftOpen, RefreshCw, Search } from 'lucide-react'
+import { Bell, Moon, Sun, PanelLeftClose, PanelLeftOpen, RefreshCw, Search } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/appStore'
+import { useTheme } from '@/hooks/useTheme'
 
 export default function Header() {
   const { collapsed, toggleCollapsed } = useAppStore()
+  const { resolvedTheme, setTheme } = useTheme()
 
   return (
     <header className={cn(
@@ -16,7 +18,7 @@ export default function Header() {
       {/* Sidebar toggle */}
       <button
         onClick={toggleCollapsed}
-        className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors shrink-0"
+        className="p-2 rounded-lg cursor-pointer text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors shrink-0"
         aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
       >
         {collapsed
@@ -33,14 +35,21 @@ export default function Header() {
 
       {/* Actions */}
       <div className="flex items-center gap-2 ml-auto">
-        <button className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" aria-label="切换暗色模式">
-          <Moon className="w-5 h-5" />
+        <button
+          className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
+          aria-label={resolvedTheme === 'dark' ? '切换亮色模式' : '切换暗色模式'}
+          onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+        >
+          {resolvedTheme === 'dark'
+            ? <Sun className="w-5 h-5 cursor-pointer" />
+            : <Moon className="w-5 h-5 cursor-pointer" />
+          }
         </button>
         <button className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" aria-label="同步">
-          <RefreshCw className="w-5 h-5" />
+          <RefreshCw className="w-5 h-5 cursor-pointer" />
         </button>
         <button className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" aria-label="通知">
-          <Bell className="w-5 h-5" />
+          <Bell className="w-5 h-5 cursor-pointer" />
         </button>
         <Avatar className="w-8 h-8 ml-1 cursor-pointer">
           <AvatarImage src="" alt="用户头像" />

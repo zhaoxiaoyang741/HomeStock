@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { useTheme } from '@/hooks/useTheme'
 import AppLayout from '@/components/layout/AppLayout'
 import InventoryPage from '@/pages/inventory/InventoryPage'
 import ShoppingPage from '@/pages/shopping/ShoppingPage'
@@ -7,6 +8,8 @@ import DashboardPage from '@/pages/dashboard/DashboardPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
 
 export default function App() {
+  useTheme()
+
   return (
     <BrowserRouter>
       <Routes>
