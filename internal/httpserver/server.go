@@ -26,7 +26,7 @@ type Server struct {
 // New constructs a Gin-backed HTTP server with base middleware and routes.
 func New(cfg appconfig.ServerConfig, registrars ...RegisterRoutesFunc) *Server {
 	engine := gin.New()
-	engine.Use(gin.Recovery(), requestLogger())
+	engine.Use(gin.Recovery(), corsMiddleware(), requestLogger())
 
 	api := engine.Group("/api/v1")
 	api.GET("/health", healthHandler)
@@ -113,6 +113,21 @@ func requestLogger() gin.HandlerFunc {
 		}
 
 		logger.InfoCF("http", "request completed", fields)
+	}
+}
+
+func corsMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, X-Tenant-ID")
+
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+
+		c.Next()
 	}
 }
 

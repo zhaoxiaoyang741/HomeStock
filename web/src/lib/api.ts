@@ -1,4 +1,4 @@
-const BASE_URL = '/api'
+const BASE_URL = import.meta.env.VITE_API_BASE_URL as string
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -9,6 +9,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const err = await res.json().catch(() => ({ message: res.statusText }))
     throw new Error(err.message ?? res.statusText)
   }
+  if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
 

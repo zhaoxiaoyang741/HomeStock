@@ -53,6 +53,24 @@
   --color-outline: #707a6c;
   --color-outline-variant: #bfcaba;
 
+  /* shadcn compatibility aliases — map to project tokens */
+  --color-foreground: #191c1d;
+  --color-primary-foreground: #ffffff;
+  --color-secondary-foreground: #ffffff;
+  --color-destructive: #ba1a1a;
+  --color-destructive-foreground: #ffffff;
+  --color-muted: #edeeef;
+  --color-muted-foreground: #40493d;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #191c1d;
+  --color-card: #ffffff;
+  --color-card-foreground: #191c1d;
+  --color-border: #bfcaba;
+  --color-input: #bfcaba;
+  --color-ring: #0d631b;
+  --color-accent: #e7e8e9;
+  --color-accent-foreground: #191c1d;
+
   /* 字体族 */
   --font-sans: "Inter", "PingFang SC", sans-serif;
 
@@ -104,6 +122,24 @@
 
   --color-outline: #899481;
   --color-outline-variant: #3f4940;
+
+  /* shadcn compatibility aliases — dark */
+  --color-foreground: #e1e3e4;
+  --color-primary-foreground: #00390a;
+  --color-secondary-foreground: #00390d;
+  --color-destructive: #ffb4ab;
+  --color-destructive-foreground: #690005;
+  --color-muted: #1d2129;
+  --color-muted-foreground: #bfcaba;
+  --color-popover: #1d2129;
+  --color-popover-foreground: #e1e3e4;
+  --color-card: #1d2129;
+  --color-card-foreground: #e1e3e4;
+  --color-border: #3f4940;
+  --color-input: #3f4940;
+  --color-ring: #88d982;
+  --color-accent: #272c34;
+  --color-accent-foreground: #e1e3e4;
 }
 
 @layer utilities {
