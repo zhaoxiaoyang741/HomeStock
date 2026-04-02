@@ -56,6 +56,10 @@ func OpenAndMigrate(cfg appconfig.DatabaseConfig) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	if err := InitBaseData(db); err != nil {
+		return nil, err
+	}
+
 	return db, nil
 }
 
