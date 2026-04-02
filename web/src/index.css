@@ -68,6 +68,18 @@
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
   }
+  /* 侧边栏宽度折叠过渡 */
+  .sidebar-transition {
+    transition-property: width;
+    transition-duration: 300ms;
+    transition-timing-function: ease-in-out;
+  }
+  /* 侧边栏文字/图标淡入淡出过渡 */
+  .sidebar-fade {
+    transition-property: opacity, width;
+    transition-duration: 300ms;
+    transition-timing-function: ease-in-out;
+  }
 }
 
 @layer base {
@@ -82,4 +94,5 @@
     min-height: 100svh;
     display: flex;
   }
+
 }
