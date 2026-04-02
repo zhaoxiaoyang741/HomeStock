@@ -4,7 +4,7 @@ import AppLayout from '@/components/layout/AppLayout'
 import InventoryPage from '@/pages/inventory/InventoryPage'
 import ShoppingPage from '@/pages/shopping/ShoppingPage'
 import HistoryPage from '@/pages/history/HistoryPage'
-import DashboardPage from '@/pages/dashboard/DashboardPage'
+import HomedPage from '@/pages/home/HomePage'
 import SettingsPage from '@/pages/settings/SettingsPage'
 
 export default function App() {
@@ -14,10 +14,11 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<AppLayout />}>
-          <Route index element={<InventoryPage />} />
+          <Route index element={<HomedPage />} />
+          <Route path="home" element={<HomedPage />} />
+          <Route path="inventory" element={<InventoryPage />} />
           <Route path="shopping" element={<ShoppingPage />} />
           <Route path="history" element={<HistoryPage />} />
-          <Route path="dashboard" element={<DashboardPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Routes>

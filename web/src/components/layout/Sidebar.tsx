@@ -12,10 +12,10 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/appStore'
 
 const NAV_ITEMS = [
-  { path: '/',          icon: Package,       label: '物料库存' },
+  { path: '/',          icon: BarChart2,     label: '首页' },
+  { path: '/inventory', icon: Package,       label: '物料库存' },
   { path: '/shopping',  icon: ShoppingCart,  label: '购物列表' },
   { path: '/history',   icon: ClipboardList, label: '使用记录' },
-  { path: '/dashboard', icon: BarChart2,     label: '数据展板' },
   { path: '/settings',  icon: Settings,      label: '系统设置' },
 ]
 
