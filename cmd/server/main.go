@@ -26,6 +26,10 @@ func main() {
 		})
 	}
 
+	// init log config
+	logger.SetLevel(logger.LogLevel(cfg.Log.Level))
+	logger.EnableFileLogging(cfg.Log.Path)
+
 	db, err := database.OpenAndMigrate(cfg.Database)
 	if err != nil {
 		logger.FatalCF("server", "open database failed", map[string]any{

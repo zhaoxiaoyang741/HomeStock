@@ -18,6 +18,8 @@ type Config struct {
 	Notify NotifyConfig `json:"notify"`
 	// Scheduler controls reminder scheduling settings.
 	Scheduler SchedulerConfig `json:"scheduler"`
+
+	Log LogConfig `json:"log"`
 }
 
 type ServerConfig struct {
@@ -42,6 +44,11 @@ type SchedulerConfig struct {
 	RemindDays int `json:"remind_days"`
 	// CheckTime is the daily reminder check time in HH:MM format.
 	CheckTime string `json:"check_time"`
+}
+
+type LogConfig struct {
+	Level int    `json:"level"`
+	Path  string `json:"path"`
 }
 
 var (
@@ -94,6 +101,10 @@ func defaultConfig() *Config {
 		Scheduler: SchedulerConfig{
 			RemindDays: 3,
 			CheckTime:  "08:00",
+		},
+		Log: LogConfig{
+			Level: 1, // INFO
+			Path:  "logs/info.log",
 		},
 	}
 }
