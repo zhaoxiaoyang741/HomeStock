@@ -1,0 +1,23 @@
+# OpenClaw 配置文件
+# 参考 .docs/07-feishu-setup.md 完成飞书应用配置后填入以下凭证
+
+channels:
+  feishu:
+    enabled: true
+    app_id: "cli_xxxxxxxxxxxxxxxx"          # 替换：飞书自建应用 App ID
+    app_secret: "xxxxxxxxxxxxxxxxxxxxxxxx"  # 替换：飞书自建应用 App Secret
+
+plugins:
+  - path: ./openclaw-plugin                 # 插件目录（相对于本配置文件）
+
+llm:
+  provider: anthropic                       # 可选：anthropic / openai / ollama
+  api_key: "sk-ant-..."                     # 替换：LLM API Key
+  model: "claude-haiku-4-5-20251001"        # 推荐：速度快、成本低
+  # 国内备选（无需翻墙）：
+  # provider: ollama
+  # base_url: http://localhost:11434
+  # model: qwen2.5:7b
+
+log:
+  level: info

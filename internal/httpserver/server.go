@@ -136,5 +136,5 @@ func normalizeAddr(port string) string {
 		port = "8080"
 	}
 
-	return fmt.Sprintf("localhost:%s", port)
+	return fmt.Sprintf("0.0.0.0:%s", port)
 }

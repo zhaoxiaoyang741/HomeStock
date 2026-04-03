@@ -1,0 +1,21 @@
+{
+  "id":"home-inventory-plugin",
+  "name": "home-inventory-plugin",
+  "version": "1.0.0",
+  "description": "HomeStock OpenClaw 插件",
+  "main": "dist/index.js",
+  "openclaw": {
+    "extensions": ["./dist/index.js"]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  }
+}
