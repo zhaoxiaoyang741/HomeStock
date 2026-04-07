@@ -141,7 +141,7 @@ function SummaryCards({ items, categories }: { items: Item[]; categories: Catego
           <Package className="w-5 h-5 text-primary" />
         </div>
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">总物料数</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">总物料数</p>
           <p className="text-xl font-extrabold text-on-surface">{items.length} 件</p>
         </div>
       </div>
@@ -151,7 +151,7 @@ function SummaryCards({ items, categories }: { items: Item[]; categories: Catego
           <TriangleAlert className="w-5 h-5 text-tertiary" />
         </div>
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">临期 / 过期预警</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">临期 / 过期预警</p>
           <p className={cn('text-xl font-extrabold', warningCount > 0 ? 'text-tertiary' : 'text-on-surface')}>
             {warningCount} 件物品
           </p>
@@ -163,7 +163,7 @@ function SummaryCards({ items, categories }: { items: Item[]; categories: Catego
           <Tags className="w-5 h-5 text-secondary" />
         </div>
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">分类数量</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">分类数量</p>
           <p className="text-xl font-extrabold text-on-surface">{categories.length} 个</p>
         </div>
       </div>
@@ -305,14 +305,14 @@ export default function InventoryPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-surface-container-low/50 border-outline-variant/20 hover:bg-surface-container-low/50">
-              <TableHead className="py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant w-50">物料名称</TableHead>
-              <TableHead className="py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant w-28">分类</TableHead>
-              <TableHead className="py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant w-25">库存数量</TableHead>
-              <TableHead className="py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant w-28">存放位置</TableHead>
-              <TableHead className="py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant w-28">购买日期</TableHead>
-              <TableHead className="py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant w-28">过期日期</TableHead>
-              <TableHead className="py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant w-25">状态</TableHead>
-              <TableHead className="py-4 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant w-20 text-right">操作</TableHead>
+              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-50">物料名称</TableHead>
+              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-28">分类</TableHead>
+              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-25">库存数量</TableHead>
+              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-28">存放位置</TableHead>
+              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-28">购买日期</TableHead>
+              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-28">过期日期</TableHead>
+              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-25">状态</TableHead>
+              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-20 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
