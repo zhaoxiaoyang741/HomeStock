@@ -29,6 +29,11 @@ func NewItemRepository(db *gorm.DB) *ItemRepository {
 // Create inserts a new item record.
 func (r *ItemRepository) Create(item *model.Item) error {
 	item.TenantID = normalizeTenantID(item.TenantID)
+	if strings.TrimSpace(item.CategoryID) == "" {
+		if err := r.assignDefaultCategory(item); err != nil {
+			return err
+		}
+	}
 	if err := r.validateCategoryID(item.TenantID, item.CategoryID); err != nil {
 		return err
 	}
@@ -96,6 +101,15 @@ func (r *ItemRepository) scopedItems(tenantID string) *gorm.DB {
 // IsNotFound reports whether the error means the record was not found.
 func IsNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
+}
+
+func (r *ItemRepository) assignDefaultCategory(item *model.Item) error {
+	var cat model.Category
+	if err := r.db.Where("tenant_id = ?", item.TenantID).Order("created_at ASC").First(&cat).Error; err != nil {
+		return err
+	}
+	item.CategoryID = cat.ID
+	return nil
 }
 
 func (r *ItemRepository) validateCategoryID(tenantID string, categoryID string) error {
