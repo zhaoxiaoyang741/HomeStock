@@ -77,11 +77,12 @@ export default function ItemFormDialog({ open, item, categories, onClose, onSubm
           notes: item.notes,
         })
       } else {
-        setForm(EMPTY_FORM)
+        const defaultCategory = categories.find((c) => c.name === '默认分类')
+        setForm({ ...EMPTY_FORM, category_id: defaultCategory?.id ?? '' })
       }
       setError('')
     }
-  }, [open, item])
+  }, [open, item, categories])
 
   function set(key: keyof FormState, value: string) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -155,6 +156,7 @@ export default function ItemFormDialog({ open, item, categories, onClose, onSubm
             </div>
 
             <div className="space-y-1.5">
+              {/* TODO 通过后端维护name->单位的映射表，这里进行推测 */}
               <Label htmlFor="item-unit">单位</Label>
               <Input
                 id="item-unit"
