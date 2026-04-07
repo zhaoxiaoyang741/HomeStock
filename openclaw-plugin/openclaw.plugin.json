@@ -4,8 +4,17 @@
   "version": "1.0.0",
   "description": "家用物料管理系统 - 通过自然语言管理家中食材和日用品",
   "main": "dist/index.js",
-  "configSchema": {},
-  "skills": ["skills/SKILL.md"],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "baseUrl": {
+        "type": "string",
+        "description": "库存后台API地址，如：http://192.168.18.13:8080"
+      }
+    },
+    "additionalProperties": false
+  },
+  "skills": ["skills"],
   "tools": [
     {
       "name": "add_item",

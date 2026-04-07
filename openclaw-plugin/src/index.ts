@@ -22,29 +22,81 @@ function loadOpenclawSdk() {
       return {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         definePluginEntry: (req('openclaw/plugin-sdk/plugin-entry') as any).definePluginEntry,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        emptyPluginConfigSchema: (req('openclaw/plugin-sdk') as any).emptyPluginConfigSchema,
       };
     }
   }
   throw new Error(`openclaw not found, searched: ${candidates.join(', ')}`);
 }
 
-const { definePluginEntry, emptyPluginConfigSchema } = loadOpenclawSdk();
-
-const BACKEND_URL = process.env.INVENTORY_API_URL ?? 'http://192.168.18.13:8080';
-const client = new InventoryAPIClient(BACKEND_URL);
+const { definePluginEntry } = loadOpenclawSdk();
 
 function textResult(text: string) {
   return { content: [{ type: 'text' as const, text }], details: text };
+}
+
+// 解析斜杠命令原始文本 → add_item 参数
+// 格式：<名称> [数量+单位] [位置]   e.g. "土豆 5个 冰箱"
+function parseAddItemCommand(raw: string): { name: string; quantity?: number; unit?: string; location?: string } {
+  const tokens = raw.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return { name: '' };
+
+  const result: { name: string; quantity?: number; unit?: string; location?: string } = { name: '' };
+  const nameParts: string[] = [];
+
+  for (const token of tokens) {
+    const qtyMatch = token.match(/^(\d+(?:\.\d+)?)(.*)$/);
+    if (qtyMatch && result.quantity === undefined) {
+      result.quantity = parseFloat(qtyMatch[1]);
+      result.unit = qtyMatch[2] || '个';
+    } else if (result.quantity !== undefined && result.location === undefined) {
+      result.location = token;
+    } else {
+      nameParts.push(token);
+    }
+  }
+  result.name = nameParts.join('');
+  return result;
+}
+
+// 解析斜杠命令原始文本 → remove_item 参数
+// 格式：<名称> [数量]   e.g. "土豆 2"
+function parseRemoveItemCommand(raw: string): { name: string; quantity?: number } {
+  const tokens = raw.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return { name: '' };
+
+  const last = tokens[tokens.length - 1];
+  const numMatch = last.match(/^(\d+(?:\.\d+)?)$/);
+  if (numMatch && tokens.length > 1) {
+    return { name: tokens.slice(0, -1).join(''), quantity: parseFloat(numMatch[1]) };
+  }
+  return { name: tokens.join('') };
+}
+
+// 解析斜杠命令原始文本 → query_items 参数
+// 格式：[位置] [分类] [expiring]   e.g. "冰箱 蔬菜" 或 "expiring"
+function parseQueryItemsCommand(raw: string): { location?: string; category?: string; expiring_soon?: boolean } {
+  const tokens = raw.trim().split(/\s+/).filter(Boolean);
+  const result: { location?: string; category?: string; expiring_soon?: boolean } = {};
+  const remaining = tokens.filter(t => {
+    if (t === 'expiring' || t === '过期' || t === '快过期') { result.expiring_soon = true; return false; }
+    return true;
+  });
+  if (remaining[0]) result.location = remaining[0];
+  if (remaining[1]) result.category = remaining[1];
+  return result;
 }
 
 module.exports = definePluginEntry({
   id: 'home-inventory',
   name: 'home-inventory',
   description: '家用物料管理系统 - 通过自然语言管理家中食材和日用品',
-  configSchema: emptyPluginConfigSchema(),
   register(api: any) {
+    const baseUrl =
+      (api.pluginConfig?.baseUrl as string | undefined) ??
+      process.env.INVENTORY_API_URL ??
+      'http://localhost:8080';
+    const client = new InventoryAPIClient(baseUrl);
+
     api.registerTool({
       name: 'add_item',
       label: '添加物料',
@@ -59,8 +111,12 @@ module.exports = definePluginEntry({
         },
         required: ['name'],
       },
-      execute: async (_toolCallId: string, params: any) =>
-        textResult(await addItem(params, client)),
+      execute: async (_toolCallId: string, params: any) => {
+        const p = params.command !== undefined
+          ? parseAddItemCommand(params.command)
+          : params;
+        return textResult(await addItem(p, client));
+      },
     });
 
     api.registerTool({
@@ -75,8 +131,12 @@ module.exports = definePluginEntry({
         },
         required: ['name'],
       },
-      execute: async (_toolCallId: string, params: any) =>
-        textResult(await removeItem(params, client)),
+      execute: async (_toolCallId: string, params: any) => {
+        const p = params.command !== undefined
+          ? parseRemoveItemCommand(params.command)
+          : params;
+        return textResult(await removeItem(p, client));
+      },
     });
 
     api.registerTool({
@@ -91,8 +151,12 @@ module.exports = definePluginEntry({
           expiring_soon: { type: 'boolean', description: '只看即将过期的物料' },
         },
       },
-      execute: async (_toolCallId: string, params: any) =>
-        textResult(await queryItems(params, client)),
+      execute: async (_toolCallId: string, params: any) => {
+        const p = params.command !== undefined
+          ? parseQueryItemsCommand(params.command)
+          : params;
+        return textResult(await queryItems(p, client));
+      },
     });
   },
 });
