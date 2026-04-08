@@ -14,6 +14,8 @@ type ItemFilter struct {
 	TenantID   string
 	Location   string
 	CategoryID string
+	Name       string
+	Spec       string
 }
 
 // ItemRepository stores and fetches inventory items.
@@ -65,6 +67,21 @@ func (r *ItemRepository) List(filter ItemFilter) ([]model.Item, error) {
 
 	var items []model.Item
 	if err := query.Preload("Category").Order("created_at DESC").Find(&items).Error; err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
+// FindSimilar returns items matching name and spec (case-insensitive, trimmed) for a tenant.
+func (r *ItemRepository) FindSimilar(filter ItemFilter) ([]model.Item, error) {
+	var items []model.Item
+	if err := r.scopedItems(filter.TenantID).
+		Where("LOWER(TRIM(name)) = LOWER(TRIM(?)) AND LOWER(TRIM(spec)) = LOWER(TRIM(?))",
+			filter.Name, filter.Spec).
+		Preload("Category").
+		Order("created_at DESC").
+		Find(&items).Error; err != nil {
 		return nil, err
 	}
 

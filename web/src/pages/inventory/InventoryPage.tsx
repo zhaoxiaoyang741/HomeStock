@@ -243,6 +243,12 @@ export default function InventoryPage() {
     await loadData()
   }
 
+  async function handleMerge(existingItemId: string, additionalQuantity: number) {
+    const existing = await itemApi.get(existingItemId)
+    await itemApi.update(existingItemId, { quantity: existing.quantity + additionalQuantity })
+    await loadData()
+  }
+
   async function handleDelete() {
     if (!deleteTarget) return
     await itemApi.delete(deleteTarget.id)
@@ -387,6 +393,7 @@ export default function InventoryPage() {
         categories={categories}
         onClose={() => setFormOpen(false)}
         onSubmit={handleFormSubmit}
+        onMerge={handleMerge}
       />
       <DeleteConfirmDialog
         open={deleteTarget !== null}

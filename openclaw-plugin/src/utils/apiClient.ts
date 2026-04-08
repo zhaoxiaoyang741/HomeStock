@@ -12,6 +12,7 @@ export interface Item {
   name: string;
   category_id: string;
   category: Category | null;
+  spec?: string;
   quantity: number;
   unit: string;
   location: string;
@@ -34,6 +35,7 @@ export interface AddItemPayload {
   name: string;
   quantity?: number;
   unit?: string;
+  spec?: string;
   location?: string;
   category_id?: string;
   expire_at?: string;
@@ -56,6 +58,7 @@ export interface InventoryClient {
   findItemByName(name: string): Promise<Item | null>;
   findCategoryByName(name: string): Promise<Category | null>;
   ensureCategoryByName(name: string): Promise<Category>;
+  findSimilarItems(name: string, spec?: string): Promise<ListItemsResponse>;
 }
 
 function normalizedText(value: string | null | undefined): string {
@@ -101,6 +104,9 @@ export class InventoryAPIClient implements InventoryClient {
       notes: params.notes ?? '',
     };
 
+    if (params.spec) {
+      payload.spec = params.spec;
+    }
     if (params.category_id) {
       payload.category_id = params.category_id;
     }
@@ -197,6 +203,15 @@ export class InventoryAPIClient implements InventoryClient {
     }
 
     return this.createCategory(trimmed);
+  }
+
+  async findSimilarItems(name: string, spec?: string): Promise<ListItemsResponse> {
+    const params: Record<string, string> = { name };
+    if (spec) {
+      params.spec = spec;
+    }
+    const { data } = await this.client.get<ListItemsResponse>('/api/v1/items/similar', { params });
+    return data;
   }
 
   async findItemByName(name: string): Promise<Item | null> {

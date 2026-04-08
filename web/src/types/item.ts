@@ -14,6 +14,7 @@ export interface Item {
   name: string
   category_id: string
   category: Category | null
+  spec: string
   quantity: number
   unit: string
   location: string
@@ -27,6 +28,7 @@ export interface Item {
 export interface CreateItemPayload {
   name: string
   category_id?: string
+  spec?: string
   quantity?: number
   unit?: string
   location?: string
@@ -38,6 +40,7 @@ export interface CreateItemPayload {
 export interface UpdateItemPayload {
   name?: string
   category_id?: string
+  spec?: string
   quantity?: number
   unit?: string
   location?: string

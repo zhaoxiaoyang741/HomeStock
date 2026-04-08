@@ -15,6 +15,7 @@ type Item struct {
 	Category    *Category  `gorm:"foreignKey:CategoryID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;" json:"category"`
 	Quantity    float64    `gorm:"default:1" json:"quantity"`
 	Unit        string     `gorm:"type:varchar(20);not null;default:'个'" json:"unit"`
+	Spec        string     `gorm:"type:varchar(100);default:''" json:"spec"`
 	Location    string     `gorm:"type:varchar(100);default:''" json:"location"`
 	ExpireAt    *time.Time `gorm:"index" json:"expire_at"`
 	PurchasedAt time.Time  `gorm:"not null" json:"purchased_at"`

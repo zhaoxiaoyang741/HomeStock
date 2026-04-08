@@ -21,10 +21,13 @@ export default definePluginEntry({
         name: Type.String({ description: '物料名称，如：土豆、酱油、洗洁精' }),
         quantity: Type.Optional(Type.Number({ description: '数量，默认 1' })),
         unit: Type.Optional(Type.String({ description: '单位，如：个、克、瓶、袋' })),
+        spec: Type.Optional(Type.String({ description: '规格，如：500ml、1kg、大瓶装' })),
         location: Type.Optional(Type.String({ description: '存放位置，如：冰箱、厨柜、冷冻层' })),
         category: Type.Optional(Type.String({ description: '分类名称，如：蔬菜、水果、调料、日用品' })),
         expire_at: Type.Optional(Type.String({ description: '过期日期，格式 YYYY-MM-DD' })),
         notes: Type.Optional(Type.String({ description: '备注信息' })),
+        force_create: Type.Optional(Type.Boolean({ description: '为 true 时跳过重复检查，直接创建新条目' })),
+        merge_with_id: Type.Optional(Type.String({ description: '合并时填入已有物料的 ID，quantity 须填合并后总量；设置后直接更新该物料数量，不新建记录' })),
       }),
       async execute(_toolCallId, params) {
         return textResult(await addItem(params, client));

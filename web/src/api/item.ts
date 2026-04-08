@@ -17,4 +17,10 @@ export const itemApi = {
   update: (id: string, payload: UpdateItemPayload) => api.put<Item>(`/v1/items/${id}`, payload),
 
   delete: (id: string) => api.delete<void>(`/v1/items/${id}`),
+
+  findSimilar: (name: string, spec?: string) => {
+    const qs = new URLSearchParams({ name })
+    if (spec) qs.set('spec', spec)
+    return api.get<ItemListResponse>(`/v1/items/similar?${qs}`)
+  },
 }

@@ -25,6 +25,7 @@ func NewItemHandler(repo *repository.ItemRepository) *ItemHandler {
 func (h *ItemHandler) RegisterRoutes(api *gin.RouterGroup) {
 	api.POST("/items", h.Create)
 	api.GET("/items", h.List)
+	api.GET("/items/similar", h.FindSimilar) // must be before /:id
 	api.GET("/items/:id", h.Get)
 	api.PUT("/items/:id", h.Update)
 	api.DELETE("/items/:id", h.Delete)
@@ -33,6 +34,7 @@ func (h *ItemHandler) RegisterRoutes(api *gin.RouterGroup) {
 type createItemRequest struct {
 	Name        string  `json:"name" binding:"required"`
 	CategoryID  string  `json:"category_id"`
+	Spec        string  `json:"spec"`
 	Quantity    float64 `json:"quantity"`
 	Unit        string  `json:"unit"`
 	Location    string  `json:"location"`
@@ -44,6 +46,7 @@ type createItemRequest struct {
 type updateItemRequest struct {
 	Name        *string  `json:"name"`
 	CategoryID  *string  `json:"category_id"`
+	Spec        *string  `json:"spec"`
 	Quantity    *float64 `json:"quantity"`
 	Unit        *string  `json:"unit"`
 	Location    *string  `json:"location"`
@@ -66,6 +69,7 @@ func (h *ItemHandler) Create(c *gin.Context) {
 		TenantID:   tenantIDFromRequest(c),
 		Name:       strings.TrimSpace(req.Name),
 		CategoryID: strings.TrimSpace(req.CategoryID),
+		Spec:       strings.TrimSpace(req.Spec),
 		Quantity:   req.Quantity,
 		Unit:       strings.TrimSpace(req.Unit),
 		Location:   strings.TrimSpace(req.Location),
@@ -171,6 +175,9 @@ func (h *ItemHandler) Update(c *gin.Context) {
 	if req.Unit != nil {
 		item.Unit = strings.TrimSpace(*req.Unit)
 	}
+	if req.Spec != nil {
+		item.Spec = strings.TrimSpace(*req.Spec)
+	}
 	if req.Location != nil {
 		item.Location = strings.TrimSpace(*req.Location)
 	}
@@ -231,6 +238,30 @@ func (h *ItemHandler) Delete(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// FindSimilar handles GET /items/similar?name=X&spec=Y.
+func (h *ItemHandler) FindSimilar(c *gin.Context) {
+	name := strings.TrimSpace(c.Query("name"))
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+
+	items, err := h.repo.FindSimilar(repository.ItemFilter{
+		TenantID: tenantIDFromRequest(c),
+		Name:     name,
+		Spec:     strings.TrimSpace(c.Query("spec")),
+	})
+	if err != nil {
+		handleItemRepositoryError(c, err, "find similar items failed")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items": items,
+		"total": len(items),
+	})
 }
 
 func tenantIDFromRequest(c *gin.Context) string {
