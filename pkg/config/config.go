@@ -89,7 +89,7 @@ func Get() *Config {
 func defaultConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Port: "8080",
+			Port: "8888",
 		},
 		Database: DatabaseConfig{
 			Driver: "sqlite",

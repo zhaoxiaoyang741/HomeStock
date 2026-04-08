@@ -9,6 +9,8 @@ node_modules/
 # Build / IDE
 dist/
 build/
+.test-dist/
+*.tgz
 .idea/
 .vscode/
 *.log
@@ -19,6 +21,7 @@ Thumbs.db
 server.exe
 
 data
+agent-tmp
 
 # ai
 CLAUDE.md

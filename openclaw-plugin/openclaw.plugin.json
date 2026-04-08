@@ -1,60 +1,25 @@
 {
   "id": "home-inventory",
-  "name": "home-inventory",
+  "name": "Home Inventory Plugin",
   "version": "1.0.0",
-  "description": "家用物料管理系统 - 通过自然语言管理家中食材和日用品",
+  "description": "家用物料管理系统，通过自然语言管理家中食材和日用品。",
   "main": "dist/index.js",
+  "skills": ["skills"],
   "configSchema": {
     "type": "object",
     "properties": {
       "baseUrl": {
         "type": "string",
-        "description": "库存后台API地址，如：http://192.168.18.13:8080"
+        "description": "库存后台 API 地址，如：http://192.168.18.13:8888"
       }
     },
     "additionalProperties": false
   },
-  "skills": ["skills"],
-  "tools": [
-    {
-      "name": "add_item",
-      "description": "向库存中添加一个物料（食材/日用品）",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "name":     { "type": "string",  "description": "物料名称，如：土豆、酱油、洗洁精" },
-          "quantity": { "type": "number",  "description": "数量，默认1" },
-          "unit":     { "type": "string",  "description": "单位，如：个、克、瓶、袋，默认个" },
-          "location": { "type": "string",  "description": "存放位置，如：冰箱、厨柜、冷冻层" },
-          "category": { "type": "string",  "description": "分类：蔬菜、水果、肉类、调料、零食、日用品" },
-          "notes":    { "type": "string",  "description": "备注信息" }
-        },
-        "required": ["name"]
-      }
-    },
-    {
-      "name": "remove_item",
-      "description": "从库存中消耗或删除一个物料",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "name":     { "type": "string", "description": "物料名称" },
-          "quantity": { "type": "number", "description": "消耗数量，默认全部删除" }
-        },
-        "required": ["name"]
-      }
-    },
-    {
-      "name": "query_items",
-      "description": "查询家中库存物料",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "location":      { "type": "string",  "description": "按位置过滤，如：冰箱" },
-          "category":      { "type": "string",  "description": "按分类过滤" },
-          "expiring_soon": { "type": "boolean", "description": "是否只看即将过期的" }
-        }
-      }
+  "uiHints": {
+    "baseUrl": {
+      "label": "后台 API 地址",
+      "placeholder": "http://192.168.1.x:8888",
+      "help": "HomeStock 后台服务的完整 URL"
     }
-  ]
+  }
 }

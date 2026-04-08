@@ -178,7 +178,7 @@ func TestLoad_failureDoesNotOverrideCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if first.Server.Port != "8080" {
+	if first.Server.Port != "8888" {
 		t.Fatalf("first.Server.Port = %q", first.Server.Port)
 	}
 
@@ -205,10 +205,10 @@ func TestGet_returnsCopy(t *testing.T) {
 	got := Get()
 	got.Server.Port = "9999"
 
-	if cfg.Server.Port != "8080" {
+	if cfg.Server.Port != "8888" {
 		t.Fatalf("Load result was mutated: %q", cfg.Server.Port)
 	}
-	if Get().Server.Port != "8080" {
+	if Get().Server.Port != "8888" {
 		t.Fatalf("stored config was mutated: %q", Get().Server.Port)
 	}
 }
@@ -236,7 +236,7 @@ func assertDefaultConfig(t *testing.T, cfg *Config) {
 	if cfg == nil {
 		t.Fatal("cfg is nil")
 	}
-	if cfg.Server.Port != "8080" {
+	if cfg.Server.Port != "8888" {
 		t.Fatalf("Server.Port = %q", cfg.Server.Port)
 	}
 	if cfg.Database.Driver != "sqlite" {
