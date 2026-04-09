@@ -6,5 +6,6 @@ func AutoMigrateModels() []any {
 		&Category{},
 		&Item{},
 		&Notification{},
+		&AuditLog{},
 	}
 }

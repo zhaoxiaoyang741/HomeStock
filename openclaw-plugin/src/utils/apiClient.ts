@@ -81,15 +81,24 @@ function sortMatchScore(target: string, candidate: string): number {
   return Number.MAX_SAFE_INTEGER;
 }
 
+export interface UserHeaders {
+  userName?: string;
+  userID?: string;
+  channel?: string;
+}
+
 export class InventoryAPIClient implements InventoryClient {
   private client: AxiosInstance;
 
-  constructor(baseURL: string, tenantID: string = 'default') {
+  constructor(baseURL: string, tenantID: string = 'default', userHeaders: UserHeaders = {}) {
     this.client = axios.create({
       baseURL,
       headers: {
         'Content-Type': 'application/json',
         'X-Tenant-ID': tenantID,
+        ...(userHeaders.userName ? { 'X-User-Name': userHeaders.userName } : {}),
+        ...(userHeaders.userID ? { 'X-User-ID': userHeaders.userID } : {}),
+        'X-Channel': userHeaders.channel ?? 'feishu',
       },
       timeout: 10000,
     });

@@ -12,7 +12,7 @@ export default definePluginEntry({
   name: 'Home Inventory',
   description: '家用物料管理系统，通过自然语言管理家中食材和日用品。',
   register(api) {
-    const client = createClient(resolveBaseUrl(api.pluginConfig));
+    const client = createClient(resolveBaseUrl(api.pluginConfig), { channel: 'feishu' });
 
     api.registerTool({
       name: 'add_item',

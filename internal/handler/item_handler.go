@@ -13,12 +13,13 @@ import (
 
 // ItemHandler serves item CRUD HTTP endpoints.
 type ItemHandler struct {
-	repo *repository.ItemRepository
+	repo      *repository.ItemRepository
+	auditRepo *repository.AuditLogRepository
 }
 
 // NewItemHandler creates an item handler.
-func NewItemHandler(repo *repository.ItemRepository) *ItemHandler {
-	return &ItemHandler{repo: repo}
+func NewItemHandler(repo *repository.ItemRepository, auditRepo *repository.AuditLogRepository) *ItemHandler {
+	return &ItemHandler{repo: repo, auditRepo: auditRepo}
 }
 
 // RegisterRoutes mounts item endpoints under /api/v1.
@@ -109,6 +110,10 @@ func (h *ItemHandler) Create(c *gin.Context) {
 		return
 	}
 
+	actor := actorFromRequest(c)
+	recordAuditLog(h.auditRepo, actor, "create", "item", createdItem.ID, createdItem.Name,
+		marshalChanges(nil, createdItem))
+
 	c.JSON(http.StatusCreated, createdItem)
 }
 
@@ -155,6 +160,13 @@ func (h *ItemHandler) Update(c *gin.Context) {
 	if err != nil {
 		handleItemRepositoryError(c, err, "get item failed")
 		return
+	}
+
+	// Snapshot before mutation for audit log.
+	beforeItem := *item
+	if item.ExpireAt != nil {
+		t := *item.ExpireAt
+		beforeItem.ExpireAt = &t
 	}
 
 	if req.Name != nil {
@@ -227,15 +239,32 @@ func (h *ItemHandler) Update(c *gin.Context) {
 		return
 	}
 
+	actor := actorFromRequest(c)
+	recordAuditLog(h.auditRepo, actor, "update", "item", item.ID, item.Name,
+		marshalChanges(beforeItem, item))
+
 	c.JSON(http.StatusOK, item)
 }
 
 // Delete handles DELETE /items/:id.
 func (h *ItemHandler) Delete(c *gin.Context) {
-	if err := h.repo.Delete(strings.TrimSpace(c.Param("id")), tenantIDFromRequest(c)); err != nil {
+	actor := actorFromRequest(c)
+	id := strings.TrimSpace(c.Param("id"))
+	tenantID := tenantIDFromRequest(c)
+
+	item, err := h.repo.Get(id, tenantID)
+	if err != nil {
 		handleItemRepositoryError(c, err, "delete item failed")
 		return
 	}
+
+	if err := h.repo.Delete(id, tenantID); err != nil {
+		handleItemRepositoryError(c, err, "delete item failed")
+		return
+	}
+
+	recordAuditLog(h.auditRepo, actor, "delete", "item", item.ID, item.Name,
+		marshalChanges(item, nil))
 
 	c.Status(http.StatusNoContent)
 }

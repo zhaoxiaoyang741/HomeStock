@@ -1,4 +1,4 @@
-import { InventoryAPIClient } from './apiClient.js';
+import { InventoryAPIClient, UserHeaders } from './apiClient.js';
 
 export interface TextToolResult {
   content: Array<{ type: 'text'; text: string }>;
@@ -29,8 +29,8 @@ export function resolveBaseUrl(pluginConfig?: { baseUrl?: unknown }): string {
   return 'http://localhost:8888';
 }
 
-export function createClient(baseUrl: string): InventoryAPIClient {
-  return new InventoryAPIClient(baseUrl);
+export function createClient(baseUrl: string, userHeaders?: UserHeaders): InventoryAPIClient {
+  return new InventoryAPIClient(baseUrl, 'default', userHeaders);
 }
 
 export function isRawCommandEnvelope(value: unknown): value is RawCommandEnvelope {

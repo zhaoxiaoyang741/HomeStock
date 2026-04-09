@@ -12,12 +12,13 @@ import (
 
 // CategoryHandler serves category CRUD HTTP endpoints.
 type CategoryHandler struct {
-	repo *repository.CategoryRepository
+	repo      *repository.CategoryRepository
+	auditRepo *repository.AuditLogRepository
 }
 
 // NewCategoryHandler creates a category handler.
-func NewCategoryHandler(repo *repository.CategoryRepository) *CategoryHandler {
-	return &CategoryHandler{repo: repo}
+func NewCategoryHandler(repo *repository.CategoryRepository, auditRepo *repository.AuditLogRepository) *CategoryHandler {
+	return &CategoryHandler{repo: repo, auditRepo: auditRepo}
 }
 
 // RegisterRoutes mounts category endpoints under /api/v1.
@@ -58,6 +59,10 @@ func (h *CategoryHandler) Create(c *gin.Context) {
 		handleCategoryRepositoryError(c, err, "create category failed")
 		return
 	}
+
+	actor := actorFromRequest(c)
+	recordAuditLog(h.auditRepo, actor, "create", "category", category.ID, category.Name,
+		marshalChanges(nil, category))
 
 	c.JSON(http.StatusCreated, category)
 }
@@ -101,6 +106,8 @@ func (h *CategoryHandler) Update(c *gin.Context) {
 		return
 	}
 
+	beforeName := category.Name
+
 	if req.Name != nil {
 		category.Name = strings.TrimSpace(*req.Name)
 		if category.Name == "" {
@@ -114,15 +121,32 @@ func (h *CategoryHandler) Update(c *gin.Context) {
 		return
 	}
 
+	actor := actorFromRequest(c)
+	recordAuditLog(h.auditRepo, actor, "update", "category", category.ID, category.Name,
+		marshalChanges(map[string]string{"name": beforeName}, map[string]string{"name": category.Name}))
+
 	c.JSON(http.StatusOK, category)
 }
 
 // Delete handles DELETE /categories/:id.
 func (h *CategoryHandler) Delete(c *gin.Context) {
-	if err := h.repo.Delete(strings.TrimSpace(c.Param("id")), tenantIDFromRequest(c)); err != nil {
+	actor := actorFromRequest(c)
+	id := strings.TrimSpace(c.Param("id"))
+	tenantID := tenantIDFromRequest(c)
+
+	category, err := h.repo.Get(id, tenantID)
+	if err != nil {
 		handleCategoryRepositoryError(c, err, "delete category failed")
 		return
 	}
+
+	if err := h.repo.Delete(id, tenantID); err != nil {
+		handleCategoryRepositoryError(c, err, "delete category failed")
+		return
+	}
+
+	recordAuditLog(h.auditRepo, actor, "delete", "category", category.ID, category.Name,
+		marshalChanges(category, nil))
 
 	c.Status(http.StatusNoContent)
 }
