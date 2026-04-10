@@ -4,7 +4,9 @@ package model
 func AutoMigrateModels() []any {
 	return []any{
 		&Category{},
-		&Item{},
+		&Material{},
+		&StockLot{},
+		&StockMovement{},
 		&Notification{},
 		&AuditLog{},
 	}

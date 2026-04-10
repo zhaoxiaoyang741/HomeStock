@@ -6,59 +6,114 @@ export interface Category {
   name: string;
 }
 
-export interface Item {
+export interface MaterialSummary {
   id: string;
   tenant_id: string;
   name: string;
+  spec: string;
   category_id: string;
   category: Category | null;
-  spec?: string;
-  quantity: number;
+  default_unit: string;
+  status: string;
+  total_quantity: number;
+  lot_count: number;
+  nearest_expire_at: string | null;
+  locations: string[];
+}
+
+export interface MaterialDetail extends MaterialSummary {}
+
+export interface StockLot {
+  id: string;
+  tenant_id: string;
+  material_id: string;
+  material: MaterialDetail | null;
+  quantity_on_hand: number;
   unit: string;
   location: string;
   expire_at: string | null;
-  purchased_at?: string;
+  purchased_at: string | null;
+  received_at: string;
   notes: string;
+  status: string;
 }
 
-export interface ListItemsResponse {
-  items: Item[];
+export interface ConsumedLot {
+  lot_id: string;
+  consumed_quantity: number;
+  remaining_quantity: number;
+  location: string;
+  expire_at: string | null;
+}
+
+export interface ConsumeMaterialResponse {
+  material: MaterialDetail;
+  requested_quantity: number;
+  unit: string;
+  consumed_lots: ConsumedLot[];
+}
+
+export interface ListMaterialsResponse {
+  materials: MaterialSummary[];
   total: number;
 }
 
-export interface ListCategoriesResponse {
-  categories: Category[];
+export interface ListStockLotsResponse {
+  lots: StockLot[];
   total: number;
 }
 
-export interface AddItemPayload {
-  name: string;
-  quantity?: number;
-  unit?: string;
+export interface InboundStockLotPayload {
+  material_id?: string;
+  name?: string;
   spec?: string;
-  location?: string;
   category_id?: string;
+  quantity: number;
+  unit?: string;
+  location?: string;
   expire_at?: string;
+  purchased_at?: string;
   notes?: string;
 }
 
-export interface UpdateItemPayload {
-  quantity?: number;
+export interface UpdateStockLotPayload {
   expire_at?: string;
+  purchased_at?: string;
   notes?: string;
   location?: string;
+}
+
+export interface AdjustStockLotPayload {
+  target_quantity: number;
+  reason?: string;
+  remark?: string;
+}
+
+export interface UserHeaders {
+  userName?: string;
+  userID?: string;
+  channel?: string;
 }
 
 export interface InventoryClient {
-  addItem(params: AddItemPayload): Promise<Item>;
-  listItems(filter: { location?: string; category_id?: string }): Promise<ListItemsResponse>;
-  searchByKeyword(keyword: string): Promise<Item[]>;
-  updateItem(id: string, params: UpdateItemPayload): Promise<Item>;
-  deleteItem(id: string): Promise<void>;
-  findItemByName(name: string): Promise<Item | null>;
+  inboundStockLot(params: InboundStockLotPayload): Promise<StockLot>;
+  listMaterials(filter: { category_id?: string; keyword?: string }): Promise<ListMaterialsResponse>;
+  getMaterial(id: string): Promise<MaterialDetail>;
+  consumeMaterial(id: string, params: { quantity: number; reason?: string }): Promise<ConsumeMaterialResponse>;
+  listStockLots(filter: {
+    material_id?: string;
+    category_id?: string;
+    location?: string;
+    status?: string;
+    keyword?: string;
+    expiring_soon?: boolean;
+  }): Promise<ListStockLotsResponse>;
+  updateStockLot(id: string, params: UpdateStockLotPayload): Promise<StockLot>;
+  adjustStockLot(id: string, params: AdjustStockLotPayload): Promise<StockLot>;
+  findMaterialByName(name: string): Promise<MaterialSummary | null>;
+  findLotsByMaterialName(name: string): Promise<StockLot[]>;
   findCategoryByName(name: string): Promise<Category | null>;
   ensureCategoryByName(name: string): Promise<Category>;
-  findSimilarItems(name: string, spec?: string): Promise<ListItemsResponse>;
 }
 
 function normalizedText(value: string | null | undefined): string {
@@ -81,12 +136,6 @@ function sortMatchScore(target: string, candidate: string): number {
   return Number.MAX_SAFE_INTEGER;
 }
 
-export interface UserHeaders {
-  userName?: string;
-  userID?: string;
-  channel?: string;
-}
-
 export class InventoryAPIClient implements InventoryClient {
   private client: AxiosInstance;
 
@@ -104,101 +153,92 @@ export class InventoryAPIClient implements InventoryClient {
     });
   }
 
-  async addItem(params: AddItemPayload): Promise<Item> {
+  async inboundStockLot(params: InboundStockLotPayload): Promise<StockLot> {
     const payload: Record<string, unknown> = {
-      name: params.name,
-      quantity: params.quantity ?? 1,
-      unit: params.unit ?? '个',
-      location: params.location ?? '',
-      notes: params.notes ?? '',
+      quantity: params.quantity,
     };
+    if (params.material_id) payload.material_id = params.material_id;
+    if (params.name) payload.name = params.name;
+    if (params.spec) payload.spec = params.spec;
+    if (params.category_id) payload.category_id = params.category_id;
+    if (params.unit) payload.unit = params.unit;
+    if (params.location) payload.location = params.location;
+    if (params.expire_at) payload.expire_at = params.expire_at;
+    if (params.purchased_at) payload.purchased_at = params.purchased_at;
+    if (params.notes) payload.notes = params.notes;
 
-    if (params.spec) {
-      payload.spec = params.spec;
-    }
-    if (params.category_id) {
-      payload.category_id = params.category_id;
-    }
-    if (params.expire_at) {
-      payload.expire_at = params.expire_at;
-    }
-
-    const { data } = await this.client.post<Item>('/api/v1/items', payload);
+    const { data } = await this.client.post<StockLot>('/api/v1/stock-lots/inbound', payload);
     return data;
   }
 
-  async listItems(filter: { location?: string; category_id?: string }): Promise<ListItemsResponse> {
+  async listMaterials(filter: { category_id?: string; keyword?: string }): Promise<ListMaterialsResponse> {
     const params: Record<string, string> = {};
-    if (filter.location) {
-      params.location = filter.location;
-    }
-    if (filter.category_id) {
-      params.category_id = filter.category_id;
-    }
-
-    const { data } = await this.client.get<ListItemsResponse>('/api/v1/items', { params });
+    if (filter.category_id) params.category_id = filter.category_id;
+    if (filter.keyword) params.keyword = filter.keyword;
+    const { data } = await this.client.get<ListMaterialsResponse>('/api/v1/materials', { params });
     return data;
   }
 
-  async searchByKeyword(keyword: string): Promise<Item[]> {
-    const query = normalizedText(keyword);
-    if (!query) {
-      const { items } = await this.listItems({});
-      return items;
-    }
-
-    const { items } = await this.listItems({});
-    return items.filter(item => normalizedText(item.name).includes(query));
-  }
-
-  async deleteItem(id: string): Promise<void> {
-    await this.client.delete(`/api/v1/items/${id}`);
-  }
-
-  async updateItem(id: string, params: UpdateItemPayload): Promise<Item> {
-    const payload: Record<string, unknown> = {};
-    if (params.quantity !== undefined) {
-      payload.quantity = params.quantity;
-    }
-    if (params.expire_at !== undefined) {
-      payload.expire_at = params.expire_at;
-    }
-    if (params.notes !== undefined) {
-      payload.notes = params.notes;
-    }
-    if (params.location !== undefined) {
-      payload.location = params.location;
-    }
-
-    const { data } = await this.client.put<Item>(`/api/v1/items/${id}`, payload);
+  async getMaterial(id: string): Promise<MaterialDetail> {
+    const { data } = await this.client.get<MaterialDetail>(`/api/v1/materials/${id}`);
     return data;
   }
 
-  async listCategories(): Promise<ListCategoriesResponse> {
-    const { data } = await this.client.get<ListCategoriesResponse>('/api/v1/categories');
+  async consumeMaterial(id: string, params: { quantity: number; reason?: string }): Promise<ConsumeMaterialResponse> {
+    const { data } = await this.client.post<ConsumeMaterialResponse>(`/api/v1/materials/${id}/consume`, params);
+    return data;
+  }
+
+  async listStockLots(filter: {
+    material_id?: string;
+    category_id?: string;
+    location?: string;
+    status?: string;
+    keyword?: string;
+    expiring_soon?: boolean;
+  }): Promise<ListStockLotsResponse> {
+    const params: Record<string, string> = {};
+    if (filter.material_id) params.material_id = filter.material_id;
+    if (filter.category_id) params.category_id = filter.category_id;
+    if (filter.location) params.location = filter.location;
+    if (filter.status) params.status = filter.status;
+    if (filter.keyword) params.keyword = filter.keyword;
+    if (filter.expiring_soon) params.expiring_soon = 'true';
+    const { data } = await this.client.get<ListStockLotsResponse>('/api/v1/stock-lots', { params });
+    return data;
+  }
+
+  async updateStockLot(id: string, params: UpdateStockLotPayload): Promise<StockLot> {
+    const { data } = await this.client.put<StockLot>(`/api/v1/stock-lots/${id}`, params);
+    return data;
+  }
+
+  async adjustStockLot(id: string, params: AdjustStockLotPayload): Promise<StockLot> {
+    const { data } = await this.client.post<StockLot>(`/api/v1/stock-lots/${id}/adjust`, params);
+    return data;
+  }
+
+  async listCategories(): Promise<{ categories: Category[]; total: number }> {
+    const { data } = await this.client.get<{ categories: Category[]; total: number }>('/api/v1/categories');
     return data;
   }
 
   async createCategory(name: string): Promise<Category> {
-    const { data } = await this.client.post<Category>('/api/v1/categories', {
-      name: name.trim(),
-    });
+    const { data } = await this.client.post<Category>('/api/v1/categories', { name: name.trim() });
     return data;
   }
 
   async findCategoryByName(name: string): Promise<Category | null> {
     const query = normalizedText(name);
-    if (!query) {
-      return null;
-    }
+    if (!query) return null;
 
     const { categories } = await this.listCategories();
     const matches = categories
-      .map(category => ({
+      .map((category) => ({
         category,
         score: sortMatchScore(query, normalizedText(category.name)),
       }))
-      .filter(entry => entry.score < Number.MAX_SAFE_INTEGER)
+      .filter((entry) => entry.score < Number.MAX_SAFE_INTEGER)
       .sort((left, right) => left.score - right.score || left.category.name.length - right.category.name.length);
 
     return matches[0]?.category ?? null;
@@ -210,34 +250,31 @@ export class InventoryAPIClient implements InventoryClient {
     if (existing) {
       return existing;
     }
-
     return this.createCategory(trimmed);
   }
 
-  async findSimilarItems(name: string, spec?: string): Promise<ListItemsResponse> {
-    const params: Record<string, string> = { name };
-    if (spec) {
-      params.spec = spec;
-    }
-    const { data } = await this.client.get<ListItemsResponse>('/api/v1/items/similar', { params });
-    return data;
+  async findMaterialByName(name: string): Promise<MaterialSummary | null> {
+    const query = normalizedText(name);
+    if (!query) return null;
+
+    const { materials } = await this.listMaterials({ keyword: name });
+    const matches = materials
+      .map((material) => ({
+        material,
+        score: sortMatchScore(query, normalizedText(material.name)),
+      }))
+      .filter((entry) => entry.score < Number.MAX_SAFE_INTEGER)
+      .sort((left, right) => left.score - right.score || left.material.name.length - right.material.name.length);
+
+    return matches[0]?.material ?? null;
   }
 
-  async findItemByName(name: string): Promise<Item | null> {
-    const query = normalizedText(name);
-    if (!query) {
-      return null;
+  async findLotsByMaterialName(name: string): Promise<StockLot[]> {
+    const material = await this.findMaterialByName(name);
+    if (!material) {
+      return [];
     }
-
-    const { items } = await this.listItems({});
-    const matches = items
-      .map(item => ({
-        item,
-        score: sortMatchScore(query, normalizedText(item.name)),
-      }))
-      .filter(entry => entry.score < Number.MAX_SAFE_INTEGER)
-      .sort((left, right) => left.score - right.score || left.item.name.length - right.item.name.length);
-
-    return matches[0]?.item ?? null;
+    const { lots } = await this.listStockLots({ material_id: material.id });
+    return lots;
   }
 }

@@ -36,8 +36,14 @@ func TestOpenAndMigrateSQLite(t *testing.T) {
 	if !db.Migrator().HasTable(&model.Category{}) {
 		t.Fatal("categories table was not created")
 	}
-	if !db.Migrator().HasTable(&model.Item{}) {
-		t.Fatal("items table was not created")
+	if !db.Migrator().HasTable(&model.Material{}) {
+		t.Fatal("materials table was not created")
+	}
+	if !db.Migrator().HasTable(&model.StockLot{}) {
+		t.Fatal("stock_lots table was not created")
+	}
+	if !db.Migrator().HasTable(&model.StockMovement{}) {
+		t.Fatal("stock_movements table was not created")
 	}
 	if !db.Migrator().HasTable(&model.Notification{}) {
 		t.Fatal("notifications table was not created")
@@ -85,7 +91,7 @@ func TestOpenCreatesNestedSQLiteDirectory(t *testing.T) {
 	}
 }
 
-func TestCategoryItemAndNotificationDefaults(t *testing.T) {
+func TestCategoryMaterialLotAndNotificationDefaults(t *testing.T) {
 	db, err := OpenAndMigrate(appconfig.DatabaseConfig{
 		Driver: "sqlite",
 		DSN:    ":memory:",
@@ -116,35 +122,45 @@ func TestCategoryItemAndNotificationDefaults(t *testing.T) {
 		t.Fatalf("category TenantID = %q", category.TenantID)
 	}
 
-	item := &model.Item{
+	material := &model.Material{
 		Name:       "eggs",
 		CategoryID: category.ID,
 	}
-	if err := db.Create(item).Error; err != nil {
-		t.Fatalf("Create(item) error = %v", err)
+	if err := db.Create(material).Error; err != nil {
+		t.Fatalf("Create(material) error = %v", err)
+	}
+	if material.ID == "" {
+		t.Fatal("expected material ID to be generated")
+	}
+	if material.TenantID != "default" {
+		t.Fatalf("TenantID = %q", material.TenantID)
+	}
+	if material.DefaultUnit != "件" {
+		t.Fatalf("DefaultUnit = %q", material.DefaultUnit)
 	}
 
-	if item.ID == "" {
-		t.Fatal("expected item ID to be generated")
+	lot := &model.StockLot{
+		MaterialID:     material.ID,
+		QuantityOnHand: 12,
 	}
-	if item.TenantID != "default" {
-		t.Fatalf("TenantID = %q", item.TenantID)
+	if err := db.Create(lot).Error; err != nil {
+		t.Fatalf("Create(lot) error = %v", err)
 	}
-	if item.Quantity != 1 {
-		t.Fatalf("Quantity = %v", item.Quantity)
+	if lot.ID == "" {
+		t.Fatal("expected lot ID to be generated")
 	}
-	if item.Unit != "个" {
-		t.Fatalf("Unit = %q", item.Unit)
+	if lot.TenantID != "default" {
+		t.Fatalf("lot TenantID = %q", lot.TenantID)
 	}
-	if item.PurchasedAt.IsZero() {
-		t.Fatal("expected PurchasedAt to be populated")
+	if lot.Unit != "件" {
+		t.Fatalf("Unit = %q", lot.Unit)
 	}
-	if item.CategoryID != category.ID {
-		t.Fatalf("CategoryID = %q", item.CategoryID)
+	if lot.ReceivedAt.IsZero() {
+		t.Fatal("expected ReceivedAt to be populated")
 	}
 
 	notification := &model.Notification{
-		ItemID:   item.ID,
+		LotID:    lot.ID,
 		NotifyAt: time.Now(),
 	}
 	if err := db.Create(notification).Error; err != nil {

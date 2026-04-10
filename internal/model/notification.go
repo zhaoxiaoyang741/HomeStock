@@ -6,11 +6,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// Notification records reminder delivery attempts for items.
+// Notification records reminder delivery attempts for stock lots.
 type Notification struct {
 	ID        string    `gorm:"primaryKey;type:varchar(36)" json:"id"`
-	ItemID    string    `gorm:"type:varchar(36);not null;index" json:"item_id"`
-	Item      Item      `gorm:"constraint:OnDelete:CASCADE;" json:"item"`
+	LotID     string    `gorm:"type:varchar(36);not null;index" json:"lot_id"`
+	Lot       StockLot  `gorm:"foreignKey:LotID;references:ID;constraint:OnDelete:CASCADE;" json:"lot"`
 	NotifyAt  time.Time `gorm:"not null;index" json:"notify_at"`
 	Status    string    `gorm:"type:varchar(20);not null;default:'pending'" json:"status"`
 	Channel   string    `gorm:"type:varchar(50);not null;default:'feishu'" json:"channel"`

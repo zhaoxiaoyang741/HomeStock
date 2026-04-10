@@ -1,5 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2, Search, RefreshCw, Package, TriangleAlert, Tags, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  Box,
+  Boxes,
+  ChevronRight,
+  Pencil,
+  PackagePlus,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Warehouse,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -21,346 +31,375 @@ import {
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import { useDebounce } from '@/hooks/useDebounce'
-import { itemApi } from '@/api/item'
 import { categoryApi } from '@/api/category'
-import type { Item, CreateItemPayload, UpdateItemPayload } from '@/types/item'
+import { materialApi } from '@/api/material'
+import { stockLotApi } from '@/api/stockLot'
 import type { Category } from '@/types/category'
-import { getItemStatus, type ItemStatus } from '@/types/item'
-import ItemFormDialog from './ItemFormDialog'
-import DeleteConfirmDialog from './DeleteConfirmDialog'
+import type { InboundStockLotPayload, StockLot, UpdateStockLotPayload, AdjustStockLotPayload } from '@/types/stock'
+import type { ConsumeMaterialPayload, MaterialSummary, InventoryStatus } from '@/types/material'
+import { getInventoryStatus } from '@/types/material'
+import InboundLotDialog from './InboundLotDialog'
+import ConsumeMaterialDialog from './ConsumeMaterialDialog'
+import EditLotDialog from './EditLotDialog'
+import AdjustLotDialog from './AdjustLotDialog'
 
-// ── Constants ────────────────────────────────────────────────────────────────
-
-const PAGE_SIZE = 10
-
-// ── Status badge ──────────────────────────────────────────────────────────────
-
-const STATUS_MAP: Record<ItemStatus, { label: string; variant: 'default' | 'outline' | 'secondary' | 'destructive' }> = {
-  normal:   { label: '正常',   variant: 'default' },
+const STATUS_MAP: Record<InventoryStatus, { label: string; variant: 'default' | 'outline' | 'destructive' }> = {
+  normal: { label: '正常', variant: 'default' },
   expiring: { label: '即将过期', variant: 'outline' },
-  expired:  { label: '已过期',  variant: 'destructive' },
+  expired: { label: '已过期', variant: 'destructive' },
 }
 
-function StatusBadge({ status }: { status: ItemStatus }) {
-  const { label, variant } = STATUS_MAP[status]
+function StatusBadge({ status }: { status: InventoryStatus }) {
+  const meta = STATUS_MAP[status]
   return (
     <Badge
-      variant={variant}
-      className={cn(variant === 'outline' && 'text-tertiary border-tertiary/50')}
+      variant={meta.variant}
+      className={cn(meta.variant === 'outline' && 'text-tertiary border-tertiary/50')}
     >
-      {label}
+      {meta.label}
     </Badge>
   )
 }
 
-// ── Pagination ────────────────────────────────────────────────────────────────
-
-function TablePagination({
-  page,
-  totalPages,
-  totalItems,
-  pageSize,
-  onChange,
-}: {
-  page: number
-  totalPages: number
-  totalItems: number
-  pageSize: number
-  onChange: (p: number) => void
-}) {
-  const start = Math.min((page - 1) * pageSize + 1, totalItems)
-  const end   = Math.min(page * pageSize, totalItems)
-
-  // Build page number array with ellipsis logic
-  const pages: (number | '…')[] = []
-  if (totalPages <= 7) {
-    for (let i = 1; i <= totalPages; i++) pages.push(i)
-  } else {
-    pages.push(1)
-    if (page > 3) pages.push('…')
-    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.push(i)
-    if (page < totalPages - 2) pages.push('…')
-    pages.push(totalPages)
-  }
-
-  return (
-    <div className="px-6 py-4 flex items-center justify-between border-t border-outline-variant/20">
-      <p className="text-xs text-on-surface-variant">
-        显示 <span className="font-medium text-on-surface">{start} – {end}</span> / 共 {totalItems} 条
-      </p>
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => onChange(page - 1)}
-          disabled={page === 1}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        {pages.map((p, i) =>
-          p === '…' ? (
-            <span key={`ellipsis-${i}`} className="w-8 h-8 flex items-center justify-center text-outline-variant text-xs">…</span>
-          ) : (
-            <button
-              key={p}
-              onClick={() => onChange(p)}
-              className={cn(
-                'w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold transition-colors cursor-pointer',
-                p === page
-                  ? 'bg-primary text-on-primary'
-                  : 'text-on-surface-variant hover:bg-surface-container'
-              )}
-            >
-              {p}
-            </button>
-          )
-        )}
-        <button
-          onClick={() => onChange(page + 1)}
-          disabled={page === totalPages}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
-  )
+function formatLocations(locations: string[]): string {
+  if (locations.length === 0) return '—'
+  if (locations.length <= 2) return locations.join(' / ')
+  return `${locations.slice(0, 2).join(' / ')} +${locations.length - 2}`
 }
-
-// ── Summary cards ─────────────────────────────────────────────────────────────
-
-function SummaryCards({ items, categories }: { items: Item[]; categories: Category[] }) {
-  const warningCount = items.filter((i) => {
-    const s = getItemStatus(i)
-    return s === 'expiring' || s === 'expired'
-  }).length
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div className="p-5 bg-surface-container-lowest rounded-xl border border-outline-variant/20 flex items-center gap-4 shadow-sm">
-        <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-          <Package className="w-5 h-5 text-primary" />
-        </div>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">总物料数</p>
-          <p className="text-xl font-extrabold text-on-surface">{items.length} 件</p>
-        </div>
-      </div>
-
-      <div className="p-5 bg-surface-container-lowest rounded-xl border border-outline-variant/20 flex items-center gap-4 shadow-sm">
-        <div className="w-11 h-11 rounded-full bg-tertiary-container/20 flex items-center justify-center shrink-0">
-          <TriangleAlert className="w-5 h-5 text-tertiary" />
-        </div>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">临期 / 过期预警</p>
-          <p className={cn('text-xl font-extrabold', warningCount > 0 ? 'text-tertiary' : 'text-on-surface')}>
-            {warningCount} 件物品
-          </p>
-        </div>
-      </div>
-
-      <div className="p-5 bg-surface-container-lowest rounded-xl border border-outline-variant/20 flex items-center gap-4 shadow-sm">
-        <div className="w-11 h-11 rounded-full bg-secondary-container/20 flex items-center justify-center shrink-0">
-          <Tags className="w-5 h-5 text-secondary" />
-        </div>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">分类数量</p>
-          <p className="text-xl font-extrabold text-on-surface">{categories.length} 个</p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function InventoryPage() {
-  const [items, setItems] = useState<Item[]>([])
+  const [materials, setMaterials] = useState<MaterialSummary[]>([])
+  const [lots, setLots] = useState<StockLot[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [selectedMaterialId, setSelectedMaterialId] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // Filters
   const [search, setSearch] = useState('')
-  const [filterCategory, setFilterCategory] = useState('__all__')
-  const [filterLocation, setFilterLocation] = useState('__all__')
-  const debouncedSearch = useDebounce(search)
+  const [categoryFilter, setCategoryFilter] = useState('__all__')
+  const [locationFilter, setLocationFilter] = useState('__all__')
+  const debouncedSearch = useDebounce(search, 300)
 
-  // Pagination
-  const [page, setPage] = useState(1)
-
-  // Dialogs
-  const [formOpen, setFormOpen] = useState(false)
-  const [editingItem, setEditingItem] = useState<Item | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<Item | null>(null)
-
-  const locations = Array.from(new Set(items.map((i) => i.location).filter(Boolean)))
+  const [inboundOpen, setInboundOpen] = useState(false)
+  const [consumeOpen, setConsumeOpen] = useState(false)
+  const [editingLot, setEditingLot] = useState<StockLot | null>(null)
+  const [adjustingLot, setAdjustingLot] = useState<StockLot | null>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const [itemRes, catRes] = await Promise.all([
-        itemApi.list({
-          category_id: filterCategory !== '__all__' ? filterCategory : undefined,
-          location:    filterLocation !== '__all__' ? filterLocation : undefined,
+      const [materialRes, lotRes, categoryRes] = await Promise.all([
+        materialApi.list({
+          category_id: categoryFilter !== '__all__' ? categoryFilter : undefined,
+          keyword: debouncedSearch || undefined,
+        }),
+        stockLotApi.list({
+          category_id: categoryFilter !== '__all__' ? categoryFilter : undefined,
+          keyword: debouncedSearch || undefined,
+          location: locationFilter !== '__all__' ? locationFilter : undefined,
         }),
         categoryApi.list(),
       ])
-      setItems(itemRes.items ?? [])
-      setCategories(catRes.categories ?? [])
-      setPage(1)
+
+      const lotMaterialIDs = new Set(lotRes.lots.map((lot) => lot.material_id))
+      const nextMaterials =
+        locationFilter === '__all__'
+          ? materialRes.materials
+          : materialRes.materials.filter((material) => lotMaterialIDs.has(material.id))
+
+      setMaterials(nextMaterials)
+      setLots(lotRes.lots)
+      setCategories(categoryRes.categories)
+      setSelectedMaterialId((current) =>
+        nextMaterials.some((material) => material.id === current) ? current : (nextMaterials[0]?.id ?? ''),
+      )
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败')
+      setError(err instanceof Error ? err.message : '加载库存失败')
     } finally {
       setLoading(false)
     }
-  }, [filterCategory, filterLocation])
+  }, [categoryFilter, locationFilter, debouncedSearch])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
 
-  // Reset page when search changes
-  useEffect(() => { setPage(1) }, [debouncedSearch])
+  const locationOptions = useMemo(
+    () => Array.from(new Set(lots.map((lot) => lot.location).filter(Boolean))).sort((left, right) => left.localeCompare(right)),
+    [lots],
+  )
 
-  // Client-side name filter → paginate
-  const filteredItems = debouncedSearch
-    ? items.filter((i) => i.name.toLowerCase().includes(debouncedSearch.toLowerCase()))
-    : items
+  const selectedMaterial = useMemo(
+    () => materials.find((material) => material.id === selectedMaterialId) ?? null,
+    [materials, selectedMaterialId],
+  )
 
-  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE))
-  const pagedItems = filteredItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const selectedLots = useMemo(
+    () => lots.filter((lot) => lot.material_id === selectedMaterialId),
+    [lots, selectedMaterialId],
+  )
 
-  // ── CRUD handlers ──────────────────────────────────────────────────────────
+  const warningLots = useMemo(
+    () => lots.filter((lot) => getInventoryStatus(lot.expire_at) !== 'normal').length,
+    [lots],
+  )
 
-  function openCreate() { setEditingItem(null); setFormOpen(true) }
-  function openEdit(item: Item) { setEditingItem(item); setFormOpen(true) }
-
-  async function handleFormSubmit(payload: CreateItemPayload | UpdateItemPayload) {
-    if (editingItem) {
-      await itemApi.update(editingItem.id, payload as UpdateItemPayload)
-    } else {
-      await itemApi.create(payload as CreateItemPayload)
-    }
+  async function handleInbound(payload: InboundStockLotPayload) {
+    await stockLotApi.inbound(payload)
     await loadData()
   }
 
-  async function handleMerge(existingItemId: string, additionalQuantity: number) {
-    const existing = await itemApi.get(existingItemId)
-    await itemApi.update(existingItemId, { quantity: existing.quantity + additionalQuantity })
+  async function handleConsume(payload: ConsumeMaterialPayload) {
+    if (!selectedMaterial) return
+    await materialApi.consume(selectedMaterial.id, payload)
     await loadData()
   }
 
-  async function handleDelete() {
-    if (!deleteTarget) return
-    await itemApi.delete(deleteTarget.id)
+  async function handleUpdateLot(payload: UpdateStockLotPayload) {
+    if (!editingLot) return
+    await stockLotApi.update(editingLot.id, payload)
     await loadData()
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  async function handleAdjustLot(payload: AdjustStockLotPayload) {
+    if (!adjustingLot) return
+    await stockLotApi.adjust(adjustingLot.id, payload)
+    await loadData()
+  }
 
   return (
     <div className="flex flex-col h-full gap-6">
-      {/* ── Toolbar ── */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-extrabold text-on-surface tracking-tight">物料库存</h1>
-          <p className="text-xs text-on-surface-variant mt-0.5">管理家庭日常物资，精准掌握库存状态。</p>
+          <p className="text-sm text-on-surface-variant mt-0.5">按物料汇总库存，并在下方查看每个真实批次的库存、日期和位置。</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Search */}
-          <div className="relative min-w-48 max-w-64">
+          <div className="relative min-w-56">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
-            <Input className="pl-9" placeholder="搜索物料名称…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Input
+              className="pl-9"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="搜索物料名称或规格"
+            />
           </div>
-          {/* Category filter */}
-          <Select value={filterCategory} onValueChange={setFilterCategory}>
-            <SelectTrigger className="w-34">
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger className="w-40">
               <SelectValue placeholder="全部分类" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">全部分类</SelectItem>
-              {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+              {categories.map((category) => (
+                <SelectItem key={category.id} value={category.id}>
+                  {category.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
-          {/* Location filter */}
-          <Select value={filterLocation} onValueChange={setFilterLocation}>
-            <SelectTrigger className="w-34">
+          <Select value={locationFilter} onValueChange={setLocationFilter}>
+            <SelectTrigger className="w-40">
               <SelectValue placeholder="全部位置" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">全部位置</SelectItem>
-              {locations.map((loc) => <SelectItem key={loc} value={loc}>{loc}</SelectItem>)}
+              {locationOptions.map((location) => (
+                <SelectItem key={location} value={location}>
+                  {location}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon" onClick={loadData} title="刷新">
+          <Button variant="outline" size="icon" onClick={() => void loadData()} title="刷新">
             <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
           </Button>
-          <Button onClick={openCreate}>
-            <Plus className="w-4 h-4" />
-            新增物料
+          <Button variant="outline" onClick={() => setConsumeOpen(true)} disabled={!selectedMaterial}>
+            <SlidersHorizontal className="w-4 h-4" />
+            消耗库存
+          </Button>
+          <Button onClick={() => setInboundOpen(true)}>
+            <PackagePlus className="w-4 h-4" />
+            新增入库
           </Button>
         </div>
       </div>
 
-      {/* ── Error ── */}
       {error && (
         <div className="rounded-lg bg-error-container px-4 py-3 text-sm text-error">{error}</div>
       )}
 
-      {/* ── Table card ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="p-5 bg-surface-container-lowest rounded-xl border border-outline-variant/20 flex items-center gap-4 shadow-sm">
+          <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+            <Warehouse className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">物料数</p>
+            <p className="text-xl font-extrabold text-on-surface">{materials.length}</p>
+          </div>
+        </div>
+        <div className="p-5 bg-surface-container-lowest rounded-xl border border-outline-variant/20 flex items-center gap-4 shadow-sm">
+          <div className="w-11 h-11 rounded-full bg-secondary-container/20 flex items-center justify-center shrink-0">
+            <Boxes className="w-5 h-5 text-secondary" />
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">批次数</p>
+            <p className="text-xl font-extrabold text-on-surface">{lots.length}</p>
+          </div>
+        </div>
+        <div className="p-5 bg-surface-container-lowest rounded-xl border border-outline-variant/20 flex items-center gap-4 shadow-sm">
+          <div className="w-11 h-11 rounded-full bg-tertiary-container/20 flex items-center justify-center shrink-0">
+            <Box className="w-5 h-5 text-tertiary" />
+          </div>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">临期批次</p>
+            <p className={cn('text-xl font-extrabold', warningLots > 0 ? 'text-tertiary' : 'text-on-surface')}>
+              {warningLots}
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest shadow-sm overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="bg-surface-container-low/50 border-outline-variant/20 hover:bg-surface-container-low/50">
-              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-50">物料名称</TableHead>
-              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-28">分类</TableHead>
-              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-25">库存数量</TableHead>
-              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-28">存放位置</TableHead>
-              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-28">购买日期</TableHead>
-              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-28">过期日期</TableHead>
-              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-25">状态</TableHead>
-              <TableHead className="py-4  text-xs font-bold uppercase tracking-widest text-on-surface-variant w-20 text-right">操作</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">物料名称</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">分类</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">总库存</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">批次数</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">最近过期</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">位置摘要</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">状态</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && items.length === 0 ? (
+            {materials.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-32 text-center text-on-surface-variant">加载中…</TableCell>
-              </TableRow>
-            ) : pagedItems.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="h-32 text-center text-on-surface-variant">暂无物料数据</TableCell>
+                <TableCell colSpan={8} className="h-32 text-center text-on-surface-variant">
+                  {loading ? '加载中…' : '暂无物料'}
+                </TableCell>
               </TableRow>
             ) : (
-              pagedItems.map((item) => {
-                const status = getItemStatus(item)
+              materials.map((material) => {
+                const status = getInventoryStatus(material.nearest_expire_at)
+                const selected = material.id === selectedMaterialId
                 return (
                   <TableRow
-                    key={item.id}
-                    className="border-outline-variant/10 hover:bg-surface transition-colors group"
+                    key={material.id}
+                    className={cn(
+                      'border-outline-variant/10 cursor-pointer hover:bg-surface transition-colors',
+                      selected && 'bg-primary/5',
+                    )}
+                    onClick={() => setSelectedMaterialId(material.id)}
                   >
-                    <TableCell className="font-bold text-on-surface py-5">{item.name}</TableCell>
                     <TableCell className="py-5">
-                      {item.category?.name
-                        ? <span className="px-2.5 py-1 bg-surface-container text-on-surface-variant text-xs font-semibold rounded-full">{item.category.name}</span>
-                        : <span className="text-on-surface-variant text-sm">—</span>
-                      }
+                      <div className="font-bold text-on-surface">{material.name}</div>
+                      <div className="text-xs text-on-surface-variant">{material.spec || '未填写规格'}</div>
                     </TableCell>
-                    <TableCell className={cn('py-5 font-medium', status === 'expiring' && 'text-tertiary font-bold')}>
-                      {item.quantity} {item.unit}
+                    <TableCell className="py-5 text-on-surface-variant">{material.category?.name ?? '—'}</TableCell>
+                    <TableCell className="py-5 font-medium">{material.total_quantity} {material.default_unit}</TableCell>
+                    <TableCell className="py-5 text-on-surface-variant">{material.lot_count}</TableCell>
+                    <TableCell className="py-5 text-on-surface-variant">
+                      {material.nearest_expire_at ? formatDate(material.nearest_expire_at) : '—'}
                     </TableCell>
-                    <TableCell className="py-5 text-on-surface-variant">{item.location || '—'}</TableCell>
-                    <TableCell className="py-5 text-on-surface-variant">{formatDate(item.purchased_at)}</TableCell>
-                    <TableCell className={cn('py-5', status === 'expired' && 'text-error', status === 'expiring' && 'text-tertiary')}>
-                      {item.expire_at ? formatDate(item.expire_at) : '—'}
+                    <TableCell className="py-5 text-on-surface-variant">{formatLocations(material.locations)}</TableCell>
+                    <TableCell className="py-5">
+                      <StatusBadge status={status} />
                     </TableCell>
-                    <TableCell className="py-5"><StatusBadge status={status} /></TableCell>
                     <TableCell className="py-5 text-right">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button variant="ghost" size="icon" className="w-8 h-8" onClick={() => openEdit(item)} title="编辑">
-                          <Pencil className="w-3.5 h-3.5" />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setSelectedMaterialId(material.id)
+                          setConsumeOpen(true)
+                        }}
+                        title="消耗库存"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                )
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest shadow-sm overflow-hidden">
+        <div className="px-6 py-5 border-b border-outline-variant/20 flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-on-surface">批次明细</h2>
+            <p className="text-sm text-on-surface-variant mt-0.5">
+              {selectedMaterial
+                ? `${selectedMaterial.name}${selectedMaterial.spec ? ` / ${selectedMaterial.spec}` : ''} 的真实库存批次`
+                : '选择上方物料后查看批次明细'}
+            </p>
+          </div>
+          {selectedMaterial && (
+            <div className="text-right">
+              <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">当前汇总</p>
+              <p className="text-sm font-semibold text-on-surface">
+                {selectedMaterial.total_quantity} {selectedMaterial.default_unit} / {selectedMaterial.lot_count} 批
+              </p>
+            </div>
+          )}
+        </div>
+
+        <Table>
+          <TableHeader>
+            <TableRow className="border-outline-variant/20">
+              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">库存</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">位置</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">购买日期</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">过期日期</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">备注</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">状态</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant text-right">操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {!selectedMaterial ? (
+              <TableRow>
+                <TableCell colSpan={7} className="h-32 text-center text-on-surface-variant">
+                  请先在上方选择一个物料
+                </TableCell>
+              </TableRow>
+            ) : selectedLots.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="h-32 text-center text-on-surface-variant">
+                  当前筛选条件下没有批次
+                </TableCell>
+              </TableRow>
+            ) : (
+              selectedLots.map((lot) => {
+                const status = getInventoryStatus(lot.expire_at)
+                return (
+                  <TableRow key={lot.id} className="border-outline-variant/10 hover:bg-surface">
+                    <TableCell className="py-5 font-medium">{lot.quantity_on_hand} {lot.unit}</TableCell>
+                    <TableCell className="py-5 text-on-surface-variant">{lot.location || '—'}</TableCell>
+                    <TableCell className="py-5 text-on-surface-variant">
+                      {lot.purchased_at ? formatDate(lot.purchased_at) : '—'}
+                    </TableCell>
+                    <TableCell className="py-5 text-on-surface-variant">
+                      {lot.expire_at ? formatDate(lot.expire_at) : '—'}
+                    </TableCell>
+                    <TableCell className="py-5 text-on-surface-variant">{lot.notes || '—'}</TableCell>
+                    <TableCell className="py-5">
+                      <StatusBadge status={status} />
+                    </TableCell>
+                    <TableCell className="py-5 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => setEditingLot(lot)} title="编辑批次">
+                          <Pencil className="w-4 h-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="w-8 h-8 text-error hover:text-error hover:bg-error-container/20" onClick={() => setDeleteTarget(item)} title="删除">
-                          <Trash2 className="w-3.5 h-3.5" />
+                        <Button variant="outline" size="sm" onClick={() => setAdjustingLot(lot)}>
+                          调整
                         </Button>
                       </div>
                     </TableCell>
@@ -370,36 +409,33 @@ export default function InventoryPage() {
             )}
           </TableBody>
         </Table>
-
-        {/* ── Pagination (inside card) ── */}
-        {filteredItems.length > 0 && (
-          <TablePagination
-            page={page}
-            totalPages={totalPages}
-            totalItems={filteredItems.length}
-            pageSize={PAGE_SIZE}
-            onChange={setPage}
-          />
-        )}
       </div>
 
-      {/* ── Summary cards ── */}
-      <SummaryCards items={items} categories={categories} />
-
-      {/* ── Dialogs ── */}
-      <ItemFormDialog
-        open={formOpen}
-        item={editingItem}
+      <InboundLotDialog
+        open={inboundOpen}
         categories={categories}
-        onClose={() => setFormOpen(false)}
-        onSubmit={handleFormSubmit}
-        onMerge={handleMerge}
+        initialName={selectedMaterial?.name}
+        initialSpec={selectedMaterial?.spec}
+        onClose={() => setInboundOpen(false)}
+        onSubmit={handleInbound}
       />
-      <DeleteConfirmDialog
-        open={deleteTarget !== null}
-        itemName={deleteTarget?.name ?? ''}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDelete}
+      <ConsumeMaterialDialog
+        open={consumeOpen}
+        material={selectedMaterial}
+        onClose={() => setConsumeOpen(false)}
+        onSubmit={handleConsume}
+      />
+      <EditLotDialog
+        open={editingLot !== null}
+        lot={editingLot}
+        onClose={() => setEditingLot(null)}
+        onSubmit={handleUpdateLot}
+      />
+      <AdjustLotDialog
+        open={adjustingLot !== null}
+        lot={adjustingLot}
+        onClose={() => setAdjustingLot(null)}
+        onSubmit={handleAdjustLot}
       />
     </div>
   )

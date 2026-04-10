@@ -72,20 +72,20 @@ func (r *CategoryRepository) Update(category *model.Category) error {
 	return r.db.Save(category).Error
 }
 
-// Delete removes a category when it is no longer referenced by items.
+// Delete removes a category when it is no longer referenced by materials.
 func (r *CategoryRepository) Delete(id string, tenantID string) error {
 	category, err := r.Get(id, tenantID)
 	if err != nil {
 		return err
 	}
 
-	var itemCount int64
-	if err := r.db.Model(&model.Item{}).
+	var materialCount int64
+	if err := r.db.Model(&model.Material{}).
 		Where("tenant_id = ? AND category_id = ?", category.TenantID, category.ID).
-		Count(&itemCount).Error; err != nil {
+		Count(&materialCount).Error; err != nil {
 		return err
 	}
-	if itemCount > 0 {
+	if materialCount > 0 {
 		return ErrCategoryInUse
 	}
 

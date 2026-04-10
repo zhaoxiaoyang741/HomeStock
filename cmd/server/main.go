@@ -47,11 +47,27 @@ func main() {
 
 	auditRepo := repository.NewAuditLogRepository(db)
 	categoryHandler := handler.NewCategoryHandler(repository.NewCategoryRepository(db), auditRepo)
-	itemHandler := handler.NewItemHandler(repository.NewItemRepository(db), auditRepo)
+	materialHandler := handler.NewMaterialHandler(
+		db,
+		repository.NewMaterialRepository(db),
+		repository.NewStockLotRepository(db),
+		repository.NewStockMovementRepository(db),
+		auditRepo,
+	)
+	stockLotHandler := handler.NewStockLotHandler(
+		db,
+		repository.NewStockLotRepository(db),
+		repository.NewMaterialRepository(db),
+		repository.NewStockMovementRepository(db),
+		auditRepo,
+	)
+	stockMovementHandler := handler.NewStockMovementHandler(repository.NewStockMovementRepository(db))
 	auditLogHandler := handler.NewAuditLogHandler(auditRepo)
 	server := httpserver.New(cfg.Server,
 		categoryHandler.RegisterRoutes,
-		itemHandler.RegisterRoutes,
+		materialHandler.RegisterRoutes,
+		stockLotHandler.RegisterRoutes,
+		stockMovementHandler.RegisterRoutes,
 		auditLogHandler.RegisterRoutes,
 	)
 

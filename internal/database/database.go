@@ -26,10 +26,8 @@ func InitBaseData(db *gorm.DB) error {
 		return nil
 	}
 
-	err := db.Create(&defaultCategory).Error
-
-	if err != nil {
-		return fmt.Errorf("Init database base data error %d", err.Error())
+	if err := db.Create(&defaultCategory).Error; err != nil {
+		return fmt.Errorf("init database base data error %s", err.Error())
 	}
 
 	return nil

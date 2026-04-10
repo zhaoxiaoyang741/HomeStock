@@ -45,22 +45,22 @@ export async function removeItem(
       return '❌ 消耗数量必须大于 0。';
     }
 
-    const item = await client.findItemByName(name);
-    if (!item) {
+    const material = await client.findMaterialByName(name);
+    if (!material) {
       return `❓ 未找到「${name}」，请先查询库存确认名称。`;
     }
 
-    const removeQuantity = parsed.quantity ?? item.quantity;
-
-    if (removeQuantity >= item.quantity) {
-      await client.deleteItem(item.id);
-      return `✅ 已从库存中移除 **${item.name}**（${item.location || '未指定位置'}）`;
-    }
-
-    const updated = await client.updateItem(item.id, {
-      quantity: item.quantity - removeQuantity,
+    const quantity = parsed.quantity ?? material.total_quantity;
+    const result = await client.consumeMaterial(material.id, {
+      quantity,
+      reason: 'manual consume',
     });
-    return `✅ 已消耗 **${item.name}** ${removeQuantity}${item.unit}，剩余 ${updated.quantity}${updated.unit}`;
+
+    const lotSummary = result.consumed_lots
+      .map((lot) => `• ${lot.lot_id} 消耗 ${lot.consumed_quantity}${result.unit}，剩余 ${lot.remaining_quantity}${result.unit}`)
+      .join('\n');
+
+    return `✅ 已消耗 **${material.name}** ${quantity}${result.unit}\n${lotSummary}`;
   } catch (err) {
     return `❌ 操作失败：${(err as Error).message}`;
   }

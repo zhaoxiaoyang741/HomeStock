@@ -6,7 +6,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// AuditLog records every create/update/delete operation on items and categories.
+// AuditLog records create/update/delete operations on categories, materials, and stock lots.
 type AuditLog struct {
 	ID            string    `gorm:"primaryKey;type:varchar(36)"                         json:"id"`
 	TenantID      string    `gorm:"index;type:varchar(36);not null;default:'default'"   json:"tenant_id"`

@@ -5,20 +5,40 @@ import { addItem } from '../src/tools/addItem.js';
 import { queryItems } from '../src/tools/queryItems.js';
 import { removeItem } from '../src/tools/removeItem.js';
 import { updateItem } from '../src/tools/updateItem.js';
-import type { Category, InventoryClient, Item } from '../src/utils/apiClient.js';
+import type { Category, InventoryClient, MaterialSummary, StockLot } from '../src/utils/apiClient.js';
 
-function createItem(overrides: Partial<Item> = {}): Item {
+function createMaterial(overrides: Partial<MaterialSummary> = {}): MaterialSummary {
   return {
-    id: 'item-1',
+    id: 'mat-1',
     tenant_id: 'default',
     name: '土豆',
+    spec: '500g',
     category_id: 'cat-1',
     category: { id: 'cat-1', tenant_id: 'default', name: '蔬菜' },
-    quantity: 5,
-    unit: '个',
+    default_unit: '袋',
+    status: 'active',
+    total_quantity: 5,
+    lot_count: 2,
+    nearest_expire_at: '2026-04-30T15:59:59.999Z',
+    locations: ['冰箱'],
+    ...overrides,
+  };
+}
+
+function createLot(overrides: Partial<StockLot> = {}): StockLot {
+  return {
+    id: 'lot-1',
+    tenant_id: 'default',
+    material_id: 'mat-1',
+    material: createMaterial() as unknown as never,
+    quantity_on_hand: 5,
+    unit: '袋',
     location: '冰箱',
     expire_at: '2026-04-30T15:59:59.999Z',
+    purchased_at: '2026-04-10T00:00:00.000Z',
+    received_at: '2026-04-10T00:00:00.000Z',
     notes: '',
+    status: 'active',
     ...overrides,
   };
 }
@@ -30,53 +50,108 @@ function createClient(overrides: Partial<InventoryClient> = {}): InventoryClient
   ];
 
   return {
-    async addItem(params) {
-      return createItem({
-        name: params.name,
-        quantity: params.quantity ?? 1,
-        unit: params.unit ?? '个',
+    async inboundStockLot(params) {
+      return createLot({
+        material: createMaterial({
+          name: params.name ?? '土豆',
+          spec: params.spec ?? '500g',
+          category_id: params.category_id ?? 'cat-1',
+          category: params.category_id ? { id: params.category_id, tenant_id: 'default', name: '蔬菜' } : null,
+          default_unit: params.unit ?? '袋',
+        }) as unknown as never,
+        quantity_on_hand: params.quantity,
+        unit: params.unit ?? '袋',
         location: params.location ?? '',
-        category_id: params.category_id ?? '',
-        category: params.category_id ? { id: params.category_id, tenant_id: 'default', name: '蔬菜' } : null,
         expire_at: params.expire_at ?? null,
         notes: params.notes ?? '',
       });
     },
-    async listItems() {
+    async listMaterials() {
       return {
-        items: [
-          createItem(),
-          createItem({
-            id: 'item-2',
+        materials: [
+          createMaterial(),
+          createMaterial({
+            id: 'mat-2',
             name: '酱油',
+            spec: '500ml',
             category_id: 'cat-2',
             category: { id: 'cat-2', tenant_id: 'default', name: '调料' },
-            quantity: 2,
+            default_unit: '瓶',
+            total_quantity: 2,
+            lot_count: 1,
+            locations: ['厨房'],
+            nearest_expire_at: '2026-04-08T15:59:59.999Z',
+          }),
+        ],
+        total: 2,
+      };
+    },
+    async getMaterial(id) {
+      return createMaterial({ id });
+    },
+    async consumeMaterial(id, params) {
+      return {
+        material: createMaterial({ id, total_quantity: Math.max(0, 5 - params.quantity) }),
+        requested_quantity: params.quantity,
+        unit: '袋',
+        consumed_lots: [
+          {
+            lot_id: 'lot-1',
+            consumed_quantity: params.quantity,
+            remaining_quantity: Math.max(0, 5 - params.quantity),
+            location: '冰箱',
+            expire_at: '2026-04-30T15:59:59.999Z',
+          },
+        ],
+      };
+    },
+    async listStockLots() {
+      return {
+        lots: [
+          createLot(),
+          createLot({
+            id: 'lot-2',
+            material_id: 'mat-2',
+            material: createMaterial({
+              id: 'mat-2',
+              name: '酱油',
+              spec: '500ml',
+              category_id: 'cat-2',
+              category: { id: 'cat-2', tenant_id: 'default', name: '调料' },
+              default_unit: '瓶',
+              total_quantity: 2,
+              lot_count: 1,
+              locations: ['厨房'],
+              nearest_expire_at: '2026-04-08T15:59:59.999Z',
+            }) as unknown as never,
+            quantity_on_hand: 2,
             unit: '瓶',
-            location: '厨柜',
+            location: '厨房',
             expire_at: '2026-04-08T15:59:59.999Z',
           }),
         ],
         total: 2,
       };
     },
-    async searchByKeyword(keyword) {
-      return keyword.includes('土') ? [createItem()] : [];
-    },
-    async updateItem(id, params) {
-      return createItem({
+    async updateStockLot(id, params) {
+      return createLot({
         id,
-        quantity: params.quantity ?? 5,
         expire_at: params.expire_at === undefined ? '2026-04-30T15:59:59.999Z' : params.expire_at || null,
         notes: params.notes ?? '',
         location: params.location ?? '冰箱',
       });
     },
-    async deleteItem() {
-      return undefined;
+    async adjustStockLot(id, params) {
+      return createLot({
+        id,
+        quantity_on_hand: params.target_quantity,
+      });
     },
-    async findItemByName(name) {
-      return name.includes('土豆') ? createItem() : null;
+    async findMaterialByName(name) {
+      return name.includes('土豆') ? createMaterial() : null;
+    },
+    async findLotsByMaterialName(name) {
+      return name.includes('土豆') ? [createLot()] : [];
     },
     async findCategoryByName(name) {
       return categories.find(category => category.name === name) ?? null;
@@ -86,7 +161,6 @@ function createClient(overrides: Partial<InventoryClient> = {}): InventoryClient
       if (existing) {
         return existing;
       }
-
       const created = { id: `cat-${categories.length + 1}`, tenant_id: 'default', name };
       categories.push(created);
       return created;
@@ -104,12 +178,14 @@ test('addItem auto-creates categories and normalizes date input', async () => {
       ensuredCategory = name;
       return { id: 'cat-new', tenant_id: 'default', name };
     },
-    async addItem(params) {
+    async inboundStockLot(params) {
       recordedExpireAt = params.expire_at ?? '';
-      return createItem({
-        name: params.name,
-        category_id: params.category_id ?? '',
-        category: { id: params.category_id ?? 'cat-new', tenant_id: 'default', name: '调料' },
+      return createLot({
+        material: createMaterial({
+          name: params.name ?? '酱油',
+          category_id: params.category_id ?? 'cat-new',
+          category: { id: params.category_id ?? 'cat-new', tenant_id: 'default', name: '调料' },
+        }) as unknown as never,
         expire_at: params.expire_at ?? null,
       });
     },
@@ -122,67 +198,46 @@ test('addItem auto-creates categories and normalizes date input', async () => {
 
   assert.equal(ensuredCategory, '调料');
   assert.match(recordedExpireAt, /^2026-04-30T/);
-  assert.match(result, /分类：调料/);
+  assert.match(result, /已入库/);
 });
 
-test('addItem accepts model-shaped arguments with quantity strings and expiry_date alias', async () => {
-  let payload: Record<string, unknown> | undefined;
-  const client = createClient({
-    async addItem(params) {
-      payload = params as unknown as Record<string, unknown>;
-      return createItem({
-        name: params.name,
-        quantity: params.quantity ?? 1,
-        unit: params.unit ?? '个',
-        location: params.location ?? '',
-        expire_at: params.expire_at ?? null,
-        category: { id: 'cat-3', tenant_id: 'default', name: '食材' },
-      });
-    },
-    async ensureCategoryByName(name) {
-      return { id: 'cat-3', tenant_id: 'default', name };
-    },
-  });
-
-  const result = await addItem(
-    {
-      name: '草莓',
-      quantity: '5个',
-      location: '冰箱',
-      expiry_date: '2026-04-30',
-      category: '食材',
-    },
-    client
-  );
-
-  assert.equal(payload?.quantity, 5);
-  assert.match(String(payload?.expire_at), /^2026-04-30T/);
-  assert.match(result, /已添加/);
-});
-
-test('queryItems filters by category, keyword, and expiring soon locally', async () => {
+test('queryItems returns expiring lots when requested', async () => {
   const client = createClient();
   const result = await queryItems(
     { category: '调料', keyword: '酱', expiring_soon: true },
     client
   );
 
+  assert.match(result, /临期批次/);
   assert.match(result, /酱油/);
-  assert.doesNotMatch(result, /土豆/);
 });
 
-test('removeItem updates quantity for partial consumption', async () => {
-  let updatedQuantity = 0;
+test('removeItem consumes material inventory', async () => {
+  let consumedQuantity = 0;
   const client = createClient({
-    async updateItem(id, params) {
-      updatedQuantity = params.quantity ?? 0;
-      return createItem({ id, quantity: updatedQuantity });
+    async consumeMaterial(id, params) {
+      consumedQuantity = params.quantity;
+      return {
+        material: createMaterial({ id }),
+        requested_quantity: params.quantity,
+        unit: '袋',
+        consumed_lots: [
+          {
+            lot_id: 'lot-1',
+            consumed_quantity: params.quantity,
+            remaining_quantity: 3,
+            location: '冰箱',
+            expire_at: '2026-04-30T15:59:59.999Z',
+          },
+        ],
+      };
     },
   });
 
   const result = await removeItem({ name: '土豆', quantity: 2 }, client);
-  assert.equal(updatedQuantity, 3);
-  assert.match(result, /剩余 3个/);
+  assert.equal(consumedQuantity, 2);
+  assert.match(result, /已消耗/);
+  assert.match(result, /lot-1/);
 });
 
 test('updateItem rejects empty updates', async () => {
@@ -191,25 +246,29 @@ test('updateItem rejects empty updates', async () => {
   assert.match(result, /至少提供一个要更新的字段/);
 });
 
-test('updateItem clears fields when empty strings are provided', async () => {
+test('updateItem adjusts quantity through adjustStockLot', async () => {
+  let targetQuantity = -1;
   const client = createClient({
-    async updateItem(id, params) {
-      return createItem({
-        id,
-        quantity: params.quantity ?? 5,
-        expire_at: params.expire_at === '' ? null : params.expire_at ?? null,
-        notes: params.notes ?? '',
-        location: params.location ?? '',
-      });
+    async adjustStockLot(id, params) {
+      targetQuantity = params.target_quantity;
+      return createLot({ id, quantity_on_hand: params.target_quantity });
     },
   });
 
-  const result = await updateItem(
-    { name: '土豆', expire_at: '', notes: '', location: '' },
-    client
-  );
+  const result = await updateItem({ name: '土豆', quantity: 9 }, client);
+  assert.equal(targetQuantity, 9);
+  assert.match(result, /已调整/);
+});
 
-  assert.match(result, /过期日期：已清空/);
-  assert.match(result, /备注：已清空/);
-  assert.match(result, /位置：已清空/);
+test('updateItem prompts when multiple lots exist', async () => {
+  const client = createClient({
+    async findLotsByMaterialName(name) {
+      return name.includes('土豆')
+        ? [createLot({ id: 'lot-1' }), createLot({ id: 'lot-2', quantity_on_hand: 2 })]
+        : [];
+    },
+  });
+
+  const result = await updateItem({ name: '土豆', location: '厨房' }, client);
+  assert.match(result, /存在多个批次/);
 });
