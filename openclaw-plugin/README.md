@@ -1,13 +1,18 @@
 # Home Inventory OpenClaw Plugin
 
-家用物料管理插件，基于 OpenClaw 工具插件规范实现。支持通过自然语言和 slash command 管理食材、日用品库存。
+家庭物料管理插件，基于 OpenClaw 工具插件规范实现。插件已切换到 HomeStock 当前的三表库存模型：
+
+- `materials`：物料主数据
+- `stock_lots`：真实库存批次
+- `stock_movements`：库存流水
 
 ## 功能
 
-- `add_item`：添加物料，支持位置、分类、过期日期、备注。
-- `remove_item`：消耗部分数量或整条删除库存。
-- `query_items`：按位置、分类、关键字、临期状态查询库存。
-- `update_item`：更新数量、过期时间、备注或位置。
+- `inbound_stock`：新增一条入库批次，支持位置、分类、过期日期、备注。
+- `consume_material`：按物料消耗库存，后端自动按批次扣减。
+- `query_inventory`：按位置、分类、关键字、临期状态查询库存。
+- `update_stock_lot`：更新单个批次的库存、过期时间、备注或位置。
+- `check_homestock_service`：检查当前配置的 HomeStock 后端是否可用。
 
 ## 安装
 
@@ -33,7 +38,7 @@ openclaw skills list
 2. 环境变量 `INVENTORY_API_URL`
 3. 默认值 `http://localhost:8888`
 
-示例：
+### 基础配置示例
 
 ```json
 {
@@ -50,50 +55,78 @@ openclaw skills list
 }
 ```
 
+### tools.alsoAllow 配置示例
+
+如果宿主启用了 `tools.alsoAllow` 白名单，需要把本插件的工具名一并加入，否则插件安装成功后，宿主仍可能无法调用这些工具。
+
+```json
+{
+  "tools": {
+    "profile": "messaging",
+    "alsoAllow": [
+      "inbound_stock",
+      "consume_material",
+      "query_inventory",
+      "update_stock_lot",
+      "check_homestock_service"
+    ]
+  }
+}
+```
+
+若你本身还启用了飞书等其他工具，请把上面 5 个工具追加到原有 `alsoAllow` 数组里，不要覆盖掉已有内容。
+
 ## 使用示例
 
 自然语言：
 
-- “帮我添加 5 个土豆放冰箱，2026-04-30 过期”
+- “帮我入库 5 个土豆放冰箱，2026-04-30 过期”
 - “冰箱里还有什么调料”
-- “把土豆改成 3 个”
-- “土豆吃完了”
+- “把土豆改成 3 袋”
+- “牛奶喝完了”
+- “帮我确认目前 HomeStock 服务是否正常”
 
 Slash command：
 
 ```bash
-/add_item 土豆 5个 冰箱
-/remove_item 土豆 2
-/query_items 冰箱 调料
-/update_item 牛奶 2026-05-01
+/inbound_stock 土豆 5个 冰箱
+/consume_material 土豆 2
+/query_inventory 冰箱 调料
+/update_stock_lot 牛奶 2026-05-01
+/check_homestock_service
 ```
-
-## 推荐模型
-
-根据 OpenClaw 官方测试文档，做自然语言 tool calling 联调时，优先使用官方列为 baseline 的模型：
-
-- `openai/gpt-5.4`
-- `anthropic/claude-opus-4-6`
-- `google/gemini-3-flash-preview`
-- `zai/glm-4.7`
-- `minimax/MiniMax-M2.7`
-
-参考文档：
-
-- `https://docs.openclaw.ai/help/testing`
-- `https://docs.openclaw.ai/models`
-- `https://docs.openclaw.ai/providers`
-
-如果当前环境只能使用 `kimi/kimi-code` 或 `moonshot/kimi-k2.5`，建议优先验证 slash command 路径，例如 `/add_item 土豆 5个 冰箱`。在部分模型或 provider 接法下，自然语言可能会把 tool call 标记直接输出为文本，而不是由宿主真正执行工具。
 
 ## 调试
 
 ```bash
-openclaw tools call add_item '{"name":"土豆","quantity":5,"location":"冰箱","expire_at":"2026-04-30"}'
-openclaw tools call query_items '{"keyword":"土","expiring_soon":true}'
-openclaw tools call update_item '{"name":"土豆","quantity":3}'
-openclaw tools call remove_item '{"name":"土豆","quantity":1}'
+openclaw tools call inbound_stock '{"name":"土豆","quantity":5,"location":"冰箱","expire_at":"2026-04-30"}'
+openclaw tools call query_inventory '{"keyword":"土豆","expiring_soon":true}'
+openclaw tools call update_stock_lot '{"name":"土豆","quantity":3}'
+openclaw tools call consume_material '{"name":"土豆","quantity":1}'
+openclaw tools call check_homestock_service '{}'
 ```
+
+## 后端接口映射
+
+插件当前基于以下接口：
+
+- `GET /api/v1/health`
+- `GET /api/v1/materials`
+- `GET /api/v1/materials/:id`
+- `POST /api/v1/materials/:id/consume`
+- `GET /api/v1/stock-lots`
+- `POST /api/v1/stock-lots/inbound`
+- `PUT /api/v1/stock-lots/:id`
+- `POST /api/v1/stock-lots/:id/adjust`
+- `GET /api/v1/categories`
+- `POST /api/v1/categories`
+
+## 已知限制
+
+- 插件的日期输入仍使用 `YYYY-MM-DD`，再由插件转换成 RFC3339 发送给后端。
+- `update_stock_lot` 只会修改单个批次；若同一物料存在多个批次，用户需要先在 Web 中明确批次。
+- `consume_material` 是按物料消耗，最终扣减到哪些批次由后端自动决定。
+- 自然语言调用稳定性仍依赖宿主模型和 provider；若出现 tool call 标记直接回显，通常是宿主没有成功走结构化工具调用链路。
 
 ## 构建、测试、打包
 
@@ -104,19 +137,3 @@ npm pack
 ```
 
 远程部署脚本保留在 [scripts/deploy-plugin.ps1](/e:/pro-tmp/agent/openclaw-plugin/scripts/deploy-plugin.ps1)。
-
-## 已知限制
-
-- 后端默认监听端口已切到 `8888`；若未显式配置，插件默认连 `http://localhost:8888`。
-- 后端 `expire_at` 仅接受 RFC3339；插件已把 `YYYY-MM-DD` 自动转换。
-- 后端 `/api/v1/items` 目前只原生支持 `location` 和 `category_id` 过滤；`keyword` 与 `expiring_soon` 由插件本地过滤。
-- 查询时的分类名需要插件先解析成 `category_id`。
-- 当前未写入 `compat/build` 版本块，避免在未核实宿主 OpenClaw 版本前声明错误兼容范围。
-- 自然语言工具调用的稳定性强依赖宿主模型与 provider；如果出现 `<|tool_call_begin|>` 一类标记被直接回显，通常说明模型没有成功走结构化 tool calling 链路。
-
-## 后端 TODO
-
-- 原生支持 `keyword` 查询。
-- 原生支持 `expiring_soon` 查询。
-- 原生支持按分类名查询，或提供分类名解析接口。
-- 可选支持直接接收 `YYYY-MM-DD` 日期输入。

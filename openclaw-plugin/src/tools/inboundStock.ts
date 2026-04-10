@@ -9,7 +9,7 @@ import {
   parseSlashCommandArgs,
 } from '../utils/runtime.js';
 
-export interface AddItemParams {
+export interface InboundStockParams {
   name: string;
   quantity?: number;
   unit?: string;
@@ -23,7 +23,7 @@ export interface AddItemParams {
 const KNOWN_LOCATIONS = ['冰箱', '冷冻层', '冷藏室', '厨房', '储物间', '浴室', '阳台'];
 const KNOWN_CATEGORIES = ['蔬菜', '水果', '肉类', '海鲜', '调料', '零食', '饮料', '日用品'];
 
-export function parseAddItemParams(input: AddItemParams | unknown): AddItemParams {
+export function parseInboundStockParams(input: InboundStockParams | unknown): InboundStockParams {
   if (!isRawCommandEnvelope(input)) {
     const record = (input ?? {}) as Record<string, unknown>;
     return {
@@ -42,7 +42,7 @@ export function parseAddItemParams(input: AddItemParams | unknown): AddItemParam
   }
 
   const tokens = parseSlashCommandArgs(input.command ?? '');
-  const result: AddItemParams = { name: '' };
+  const result: InboundStockParams = { name: '' };
 
   for (const token of tokens) {
     const quantityMatch = token.match(/^(\d+(?:\.\d+)?)([\u4e00-\u9fa5a-zA-Z]+)?$/);
@@ -54,12 +54,12 @@ export function parseAddItemParams(input: AddItemParams | unknown): AddItemParam
       continue;
     }
 
-    if (!result.location && KNOWN_LOCATIONS.some(location => token.includes(location))) {
+    if (!result.location && KNOWN_LOCATIONS.some((location) => token.includes(location))) {
       result.location = token;
       continue;
     }
 
-    if (!result.category && KNOWN_CATEGORIES.some(category => token.includes(category))) {
+    if (!result.category && KNOWN_CATEGORIES.some((category) => token.includes(category))) {
       result.category = token;
       continue;
     }
@@ -82,7 +82,7 @@ export function parseAddItemParams(input: AddItemParams | unknown): AddItemParam
 
 function buildSuccessMessage(lot: StockLot): string {
   const material = lot.material;
-  let response = `✅ 已入库 **${material?.name ?? '物料'}** ${lot.quantity_on_hand}${lot.unit}`;
+  let response = `已入库 **${material?.name ?? '物料'}** ${lot.quantity_on_hand}${lot.unit}`;
   if (material?.spec) {
     response += ` / ${material.spec}`;
   }
@@ -91,23 +91,27 @@ function buildSuccessMessage(lot: StockLot): string {
   }
   if (lot.expire_at) {
     const daysLeft = daysUntilExpiry(lot.expire_at);
-    response += `\n📅 过期日期：${formatLocalDate(lot.expire_at)}（还剩 ${daysLeft} 天）`;
+    response += `\n过期日期：${formatLocalDate(lot.expire_at)}（还剩 ${daysLeft} 天）`;
   }
   if (lot.notes) {
-    response += `\n📝 备注：${lot.notes}`;
+    response += `\n备注：${lot.notes}`;
   }
+  response += '\n系统已按物料归类，并新增一个独立批次。';
   return response;
 }
 
-export async function addItem(params: AddItemParams | unknown, client: InventoryClient): Promise<string> {
+export async function inboundStock(
+  params: InboundStockParams | unknown,
+  client: InventoryClient,
+): Promise<string> {
   try {
-    const parsed = parseAddItemParams(params);
+    const parsed = parseInboundStockParams(params);
     const name = parsed.name?.trim();
     if (!name) {
-      return '❌ 缺少物料名称。';
+      return '缺少物料名称。';
     }
     if (parsed.quantity !== undefined && parsed.quantity <= 0) {
-      return '❌ 数量必须大于 0。';
+      return '数量必须大于 0。';
     }
 
     const category = parsed.category?.trim();
@@ -127,6 +131,6 @@ export async function addItem(params: AddItemParams | unknown, client: Inventory
 
     return buildSuccessMessage(lot);
   } catch (err) {
-    return `❌ 入库失败：${(err as Error).message}`;
+    return `入库失败：${(err as Error).message}`;
   }
 }

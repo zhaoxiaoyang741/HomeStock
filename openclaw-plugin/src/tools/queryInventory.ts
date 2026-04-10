@@ -7,7 +7,7 @@ import {
   parseSlashCommandArgs,
 } from '../utils/runtime.js';
 
-export interface QueryItemsParams {
+export interface QueryInventoryParams {
   location?: string;
   category?: string;
   expiring_soon?: boolean;
@@ -16,7 +16,7 @@ export interface QueryItemsParams {
 
 const EXPIRING_KEYWORDS = new Set(['expiring', '快过期', '即将过期', '过期', '临期']);
 
-export function parseQueryItemsParams(input: QueryItemsParams | unknown): QueryItemsParams {
+export function parseQueryInventoryParams(input: QueryInventoryParams | unknown): QueryInventoryParams {
   if (!isRawCommandEnvelope(input)) {
     const record = (input ?? {}) as Record<string, unknown>;
     return {
@@ -31,7 +31,7 @@ export function parseQueryItemsParams(input: QueryItemsParams | unknown): QueryI
   }
 
   const tokens = parseSlashCommandArgs(input.command ?? '');
-  const result: QueryItemsParams = {};
+  const result: QueryInventoryParams = {};
 
   for (const token of tokens) {
     if (EXPIRING_KEYWORDS.has(token)) {
@@ -56,10 +56,11 @@ export function parseQueryItemsParams(input: QueryItemsParams | unknown): QueryI
 
 function filterMaterialByKeyword(materials: MaterialSummary[], keyword?: string): MaterialSummary[] {
   const query = keyword?.trim().toLowerCase();
-  if (!query) return materials;
-  return materials.filter((material) =>
-    `${material.name} ${material.spec}`.toLowerCase().includes(query)
-  );
+  if (!query) {
+    return materials;
+  }
+
+  return materials.filter((material) => `${material.name} ${material.spec}`.toLowerCase().includes(query));
 }
 
 function buildMaterialLine(material: MaterialSummary): string {
@@ -73,7 +74,7 @@ function buildMaterialLine(material: MaterialSummary): string {
   }
   if (material.nearest_expire_at) {
     const daysLeft = daysUntilExpiry(material.nearest_expire_at);
-    line += ` 📅 最近到期：${formatLocalDate(material.nearest_expire_at)}（${daysLeft}天）`;
+    line += ` 最近到期：${formatLocalDate(material.nearest_expire_at)}（${daysLeft}天）`;
   }
   return line;
 }
@@ -89,25 +90,35 @@ function buildLotLine(lot: StockLot): string {
   if (lot.expire_at) {
     const daysLeft = daysUntilExpiry(lot.expire_at);
     if (daysLeft <= 0) {
-      line += ` 🔴已过期（${formatLocalDate(lot.expire_at)}）`;
+      line += ` 已过期（${formatLocalDate(lot.expire_at)}）`;
     } else {
-      line += ` 🟡${formatLocalDate(lot.expire_at)}到期，还剩${daysLeft}天`;
+      line += ` ${formatLocalDate(lot.expire_at)}到期，还剩${daysLeft}天`;
     }
   }
   return line;
 }
 
-export async function queryItems(
-  params: QueryItemsParams | unknown,
-  client: InventoryClient
+async function explainServiceState(client: InventoryClient, queryError: unknown): Promise<string> {
+  const health = await client.checkHealth();
+
+  if (health.ok) {
+    return `HomeStock 服务在线（${health.baseUrl}），但库存查询失败：${(queryError as Error).message}`;
+  }
+
+  return `HomeStock 服务当前不可用（${health.baseUrl}）。健康检查失败：${health.error ?? '未知错误'}。库存查询未执行成功。`;
+}
+
+export async function queryInventory(
+  params: QueryInventoryParams | unknown,
+  client: InventoryClient,
 ): Promise<string> {
   try {
-    const parsed = parseQueryItemsParams(params);
+    const parsed = parseQueryInventoryParams(params);
     const categoryName = parsed.category?.trim();
     const category = categoryName ? await client.findCategoryByName(categoryName) : null;
 
     if (categoryName && !category) {
-      return `📭 当前没有找到分类「${categoryName}」的库存记录。`;
+      return `当前没有找到分类“${categoryName}”的库存记录。`;
     }
 
     if (parsed.expiring_soon) {
@@ -119,10 +130,10 @@ export async function queryItems(
       });
 
       if (lots.length === 0) {
-        return '📭 当前没有临期批次。';
+        return '当前没有临期批次。';
       }
 
-      return `📋 临期批次（共 ${lots.length} 条）\n${lots.map(buildLotLine).join('\n')}`;
+      return `临期批次（共 ${lots.length} 条）\n${lots.map(buildLotLine).join('\n')}`;
     }
 
     const { materials } = await client.listMaterials({
@@ -137,11 +148,11 @@ export async function queryItems(
     }
 
     if (filtered.length === 0) {
-      return '📭 当前条件下没有匹配的库存记录。';
+      return '当前条件下没有匹配的库存记录。';
     }
 
-    return `📋 物料汇总（共 ${filtered.length} 项）\n${filtered.map(buildMaterialLine).join('\n')}`;
+    return `物料汇总（共 ${filtered.length} 项）\n${filtered.map(buildMaterialLine).join('\n')}`;
   } catch (err) {
-    return `❌ 查询失败：${(err as Error).message}`;
+    return explainServiceState(client, err);
   }
 }

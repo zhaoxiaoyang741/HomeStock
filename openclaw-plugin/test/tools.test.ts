@@ -1,11 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { addItem } from '../src/tools/addItem.js';
-import { queryItems } from '../src/tools/queryItems.js';
-import { removeItem } from '../src/tools/removeItem.js';
-import { updateItem } from '../src/tools/updateItem.js';
-import type { Category, InventoryClient, MaterialSummary, StockLot } from '../src/utils/apiClient.js';
+import { checkHomeStockService } from '../src/tools/checkHomeStockService.js';
+import { consumeMaterial } from '../src/tools/consumeMaterial.js';
+import { inboundStock } from '../src/tools/inboundStock.js';
+import { queryInventory } from '../src/tools/queryInventory.js';
+import { updateStockLot } from '../src/tools/updateStockLot.js';
+import type {
+  Category,
+  HealthCheckResult,
+  InventoryClient,
+  MaterialSummary,
+  StockLot,
+} from '../src/utils/apiClient.js';
 
 function createMaterial(overrides: Partial<MaterialSummary> = {}): MaterialSummary {
   return {
@@ -39,6 +46,15 @@ function createLot(overrides: Partial<StockLot> = {}): StockLot {
     received_at: '2026-04-10T00:00:00.000Z',
     notes: '',
     status: 'active',
+    ...overrides,
+  };
+}
+
+function createHealthCheckResult(overrides: Partial<HealthCheckResult> = {}): HealthCheckResult {
+  return {
+    ok: true,
+    baseUrl: 'http://inventory.example',
+    status: 'ok',
     ...overrides,
   };
 }
@@ -154,10 +170,10 @@ function createClient(overrides: Partial<InventoryClient> = {}): InventoryClient
       return name.includes('土豆') ? [createLot()] : [];
     },
     async findCategoryByName(name) {
-      return categories.find(category => category.name === name) ?? null;
+      return categories.find((category) => category.name === name) ?? null;
     },
     async ensureCategoryByName(name) {
-      const existing = categories.find(category => category.name === name);
+      const existing = categories.find((category) => category.name === name);
       if (existing) {
         return existing;
       }
@@ -165,11 +181,14 @@ function createClient(overrides: Partial<InventoryClient> = {}): InventoryClient
       categories.push(created);
       return created;
     },
+    async checkHealth() {
+      return createHealthCheckResult();
+    },
     ...overrides,
   };
 }
 
-test('addItem auto-creates categories and normalizes date input', async () => {
+test('inboundStock auto-creates categories and normalizes date input', async () => {
   let ensuredCategory = '';
   let recordedExpireAt = '';
 
@@ -191,28 +210,45 @@ test('addItem auto-creates categories and normalizes date input', async () => {
     },
   });
 
-  const result = await addItem(
+  const result = await inboundStock(
     { name: '酱油', category: '调料', expire_at: '2026-04-30' },
-    client
+    client,
   );
 
   assert.equal(ensuredCategory, '调料');
   assert.match(recordedExpireAt, /^2026-04-30T/);
   assert.match(result, /已入库/);
+  assert.doesNotMatch(result, /force_create|merge_with_id|相似物料/);
 });
 
-test('queryItems returns expiring lots when requested', async () => {
+test('queryInventory returns expiring lots when requested', async () => {
   const client = createClient();
-  const result = await queryItems(
+  const result = await queryInventory(
     { category: '调料', keyword: '酱', expiring_soon: true },
-    client
+    client,
   );
 
   assert.match(result, /临期批次/);
   assert.match(result, /酱油/);
 });
 
-test('removeItem consumes material inventory', async () => {
+test('queryInventory falls back to health check when inventory query fails', async () => {
+  const client = createClient({
+    async listMaterials() {
+      throw new Error('inventory query failed');
+    },
+    async checkHealth() {
+      return createHealthCheckResult({ ok: true, baseUrl: 'http://192.168.18.13:8888' });
+    },
+  });
+
+  const result = await queryInventory({ location: '冰箱' }, client);
+
+  assert.match(result, /HomeStock 服务在线/);
+  assert.match(result, /192\.168\.18\.13:8888/);
+});
+
+test('consumeMaterial consumes material inventory', async () => {
   let consumedQuantity = 0;
   const client = createClient({
     async consumeMaterial(id, params) {
@@ -234,19 +270,19 @@ test('removeItem consumes material inventory', async () => {
     },
   });
 
-  const result = await removeItem({ name: '土豆', quantity: 2 }, client);
+  const result = await consumeMaterial({ name: '土豆', quantity: 2 }, client);
   assert.equal(consumedQuantity, 2);
   assert.match(result, /已消耗/);
-  assert.match(result, /lot-1/);
+  assert.match(result, /按批次自动扣减/);
 });
 
-test('updateItem rejects empty updates', async () => {
+test('updateStockLot rejects empty updates', async () => {
   const client = createClient();
-  const result = await updateItem({ name: '土豆' }, client);
+  const result = await updateStockLot({ name: '土豆' }, client);
   assert.match(result, /至少提供一个要更新的字段/);
 });
 
-test('updateItem adjusts quantity through adjustStockLot', async () => {
+test('updateStockLot adjusts quantity through adjustStockLot', async () => {
   let targetQuantity = -1;
   const client = createClient({
     async adjustStockLot(id, params) {
@@ -255,20 +291,33 @@ test('updateItem adjusts quantity through adjustStockLot', async () => {
     },
   });
 
-  const result = await updateItem({ name: '土豆', quantity: 9 }, client);
+  const result = await updateStockLot({ name: '土豆', quantity: 9 }, client);
   assert.equal(targetQuantity, 9);
-  assert.match(result, /已调整/);
+  assert.match(result, /已调整批次/);
 });
 
-test('updateItem prompts when multiple lots exist', async () => {
+test('updateStockLot prompts when multiple lots exist', async () => {
   const client = createClient({
     async findLotsByMaterialName(name) {
       return name.includes('土豆')
-        ? [createLot({ id: 'lot-1' }), createLot({ id: 'lot-2', quantity_on_hand: 2 })]
+        ? [createLot({ id: 'lot-1' }), createLot({ id: 'lot-2', quantity_on_hand: 2, location: '厨房' })]
         : [];
     },
   });
 
-  const result = await updateItem({ name: '土豆', location: '厨房' }, client);
+  const result = await updateStockLot({ name: '土豆', location: '厨房' }, client);
   assert.match(result, /存在多个批次/);
+  assert.match(result, /请先在 Web 中选择具体批次/);
+});
+
+test('checkHomeStockService reports configured backend availability', async () => {
+  const client = createClient({
+    async checkHealth() {
+      return createHealthCheckResult({ ok: false, baseUrl: 'http://192.168.18.13:8888', error: 'connect timeout' });
+    },
+  });
+
+  const result = await checkHomeStockService(client);
+  assert.match(result, /HomeStock 服务不可用/);
+  assert.match(result, /192\.168\.18\.13:8888/);
 });

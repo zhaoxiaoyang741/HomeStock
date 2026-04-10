@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosError, AxiosInstance } from 'axios';
 
 export interface Category {
   id: string;
@@ -89,6 +89,17 @@ export interface AdjustStockLotPayload {
   remark?: string;
 }
 
+export interface HealthCheckResponse {
+  status: string;
+}
+
+export interface HealthCheckResult {
+  ok: boolean;
+  baseUrl: string;
+  status?: string;
+  error?: string;
+}
+
 export interface UserHeaders {
   userName?: string;
   userID?: string;
@@ -114,6 +125,7 @@ export interface InventoryClient {
   findLotsByMaterialName(name: string): Promise<StockLot[]>;
   findCategoryByName(name: string): Promise<Category | null>;
   ensureCategoryByName(name: string): Promise<Category>;
+  checkHealth(): Promise<HealthCheckResult>;
 }
 
 function normalizedText(value: string | null | undefined): string {
@@ -136,12 +148,34 @@ function sortMatchScore(target: string, candidate: string): number {
   return Number.MAX_SAFE_INTEGER;
 }
 
+function formatAxiosError(err: unknown): string {
+  if (!axios.isAxiosError(err)) {
+    return err instanceof Error ? err.message : String(err);
+  }
+
+  const responseMessage =
+    typeof err.response?.data === 'object' &&
+    err.response?.data !== null &&
+    'error' in err.response.data &&
+    typeof (err.response.data as { error?: unknown }).error === 'string'
+      ? (err.response.data as { error: string }).error
+      : undefined;
+
+  if (responseMessage) {
+    return responseMessage;
+  }
+
+  return err.message;
+}
+
 export class InventoryAPIClient implements InventoryClient {
   private client: AxiosInstance;
+  private readonly baseURL: string;
 
   constructor(baseURL: string, tenantID: string = 'default', userHeaders: UserHeaders = {}) {
+    this.baseURL = baseURL.replace(/\/+$/, '');
     this.client = axios.create({
-      baseURL,
+      baseURL: this.baseURL,
       headers: {
         'Content-Type': 'application/json',
         'X-Tenant-ID': tenantID,
@@ -276,5 +310,22 @@ export class InventoryAPIClient implements InventoryClient {
     }
     const { lots } = await this.listStockLots({ material_id: material.id });
     return lots;
+  }
+
+  async checkHealth(): Promise<HealthCheckResult> {
+    try {
+      const { data } = await this.client.get<HealthCheckResponse>('/api/v1/health');
+      return {
+        ok: data.status === 'ok',
+        baseUrl: this.baseURL,
+        status: data.status,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        baseUrl: this.baseURL,
+        error: formatAxiosError(err),
+      };
+    }
   }
 }
