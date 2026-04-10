@@ -1,5 +1,9 @@
 # 飞书 → OpenClaw → HomeStock 集成方案
 
+## 文档索引
+
+- [后端分层重构规划](./backend-layering-refactor-plan.md)
+
 ## 概述
 
 通过飞书向 OpenClaw AI Agent 发送自然语言指令，OpenClaw 理解意图后调用 HomeStock 插件，插件调用后端 REST API 完成物料增删查操作，结果通过飞书回复给用户。
