@@ -203,7 +203,7 @@ func newTestServer(t *testing.T) (*httpserver.Server, func()) {
 	auditRepo := gormrepo.NewAuditLogRepository(db)
 	categoryHandler := NewCategoryHandler(gormrepo.NewCategoryRepository(db), auditRepo)
 	materialSvc := service.NewMaterialService(db, gormrepo.NewMaterialRepository(db), auditRepo)
-	inventorySvc := service.NewInventoryService(db, gormrepo.NewMaterialRepository(db), gormrepo.NewStockLotRepository(db), gormrepo.NewStockMovementRepository(db), auditRepo)
+	inventorySvc := service.NewInventoryService(gormrepo.NewUnitOfWork(db))
 	materialHandler := NewMaterialHandler(materialSvc, inventorySvc)
 	stockLotHandler := NewStockLotHandler(inventorySvc)
 	stockMovementHandler := NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
@@ -233,6 +233,8 @@ func performJSONRequest(
 	if err := json.Unmarshal(rec.Body.Bytes(), &decoded); err != nil { t.Fatalf("json.Unmarshal() error = %v, body = %q", err, rec.Body.String()) }
 	return decoded
 }
+
+
 
 
 

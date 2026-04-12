@@ -1,7 +1,9 @@
 ﻿package repository
 
 import (
+	"context"
 	"time"
+
 	"github.com/zhaoxiaoyang741/HomeStock/internal/model"
 )
 
@@ -51,20 +53,20 @@ type MaterialFilter struct {
 }
 
 type MaterialSummary struct {
-	ID              string           `json:"id"`
-	TenantID        string           `json:"tenant_id"`
-	Name            string           `json:"name"`
-	Spec            string           `json:"spec"`
-	CategoryID      string           `json:"category_id"`
-	Category        *model.Category  `json:"category"`
-	DefaultUnit     string           `json:"default_unit"`
-	Status          string           `json:"status"`
-	TotalQuantity   float64          `json:"total_quantity"`
-	LotCount        int64            `json:"lot_count"`
-	NearestExpireAt *time.Time       `json:"nearest_expire_at"`
-	Locations       []string         `json:"locations"`
-	CreatedAt       time.Time        `json:"created_at"`
-	UpdatedAt       time.Time        `json:"updated_at"`
+	ID              string          `json:"id"`
+	TenantID        string          `json:"tenant_id"`
+	Name            string          `json:"name"`
+	Spec            string          `json:"spec"`
+	CategoryID      string          `json:"category_id"`
+	Category        *model.Category `json:"category"`
+	DefaultUnit     string          `json:"default_unit"`
+	Status          string          `json:"status"`
+	TotalQuantity   float64         `json:"total_quantity"`
+	LotCount        int64           `json:"lot_count"`
+	NearestExpireAt *time.Time      `json:"nearest_expire_at"`
+	Locations       []string        `json:"locations"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
 }
 
 type MaterialDetail struct {
@@ -106,4 +108,18 @@ type AuditLogPage struct {
 	Total    int64            `json:"total"`
 	Page     int              `json:"page"`
 	PageSize int              `json:"page_size"`
+}
+
+// Repos groups repository interfaces for a storage backend.
+type Repos interface {
+	Materials() MaterialRepo
+	StockLots() StockLotRepo
+	StockMovements() StockMovementRepo
+	AuditLogs() AuditLogRepo
+}
+
+// UnitOfWork provides access to repositories and transactional execution.
+type UnitOfWork interface {
+	Repos() Repos
+	WithTx(ctx context.Context, fn func(r Repos) error) error
 }

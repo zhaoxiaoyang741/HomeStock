@@ -1,4 +1,4 @@
-package app
+﻿package app
 
 import (
 	"context"
@@ -29,12 +29,10 @@ func New(cfg *config.Config) (*App, error) {
 	auditRepo := gormrepo.NewAuditLogRepository(db)
 	categoryRepo := gormrepo.NewCategoryRepository(db)
 	materialRepo := gormrepo.NewMaterialRepository(db)
-	lotRepo := gormrepo.NewStockLotRepository(db)
-	moveRepo := gormrepo.NewStockMovementRepository(db)
 
 	// Services
 	materialSvc := service.NewMaterialService(db, materialRepo, auditRepo)
-	inventorySvc := service.NewInventoryService(db, materialRepo, lotRepo, moveRepo, auditRepo)
+	inventorySvc := service.NewInventoryService(gormrepo.NewUnitOfWork(db))
 
 	// Handlers
 	categoryHandler := handler.NewCategoryHandler(categoryRepo, auditRepo)
@@ -57,3 +55,5 @@ func New(cfg *config.Config) (*App, error) {
 func (a *App) Start() error { return a.server.Start() }
 func (a *App) Shutdown(ctx context.Context) error { return a.server.Shutdown(ctx) }
 func (a *App) Close() error { if a == nil || a.sqlDB == nil { return nil }; return a.sqlDB.Close() }
+
+

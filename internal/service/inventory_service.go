@@ -5,24 +5,16 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
-
-	"github.com/zhaoxiaoyang741/HomeStock/internal/database"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/model"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
-	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
 )
 
 type InventoryService struct {
-	db        *gorm.DB
-	materials repository.MaterialRepo
-	lots      repository.StockLotRepo
-	moves     repository.StockMovementRepo
-	audit     repository.AuditLogRepo
+	uow repository.UnitOfWork
 }
 
-func NewInventoryService(db *gorm.DB, materials repository.MaterialRepo, lots repository.StockLotRepo, moves repository.StockMovementRepo, audit repository.AuditLogRepo) *InventoryService {
-	return &InventoryService{db: db, materials: materials, lots: lots, moves: moves, audit: audit}
+func NewInventoryService(uow repository.UnitOfWork) *InventoryService {
+	return &InventoryService{uow: uow}
 }
 
 type InboundInput struct {
@@ -49,11 +41,11 @@ type ConsumeResult struct {
 
 func (s *InventoryService) Inbound(ctx context.Context, actor Actor, in InboundInput) (*model.StockLot, error) {
 	var createdLot *model.StockLot
-	err := database.WithTx(ctx, s.db, func(tx *gorm.DB) error {
-		mRepo := gormrepo.NewMaterialRepository(tx)
-		lotRepo := gormrepo.NewStockLotRepository(tx)
-		moveRepo := gormrepo.NewStockMovementRepository(tx)
-		auditRepo := gormrepo.NewAuditLogRepository(tx)
+	err := s.uow.WithTx(ctx, func(r repository.Repos) error {
+		mRepo := r.Materials()
+		lotRepo := r.StockLots()
+		moveRepo := r.StockMovements()
+		auditRepo := r.AuditLogs()
 
 		material, err := s.resolveInboundMaterial(mRepo, in)
 		if err != nil { return err }
@@ -88,11 +80,11 @@ func (s *InventoryService) Inbound(ctx context.Context, actor Actor, in InboundI
 
 func (s *InventoryService) Consume(ctx context.Context, actor Actor, materialID, tenantID string, quantity float64, reason string) ([]ConsumeResult, error) {
 	results := []ConsumeResult{}
-	err := database.WithTx(ctx, s.db, func(tx *gorm.DB) error {
-		materialRepo := gormrepo.NewMaterialRepository(tx)
-		lotRepo := gormrepo.NewStockLotRepository(tx)
-		moveRepo := gormrepo.NewStockMovementRepository(tx)
-		auditRepo := gormrepo.NewAuditLogRepository(tx)
+	err := s.uow.WithTx(ctx, func(r repository.Repos) error {
+		materialRepo := r.Materials()
+		lotRepo := r.StockLots()
+		moveRepo := r.StockMovements()
+		auditRepo := r.AuditLogs()
 
 		material, err := materialRepo.Get(materialID, tenantID)
 		if err != nil { return err }
@@ -124,10 +116,10 @@ func (s *InventoryService) Consume(ctx context.Context, actor Actor, materialID,
 
 func (s *InventoryService) Adjust(ctx context.Context, actor Actor, lotID, tenantID string, targetQuantity float64, reason, remark string) (*model.StockLot, error) {
 	var updated *model.StockLot
-	err := database.WithTx(ctx, s.db, func(tx *gorm.DB) error {
-		lotRepo := gormrepo.NewStockLotRepository(tx)
-		moveRepo := gormrepo.NewStockMovementRepository(tx)
-		auditRepo := gormrepo.NewAuditLogRepository(tx)
+	err := s.uow.WithTx(ctx, func(r repository.Repos) error {
+		lotRepo := r.StockLots()
+		moveRepo := r.StockMovements()
+		auditRepo := r.AuditLogs()
 
 		lot, err := lotRepo.Get(lotID, tenantID)
 		if err != nil { return err }
@@ -139,14 +131,17 @@ func (s *InventoryService) Adjust(ctx context.Context, actor Actor, lotID, tenan
 			if err := moveRepo.Create(&model.StockMovement{TenantID: tenantID, MaterialID: lot.MaterialID, LotID: lot.ID, MovementType: "adjustment", QuantityDelta: delta, Unit: lot.Unit, Reason: strings.TrimSpace(reason), Channel: actor.Channel, UserName: actor.UserName, UserID: actor.UserID, Remark: strings.TrimSpace(remark)}); err != nil { return err }
 		}
 		_ = auditRepo.Create(&model.AuditLog{TenantID: actor.TenantID, UserName: actor.UserName, UserID: actor.UserID, Channel: actor.Channel, Action: "update", EntityType: "stock_lot", EntityID: lot.ID, EntityName: lot.Material.Name})
-		updated, err = lotRepo.Get(lot.ID, tenantID)
-		return err
+		var err2 error
+		updated, err2 = lotRepo.Get(lot.ID, tenantID)
+		return err2
 	})
 	if err != nil { return nil, err }
 	return updated, nil
 }
 
-func (s *InventoryService) ListLots(ctx context.Context, f repository.StockLotFilter) ([]model.StockLot, error) { return s.lots.List(f) }
+func (s *InventoryService) ListLots(ctx context.Context, f repository.StockLotFilter) ([]model.StockLot, error) {
+	return s.uow.Repos().StockLots().List(f)
+}
 
 func (s *InventoryService) resolveInboundMaterial(repo repository.MaterialRepo, in InboundInput) (*model.Material, error) {
 	if id := strings.TrimSpace(in.MaterialID); id != "" { return repo.Get(id, in.TenantID) }
@@ -169,15 +164,14 @@ type UpdateLotInput struct {
 }
 
 func (s *InventoryService) UpdateLot(ctx context.Context, actor Actor, lotID, tenantID string, in UpdateLotInput) (*model.StockLot, error) {
-	lot, err := s.lots.Get(lotID, tenantID)
+	lot, err := s.uow.Repos().StockLots().Get(lotID, tenantID)
 	if err != nil { return nil, err }
 	if in.ExpireAt != nil { lot.ExpireAt = in.ExpireAt }
 	if in.PurchasedAt != nil { lot.PurchasedAt = in.PurchasedAt }
 	if in.Location != nil { lot.Location = strings.TrimSpace(*in.Location) }
 	if in.Notes != nil { lot.Notes = strings.TrimSpace(*in.Notes) }
-	if err := s.lots.Update(lot); err != nil { return nil, err }
-	updated, err := s.lots.Get(lot.ID, lot.TenantID)
-	if err == nil { _ = s.audit.Create(&model.AuditLog{TenantID: actor.TenantID, UserName: actor.UserName, UserID: actor.UserID, Channel: actor.Channel, Action: "update", EntityType: "stock_lot", EntityID: updated.ID, EntityName: updated.Material.Name}) }
+	if err := s.uow.Repos().StockLots().Update(lot); err != nil { return nil, err }
+	updated, err := s.uow.Repos().StockLots().Get(lot.ID, lot.TenantID)
+	if err == nil { _ = s.uow.Repos().AuditLogs().Create(&model.AuditLog{TenantID: actor.TenantID, UserName: actor.UserName, UserID: actor.UserID, Channel: actor.Channel, Action: "update", EntityType: "stock_lot", EntityID: updated.ID, EntityName: updated.Material.Name}) }
 	return updated, err
 }
-
