@@ -9,8 +9,8 @@ import (
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/database"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/model"
-	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
+	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
 )
 
 type InventoryService struct {
@@ -148,7 +148,7 @@ func (s *InventoryService) Adjust(ctx context.Context, actor Actor, lotID, tenan
 
 func (s *InventoryService) ListLots(ctx context.Context, f repository.StockLotFilter) ([]model.StockLot, error) { return s.lots.List(f) }
 
-func (s *InventoryService) resolveInboundMaterial(repo *repository.MaterialRepository, in InboundInput) (*model.Material, error) {
+func (s *InventoryService) resolveInboundMaterial(repo repository.MaterialRepo, in InboundInput) (*model.Material, error) {
 	if id := strings.TrimSpace(in.MaterialID); id != "" { return repo.Get(id, in.TenantID) }
 	name := strings.TrimSpace(in.Name)
 	spec := strings.TrimSpace(in.Spec)
@@ -161,7 +161,12 @@ func (s *InventoryService) resolveInboundMaterial(repo *repository.MaterialRepos
 }
 
 // UpdateLotInput and UpdateLot implement stock lot info update logic without quantity changes.
-type UpdateLotInput struct { ExpireAt *time.Time; PurchasedAt *time.Time; Location *string; Notes *string }
+type UpdateLotInput struct {
+	ExpireAt    *time.Time
+	PurchasedAt *time.Time
+	Location    *string
+	Notes       *string
+}
 
 func (s *InventoryService) UpdateLot(ctx context.Context, actor Actor, lotID, tenantID string, in UpdateLotInput) (*model.StockLot, error) {
 	lot, err := s.lots.Get(lotID, tenantID)
@@ -175,3 +180,4 @@ func (s *InventoryService) UpdateLot(ctx context.Context, actor Actor, lotID, te
 	if err == nil { _ = s.audit.Create(&model.AuditLog{TenantID: actor.TenantID, UserName: actor.UserName, UserID: actor.UserID, Channel: actor.Channel, Action: "update", EntityType: "stock_lot", EntityID: updated.ID, EntityName: updated.Material.Name}) }
 	return updated, err
 }
+

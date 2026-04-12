@@ -15,11 +15,11 @@ import (
 
 // AuditLogHandler serves audit log query endpoints.
 type AuditLogHandler struct {
-	repo *repository.AuditLogRepository
+	repo repository.AuditLogRepo
 }
 
 // NewAuditLogHandler creates an audit log handler.
-func NewAuditLogHandler(repo *repository.AuditLogRepository) *AuditLogHandler {
+func NewAuditLogHandler(repo repository.AuditLogRepo) *AuditLogHandler {
 	return &AuditLogHandler{repo: repo}
 }
 
@@ -67,3 +67,4 @@ func (h *AuditLogHandler) List(c *gin.Context) {
 
 	httpresp.OK(c, httpresp.Page[model.AuditLog]{Items: result.Logs, Total: int(result.Total), Page: result.Page, PageSize: result.PageSize})
 }
+

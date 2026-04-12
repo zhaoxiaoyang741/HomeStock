@@ -13,12 +13,12 @@ import (
 
 // CategoryHandler serves category CRUD HTTP endpoints.
 type CategoryHandler struct {
-    repo      *repository.CategoryRepository
-    auditRepo *repository.AuditLogRepository
+    repo      repository.CategoryRepo
+    auditRepo repository.AuditLogRepo
 }
 
 // NewCategoryHandler creates a category handler.
-func NewCategoryHandler(repo *repository.CategoryRepository, auditRepo *repository.AuditLogRepository) *CategoryHandler {
+func NewCategoryHandler(repo repository.CategoryRepo, auditRepo repository.AuditLogRepo) *CategoryHandler {
     return &CategoryHandler{repo: repo, auditRepo: auditRepo}
 }
 
@@ -94,3 +94,4 @@ func handleCategoryRepositoryError(c *gin.Context, err error, fallbackMessage st
         httpresp.Error(c, http.StatusInternalServerError, fallbackMessage)
     }
 }
+

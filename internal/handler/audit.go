@@ -24,7 +24,7 @@ func marshalChanges(before, after any) string {
 func actorFromRequest(c *gin.Context) httpreq.Actor { return httpreq.From(c) }
 
 func recordAuditLog(
-	repo *repository.AuditLogRepository,
+	repo repository.AuditLogRepo,
 	actor httpreq.Actor,
 	action, entityType, entityID, entityName, changes string,
 ) {
@@ -41,3 +41,4 @@ func recordAuditLog(
 		ChangesDetail: changes,
 	})
 }
+

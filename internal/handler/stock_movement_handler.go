@@ -12,10 +12,10 @@ import (
 )
 
 type StockMovementHandler struct {
-    repo *repository.StockMovementRepository
+    repo repository.StockMovementRepo
 }
 
-func NewStockMovementHandler(repo *repository.StockMovementRepository) *StockMovementHandler {
+func NewStockMovementHandler(repo repository.StockMovementRepo) *StockMovementHandler {
     return &StockMovementHandler{repo: repo}
 }
 
@@ -38,3 +38,4 @@ func (h *StockMovementHandler) List(c *gin.Context) {
     if err != nil { httpresp.Error(c, http.StatusInternalServerError, "list stock movements failed"); return }
     httpresp.List(c, movements, len(movements), 0, 0)
 }
+
