@@ -14,10 +14,10 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/database"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/httpserver"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
+	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	appconfig "github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 )
-
 func TestCategoryHandler_CRUDAndMaterialAssociation(t *testing.T) {
 	server, cleanup := newTestServer(t)
 	defer cleanup()
@@ -202,11 +202,11 @@ func newTestServer(t *testing.T) (*httpserver.Server, func()) {
 
 	auditRepo := repository.NewAuditLogRepository(db)
 	categoryHandler := NewCategoryHandler(repository.NewCategoryRepository(db), auditRepo)
-	materialSvc := service.NewMaterialService(db, repository.NewMaterialRepository(db), auditRepo)
-	inventorySvc := service.NewInventoryService(db, repository.NewMaterialRepository(db), repository.NewStockLotRepository(db), repository.NewStockMovementRepository(db), auditRepo)
+	materialSvc := service.NewMaterialService(db, gormrepo.NewMaterialRepository(db), auditRepo)
+	inventorySvc := service.NewInventoryService(db, gormrepo.NewMaterialRepository(db), gormrepo.NewStockLotRepository(db), gormrepo.NewStockMovementRepository(db), auditRepo)
 	materialHandler := NewMaterialHandler(materialSvc, inventorySvc)
 	stockLotHandler := NewStockLotHandler(inventorySvc)
-	stockMovementHandler := NewStockMovementHandler(repository.NewStockMovementRepository(db))
+	stockMovementHandler := NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
 	server := httpserver.New(appconfig.ServerConfig{}, categoryHandler.RegisterRoutes, materialHandler.RegisterRoutes, stockLotHandler.RegisterRoutes, stockMovementHandler.RegisterRoutes)
 
 	return server, func() { _ = sqlDB.Close() }
@@ -233,3 +233,8 @@ func performJSONRequest(
 	if err := json.Unmarshal(rec.Body.Bytes(), &decoded); err != nil { t.Fatalf("json.Unmarshal() error = %v, body = %q", err, rec.Body.String()) }
 	return decoded
 }
+
+
+
+
+

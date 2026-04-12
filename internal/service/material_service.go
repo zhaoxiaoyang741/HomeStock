@@ -55,3 +55,4 @@ func (s *MaterialService) List(ctx context.Context, f repository.MaterialFilter)
 func (s *MaterialService) GetDetail(ctx context.Context, id, tenantID string) (*repository.MaterialDetail, error) {
 	return s.repo.GetDetail(id, tenantID)
 }
+

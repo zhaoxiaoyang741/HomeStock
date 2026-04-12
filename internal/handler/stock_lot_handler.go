@@ -70,7 +70,7 @@ func (h *StockLotHandler) Inbound(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil { httpresp.Error(c, http.StatusBadRequest, err.Error()); return }
 	if req.Quantity <= 0 { httpresp.Error(c, http.StatusBadRequest, "quantity must be greater than 0"); return }
 	if strings.TrimSpace(req.MaterialID) == "" && strings.TrimSpace(req.Name) == "" { httpresp.Error(c, http.StatusBadRequest, "material_id or name is required"); return }
-	actor := toSvcActor(httpreq.From(c))
+	actor := svcActorFrom(httpreq.From(c))
 	expireAt, err := parseOptionalRFC3339(req.ExpireAt); if err != nil { httpresp.Error(c, http.StatusBadRequest, "invalid expire_at, must be RFC3339"); return }
 	purchasedAt, err := parseOptionalRFC3339(req.PurchasedAt); if err != nil { httpresp.Error(c, http.StatusBadRequest, "invalid purchased_at, must be RFC3339"); return }
 	lot, err := h.inventory.Inbound(c.Request.Context(), actor, service.InboundInput{
@@ -83,7 +83,7 @@ func (h *StockLotHandler) Inbound(c *gin.Context) {
 func (h *StockLotHandler) Update(c *gin.Context) {
 	var req updateStockLotRequest
 	if err := c.ShouldBindJSON(&req); err != nil { httpresp.Error(c, http.StatusBadRequest, err.Error()); return }
-	actor := toSvcActor(httpreq.From(c))
+	actor := svcActorFrom(httpreq.From(c))
 	var expireAt, purchasedAt *time.Time
 	var err error
 	if req.ExpireAt != nil { expireAt, err = parseNullableRFC3339(*req.ExpireAt); if err != nil { httpresp.Error(c, http.StatusBadRequest, err.Error()); return } }
@@ -97,7 +97,7 @@ func (h *StockLotHandler) Adjust(c *gin.Context) {
 	var req adjustStockLotRequest
 	if err := c.ShouldBindJSON(&req); err != nil { httpresp.Error(c, http.StatusBadRequest, err.Error()); return }
 	if req.TargetQuantity < 0 { httpresp.Error(c, http.StatusBadRequest, "target_quantity cannot be negative"); return }
-	actor := toSvcActor(httpreq.From(c))
+	actor := svcActorFrom(httpreq.From(c))
 	updated, err := h.inventory.Adjust(c.Request.Context(), actor, strings.TrimSpace(c.Param("id")), actor.TenantID, req.TargetQuantity, req.Reason, req.Remark)
 	if err != nil { handleStockLotRepositoryError(c, err, "adjust stock lot failed"); return }
 	httpresp.OK(c, updated)
@@ -131,3 +131,4 @@ func parseNullableRFC3339(raw string) (*time.Time, error) {
 	t, err := time.Parse(time.RFC3339, trimmed); if err != nil { return nil, err }
 	return &t, nil
 }
+

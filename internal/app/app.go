@@ -9,7 +9,7 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/database"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/httpserver"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
+	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 )
@@ -25,12 +25,12 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil { return nil, err }
 	sqlDB, err := db.DB(); if err != nil { return nil, err }
 
-	// Repositories (GORM impl in current package)
-	auditRepo := repository.NewAuditLogRepository(db)
-	categoryRepo := repository.NewCategoryRepository(db)
-	materialRepo := repository.NewMaterialRepository(db)
-	lotRepo := repository.NewStockLotRepository(db)
-	moveRepo := repository.NewStockMovementRepository(db)
+	// Repositories (GORM impl)
+	auditRepo := gormrepo.NewAuditLogRepository(db)
+	categoryRepo := gormrepo.NewCategoryRepository(db)
+	materialRepo := gormrepo.NewMaterialRepository(db)
+	lotRepo := gormrepo.NewStockLotRepository(db)
+	moveRepo := gormrepo.NewStockMovementRepository(db)
 
 	// Services
 	materialSvc := service.NewMaterialService(db, materialRepo, auditRepo)
@@ -40,7 +40,7 @@ func New(cfg *config.Config) (*App, error) {
 	categoryHandler := handler.NewCategoryHandler(categoryRepo, auditRepo)
 	materialHandler := handler.NewMaterialHandler(materialSvc, inventorySvc)
 	stockLotHandler := handler.NewStockLotHandler(inventorySvc)
-	stockMovementHandler := handler.NewStockMovementHandler(repository.NewStockMovementRepository(db))
+	stockMovementHandler := handler.NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
 	auditLogHandler := handler.NewAuditLogHandler(auditRepo)
 
 	server := httpserver.New(cfg.Server,
