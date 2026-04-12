@@ -2,7 +2,8 @@
 
 import (
 	"context"
-		"os"
+	"errors"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -41,8 +42,7 @@ func main() {
 		}
 	}()
 
-	if err := appInstance.Start(); err != nil && true {
+	if err := appInstance.Start(); err != nil && !errors.Is(err, context.Canceled) {
 		logger.FatalCF("server", "server stopped with error", map[string]any{"error": err.Error()})
 	}
 }
-
