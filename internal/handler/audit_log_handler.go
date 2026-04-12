@@ -1,4 +1,5 @@
-﻿package handler
+﻿
+package handler
 
 import (
 	"net/http"
@@ -11,22 +12,17 @@ import (
 	httpresp "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/response"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/model"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 )
 
 // AuditLogHandler serves audit log query endpoints.
-type AuditLogHandler struct {
-	repo repository.AuditLogRepo
-}
+type AuditLogHandler struct { svc *service.AuditService }
 
 // NewAuditLogHandler creates an audit log handler.
-func NewAuditLogHandler(repo repository.AuditLogRepo) *AuditLogHandler {
-	return &AuditLogHandler{repo: repo}
-}
+func NewAuditLogHandler(svc *service.AuditService) *AuditLogHandler { return &AuditLogHandler{svc: svc} }
 
 // RegisterRoutes mounts audit log endpoints under /api/v1.
-func (h *AuditLogHandler) RegisterRoutes(api *gin.RouterGroup) {
-	api.GET("/audit-logs", h.List)
-}
+func (h *AuditLogHandler) RegisterRoutes(api *gin.RouterGroup) { api.GET("/audit-logs", h.List) }
 
 // List handles GET /audit-logs.
 func (h *AuditLogHandler) List(c *gin.Context) {
@@ -52,19 +48,14 @@ func (h *AuditLogHandler) List(c *gin.Context) {
 
 	if endStr := strings.TrimSpace(c.Query("end_date")); endStr != "" {
 		if t, err := time.Parse("2006-01-02", endStr); err == nil {
-			// Include the entire end day.
 			filter.EndDate = t.Add(24*time.Hour - time.Second)
 		} else if t, err := time.Parse(time.RFC3339, endStr); err == nil {
 			filter.EndDate = t
 		}
 	}
 
-	result, err := h.repo.List(filter)
-	if err != nil {
-		httpresp.Error(c, http.StatusInternalServerError, "list audit logs failed")
-		return
-	}
+	result, err := h.svc.List(c.Request.Context(), filter)
+	if err != nil { httpresp.Error(c, http.StatusInternalServerError, "list audit logs failed"); return }
 
 	httpresp.OK(c, httpresp.Page[model.AuditLog]{Items: result.Logs, Total: int(result.Total), Page: result.Page, PageSize: result.PageSize})
 }
-

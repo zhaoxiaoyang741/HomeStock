@@ -39,7 +39,7 @@ func New(cfg *config.Config) (*App, error) {
 	materialHandler := handler.NewMaterialHandler(materialSvc, inventorySvc)
 	stockLotHandler := handler.NewStockLotHandler(inventorySvc)
 	stockMovementHandler := handler.NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
-	auditLogHandler := handler.NewAuditLogHandler(auditRepo)
+	auditLogHandler := handler.NewAuditLogHandler(service.NewAuditService(gormrepo.NewUnitOfWork(db)))
 
 	server := httpserver.New(cfg.Server,
 		categoryHandler.RegisterRoutes,
@@ -55,5 +55,6 @@ func New(cfg *config.Config) (*App, error) {
 func (a *App) Start() error { return a.server.Start() }
 func (a *App) Shutdown(ctx context.Context) error { return a.server.Shutdown(ctx) }
 func (a *App) Close() error { if a == nil || a.sqlDB == nil { return nil }; return a.sqlDB.Close() }
+
 
 
