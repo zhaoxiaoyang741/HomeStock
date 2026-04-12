@@ -14,6 +14,7 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/database"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/httpserver"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	appconfig "github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 )
 
@@ -194,39 +195,19 @@ func newTestServer(t *testing.T) (*httpserver.Server, func()) {
 		Driver: "sqlite",
 		DSN:    filepath.Join(t.TempDir(), "inventory.db"),
 	})
-	if err != nil {
-		t.Fatalf("OpenAndMigrate() error = %v", err)
-	}
+	if err != nil { t.Fatalf("OpenAndMigrate() error = %v", err) }
 
 	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("db.DB() error = %v", err)
-	}
+	if err != nil { t.Fatalf("db.DB() error = %v", err) }
 
 	auditRepo := repository.NewAuditLogRepository(db)
 	categoryHandler := NewCategoryHandler(repository.NewCategoryRepository(db), auditRepo)
-	materialHandler := NewMaterialHandler(
-		db,
-		repository.NewMaterialRepository(db),
-		repository.NewStockLotRepository(db),
-		repository.NewStockMovementRepository(db),
-		auditRepo,
-	)
-	stockLotHandler := NewStockLotHandler(
-		db,
-		repository.NewStockLotRepository(db),
-		repository.NewMaterialRepository(db),
-		repository.NewStockMovementRepository(db),
-		auditRepo,
-	)
+	materialSvc := service.NewMaterialService(db, repository.NewMaterialRepository(db), auditRepo)
+	inventorySvc := service.NewInventoryService(db, repository.NewMaterialRepository(db), repository.NewStockLotRepository(db), repository.NewStockMovementRepository(db), auditRepo)
+	materialHandler := NewMaterialHandler(materialSvc, inventorySvc)
+	stockLotHandler := NewStockLotHandler(inventorySvc)
 	stockMovementHandler := NewStockMovementHandler(repository.NewStockMovementRepository(db))
-	server := httpserver.New(
-		appconfig.ServerConfig{},
-		categoryHandler.RegisterRoutes,
-		materialHandler.RegisterRoutes,
-		stockLotHandler.RegisterRoutes,
-		stockMovementHandler.RegisterRoutes,
-	)
+	server := httpserver.New(appconfig.ServerConfig{}, categoryHandler.RegisterRoutes, materialHandler.RegisterRoutes, stockLotHandler.RegisterRoutes, stockMovementHandler.RegisterRoutes)
 
 	return server, func() { _ = sqlDB.Close() }
 }
@@ -240,42 +221,15 @@ func performJSONRequest(
 	body any,
 	wantStatus int,
 ) map[string]any {
-	t.Helper()
-
 	var bodyReader *bytes.Reader
-	if body == nil {
-		bodyReader = bytes.NewReader(nil)
-	} else {
-		raw, err := json.Marshal(body)
-		if err != nil {
-			t.Fatalf("json.Marshal() error = %v", err)
-		}
-		bodyReader = bytes.NewReader(raw)
-	}
-
+	if body == nil { bodyReader = bytes.NewReader(nil) } else { raw, err := json.Marshal(body); if err != nil { t.Fatalf("json.Marshal() error = %v", err) }; bodyReader = bytes.NewReader(raw) }
 	req := httptest.NewRequest(method, path, bodyReader)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if tenantID != "" {
-		req.Header.Set("X-Tenant-ID", tenantID)
-	}
-
-	rec := httptest.NewRecorder()
-	server.Engine().ServeHTTP(rec, req)
-
-	if rec.Code != wantStatus {
-		t.Fatalf("%s %s status = %d, body = %q", method, path, rec.Code, rec.Body.String())
-	}
-
-	if rec.Body.Len() == 0 {
-		return map[string]any{}
-	}
-
+	if body != nil { req.Header.Set("Content-Type", "application/json") }
+	if tenantID != "" { req.Header.Set("X-Tenant-ID", tenantID) }
+	rec := httptest.NewRecorder(); server.Engine().ServeHTTP(rec, req)
+	if rec.Code != wantStatus { t.Fatalf("%s %s status = %d, body = %q", method, path, rec.Code, rec.Body.String()) }
+	if rec.Body.Len() == 0 { return map[string]any{} }
 	var decoded map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &decoded); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v, body = %q", err, rec.Body.String())
-	}
-
+	if err := json.Unmarshal(rec.Body.Bytes(), &decoded); err != nil { t.Fatalf("json.Unmarshal() error = %v, body = %q", err, rec.Body.String()) }
 	return decoded
 }
