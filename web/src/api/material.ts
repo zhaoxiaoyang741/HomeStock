@@ -1,4 +1,4 @@
-import { api } from '@/lib/api'
+﻿import { api } from '@/lib/api'
 import type {
   ConsumeMaterialPayload,
   ConsumeMaterialResponse,
@@ -7,20 +7,30 @@ import type {
   MaterialDetail,
   MaterialListResponse,
 } from '@/types/material'
+import type { Page, Result } from '@/types/api'
 
 export const materialApi = {
-  list: (params?: { category_id?: string; keyword?: string }) => {
+  list: async (params?: { category_id?: string; keyword?: string }): Promise<MaterialListResponse> => {
     const qs = new URLSearchParams()
     if (params?.category_id) qs.set('category_id', params.category_id)
     if (params?.keyword) qs.set('keyword', params.keyword)
     const query = qs.toString()
-    return api.get<MaterialListResponse>(`/v1/materials${query ? `?${query}` : ''}`)
+    const res = await api.get<Result<Page<MaterialDetail>>>(`/v1/materials${query ? `?${query}` : ''}`)
+    return { materials: res.data.items, total: res.data.total }
   },
 
-  get: (id: string) => api.get<MaterialDetail>(`/v1/materials/${id}`),
+  get: async (id: string): Promise<MaterialDetail> => {
+    const res = await api.get<Result<MaterialDetail>>(`/v1/materials/${id}`)
+    return res.data
+  },
 
-  create: (payload: CreateMaterialPayload) => api.post<Material>('/v1/materials', payload),
+  create: async (payload: CreateMaterialPayload): Promise<Material> => {
+    const res = await api.post<Result<Material>>('/v1/materials', payload)
+    return res.data
+  },
 
-  consume: (id: string, payload: ConsumeMaterialPayload) =>
-    api.post<ConsumeMaterialResponse>(`/v1/materials/${id}/consume`, payload),
+  consume: async (id: string, payload: ConsumeMaterialPayload): Promise<ConsumeMaterialResponse> => {
+    const res = await api.post<Result<ConsumeMaterialResponse>>(`/v1/materials/${id}/consume`, payload)
+    return res.data
+  },
 }

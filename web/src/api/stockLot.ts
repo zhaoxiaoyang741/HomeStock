@@ -1,4 +1,4 @@
-import { api } from '@/lib/api'
+﻿import { api } from '@/lib/api'
 import type {
   AdjustStockLotPayload,
   InboundStockLotPayload,
@@ -6,16 +6,17 @@ import type {
   StockLotListResponse,
   UpdateStockLotPayload,
 } from '@/types/stock'
+import type { Page, Result } from '@/types/api'
 
 export const stockLotApi = {
-  list: (params?: {
+  list: async (params?: {
     material_id?: string
     category_id?: string
     location?: string
     status?: string
     keyword?: string
     expiring_soon?: boolean
-  }) => {
+  }): Promise<StockLotListResponse> => {
     const qs = new URLSearchParams()
     if (params?.material_id) qs.set('material_id', params.material_id)
     if (params?.category_id) qs.set('category_id', params.category_id)
@@ -24,13 +25,22 @@ export const stockLotApi = {
     if (params?.keyword) qs.set('keyword', params.keyword)
     if (params?.expiring_soon) qs.set('expiring_soon', 'true')
     const query = qs.toString()
-    return api.get<StockLotListResponse>(`/v1/stock-lots${query ? `?${query}` : ''}`)
+    const res = await api.get<Result<Page<StockLot>>>(`/v1/stock-lots${query ? `?${query}` : ''}`)
+    return { lots: res.data.items, total: res.data.total }
   },
 
-  inbound: (payload: InboundStockLotPayload) => api.post<StockLot>('/v1/stock-lots/inbound', payload),
+  inbound: async (payload: InboundStockLotPayload): Promise<StockLot> => {
+    const res = await api.post<Result<StockLot>>('/v1/stock-lots/inbound', payload)
+    return res.data
+  },
 
-  update: (id: string, payload: UpdateStockLotPayload) => api.put<StockLot>(`/v1/stock-lots/${id}`, payload),
+  update: async (id: string, payload: UpdateStockLotPayload): Promise<StockLot> => {
+    const res = await api.put<Result<StockLot>>(`/v1/stock-lots/${id}`, payload)
+    return res.data
+  },
 
-  adjust: (id: string, payload: AdjustStockLotPayload) =>
-    api.post<StockLot>(`/v1/stock-lots/${id}/adjust`, payload),
+  adjust: async (id: string, payload: AdjustStockLotPayload): Promise<StockLot> => {
+    const res = await api.post<Result<StockLot>>(`/v1/stock-lots/${id}/adjust`, payload)
+    return res.data
+  },
 }
