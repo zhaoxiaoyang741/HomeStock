@@ -1,16 +1,8 @@
-package handler
+﻿package handler
 
 import (
-	"strings"
-
 	"github.com/gin-gonic/gin"
+	httpreq "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/request"
 )
 
-func tenantIDFromRequest(c *gin.Context) string {
-	tenantID := strings.TrimSpace(c.GetHeader("X-Tenant-ID"))
-	if tenantID == "" {
-		return "default"
-	}
-
-	return tenantID
-}
+func tenantIDFromRequest(c *gin.Context) string { return httpreq.TenantID(c) }

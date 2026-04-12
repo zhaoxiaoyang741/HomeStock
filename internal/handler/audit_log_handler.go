@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"net/http"
@@ -8,6 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	httpresp "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/response"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/model"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
 )
 
@@ -59,14 +61,9 @@ func (h *AuditLogHandler) List(c *gin.Context) {
 
 	result, err := h.repo.List(filter)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "list audit logs failed"})
+		httpresp.Error(c, http.StatusInternalServerError, "list audit logs failed")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"logs":      result.Logs,
-		"total":     result.Total,
-		"page":      result.Page,
-		"page_size": result.PageSize,
-	})
+	httpresp.OK(c, httpresp.Page[model.AuditLog]{Items: result.Logs, Total: int(result.Total), Page: result.Page, PageSize: result.PageSize})
 }

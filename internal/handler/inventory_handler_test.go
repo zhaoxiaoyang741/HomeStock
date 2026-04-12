@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"bytes"
@@ -24,20 +24,20 @@ func TestCategoryHandler_CRUDAndMaterialAssociation(t *testing.T) {
 	createdCategory := performJSONRequest(t, server, http.MethodPost, "/api/v1/categories", "", map[string]any{
 		"name": "food",
 	}, http.StatusCreated)
-	categoryID, _ := createdCategory["id"].(string)
+	categoryID, _ := createdCategory["data"].(map[string]any)["id"].(string)
 
 	createdMaterial := performJSONRequest(t, server, http.MethodPost, "/api/v1/materials", "", map[string]any{
 		"name":         "eggs",
 		"category_id":  categoryID,
 		"default_unit": "box",
 	}, http.StatusCreated)
-	if createdMaterial["category_id"] != categoryID {
-		t.Fatalf("category_id = %v", createdMaterial["category_id"])
+	if createdMaterial["data"].(map[string]any)["category_id"] != categoryID {
+		t.Fatalf("category_id = %v", createdMaterial["data"].(map[string]any)["category_id"])
 	}
 
 	body := performJSONRequest(t, server, http.MethodDelete, "/api/v1/categories/"+categoryID, "", nil, http.StatusConflict)
-	if body["error"] != repository.ErrCategoryInUse.Error() {
-		t.Fatalf("error = %v", body["error"])
+	if body["message"] != repository.ErrCategoryInUse.Error() {
+		t.Fatalf("message = %v", body["message"])
 	}
 }
 
@@ -48,7 +48,7 @@ func TestInventoryFlow_InboundConsumeAdjustAndHistory(t *testing.T) {
 	category := performJSONRequest(t, server, http.MethodPost, "/api/v1/categories", "", map[string]any{
 		"name": "dairy",
 	}, http.StatusCreated)
-	categoryID, _ := category["id"].(string)
+	categoryID, _ := category["data"].(map[string]any)["id"].(string)
 
 	firstLot := performJSONRequest(t, server, http.MethodPost, "/api/v1/stock-lots/inbound", "", map[string]any{
 		"name":         "milk",
@@ -72,10 +72,11 @@ func TestInventoryFlow_InboundConsumeAdjustAndHistory(t *testing.T) {
 	}, http.StatusCreated)
 
 	materials := performJSONRequest(t, server, http.MethodGet, "/api/v1/materials", "", nil, http.StatusOK)
-	if total, ok := materials["total"].(float64); !ok || int(total) != 1 {
-		t.Fatalf("materials total = %v", materials["total"])
+	page := materials["data"].(map[string]any)
+	if total, ok := page["total"].(float64); !ok || int(total) != 1 {
+		t.Fatalf("materials total = %v", page["total"])
 	}
-	materialList, _ := materials["materials"].([]any)
+	materialList, _ := page["items"].([]any)
 	material := materialList[0].(map[string]any)
 	materialID, _ := material["id"].(string)
 	if got, _ := material["lot_count"].(float64); int(got) != 2 {
@@ -86,27 +87,29 @@ func TestInventoryFlow_InboundConsumeAdjustAndHistory(t *testing.T) {
 		"quantity": 4,
 		"reason":   "cook",
 	}, http.StatusOK)
-	consumedLots, _ := consumeResult["consumed_lots"].([]any)
+	data := consumeResult["data"].(map[string]any)
+	consumedLots, _ := data["consumed_lots"].([]any)
 	if len(consumedLots) != 2 {
 		t.Fatalf("consumed_lots len = %d", len(consumedLots))
 	}
 	firstConsumed := consumedLots[0].(map[string]any)
-	if firstConsumed["lot_id"] != firstLot["id"] {
+	if firstConsumed["lot_id"] != firstLot["data"].(map[string]any)["id"] {
 		t.Fatalf("expected first lot to be consumed first, got %v", firstConsumed["lot_id"])
 	}
 
-	adjusted := performJSONRequest(t, server, http.MethodPost, "/api/v1/stock-lots/"+secondLot["id"].(string)+"/adjust", "", map[string]any{
+	adjusted := performJSONRequest(t, server, http.MethodPost, "/api/v1/stock-lots/"+secondLot["data"].(map[string]any)["id"].(string)+"/adjust", "", map[string]any{
 		"target_quantity": 5,
 		"reason":          "count",
 		"remark":          "restock correction",
 	}, http.StatusOK)
-	if adjusted["quantity_on_hand"] != 5.0 {
-		t.Fatalf("quantity_on_hand = %v", adjusted["quantity_on_hand"])
+	if adjusted["data"].(map[string]any)["quantity_on_hand"] != 5.0 {
+		t.Fatalf("quantity_on_hand = %v", adjusted["data"].(map[string]any)["quantity_on_hand"])
 	}
 
 	movements := performJSONRequest(t, server, http.MethodGet, "/api/v1/stock-movements", "", nil, http.StatusOK)
-	if total, ok := movements["total"].(float64); !ok || int(total) != 5 {
-		t.Fatalf("movements total = %v", movements["total"])
+	mPage := movements["data"].(map[string]any)
+	if total, ok := mPage["total"].(float64); !ok || int(total) != 5 {
+		t.Fatalf("movements total = %v", mPage["total"])
 	}
 }
 
@@ -129,22 +132,23 @@ func TestStockLotUpdateDoesNotTouchOtherLots(t *testing.T) {
 		"location": "storage",
 	}, http.StatusCreated)
 
-	updated := performJSONRequest(t, server, http.MethodPut, "/api/v1/stock-lots/"+firstLot["id"].(string), "", map[string]any{
+	updated := performJSONRequest(t, server, http.MethodPut, "/api/v1/stock-lots/"+firstLot["data"].(map[string]any)["id"].(string), "", map[string]any{
 		"location": "kitchen",
 		"notes":    "opened",
 	}, http.StatusOK)
-	if updated["location"] != "kitchen" {
-		t.Fatalf("updated location = %v", updated["location"])
+	if updated["data"].(map[string]any)["location"] != "kitchen" {
+		t.Fatalf("updated location = %v", updated["data"].(map[string]any)["location"])
 	}
 
 	listed := performJSONRequest(t, server, http.MethodGet, "/api/v1/stock-lots?keyword=rice", "", nil, http.StatusOK)
-	lots, _ := listed["lots"].([]any)
+	lotsPage := listed["data"].(map[string]any)
+	lots, _ := lotsPage["items"].([]any)
 	if len(lots) != 2 {
 		t.Fatalf("lots len = %d", len(lots))
 	}
 	for _, raw := range lots {
 		lot := raw.(map[string]any)
-		if lot["id"] == secondLot["id"] && lot["location"] != "storage" {
+		if lot["id"] == secondLot["data"].(map[string]any)["id"] && lot["location"] != "storage" {
 			t.Fatalf("second lot location changed unexpectedly: %v", lot["location"])
 		}
 	}
@@ -158,8 +162,8 @@ func TestMaterialHandler_RejectsInvalidCategoryID(t *testing.T) {
 		"name":        "rice",
 		"category_id": "catbadid1",
 	}, http.StatusBadRequest)
-	if body["error"] != repository.ErrInvalidCategoryID.Error() {
-		t.Fatalf("error = %v", body["error"])
+	if body["message"] != repository.ErrInvalidCategoryID.Error() {
+		t.Fatalf("message = %v", body["message"])
 	}
 }
 
@@ -177,8 +181,8 @@ func TestCategoryHandler_TenantIsolationAndDuplicateNames(t *testing.T) {
 	body := performJSONRequest(t, server, http.MethodPost, "/api/v1/categories", "tenant-a", map[string]any{
 		"name": "food",
 	}, http.StatusConflict)
-	if body["error"] != repository.ErrCategoryNameExists.Error() {
-		t.Fatalf("error = %v", body["error"])
+	if body["message"] != repository.ErrCategoryNameExists.Error() {
+		t.Fatalf("message = %v", body["message"])
 	}
 }
 
@@ -224,9 +228,7 @@ func newTestServer(t *testing.T) (*httpserver.Server, func()) {
 		stockMovementHandler.RegisterRoutes,
 	)
 
-	return server, func() {
-		_ = sqlDB.Close()
-	}
+	return server, func() { _ = sqlDB.Close() }
 }
 
 func performJSONRequest(

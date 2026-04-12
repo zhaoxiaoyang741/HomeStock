@@ -1,34 +1,14 @@
-package handler
+﻿package handler
 
 import (
 	"encoding/json"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	httpreq "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/request"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/model"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
 )
-
-type actorInfo struct {
-	UserName string
-	UserID   string
-	Channel  string
-	TenantID string
-}
-
-func actorFromRequest(c *gin.Context) actorInfo {
-	channel := strings.TrimSpace(c.GetHeader("X-Channel"))
-	if channel == "" {
-		channel = "web"
-	}
-	return actorInfo{
-		UserName: strings.TrimSpace(c.GetHeader("X-User-Name")),
-		UserID:   strings.TrimSpace(c.GetHeader("X-User-ID")),
-		Channel:  channel,
-		TenantID: tenantIDFromRequest(c),
-	}
-}
 
 type changesPayload struct {
 	Before any `json:"before,omitempty"`
@@ -37,15 +17,15 @@ type changesPayload struct {
 
 func marshalChanges(before, after any) string {
 	b, err := json.Marshal(changesPayload{Before: before, After: after})
-	if err != nil {
-		return ""
-	}
+	if err != nil { return "" }
 	return string(b)
 }
 
+func actorFromRequest(c *gin.Context) httpreq.Actor { return httpreq.From(c) }
+
 func recordAuditLog(
 	repo *repository.AuditLogRepository,
-	actor actorInfo,
+	actor httpreq.Actor,
 	action, entityType, entityID, entityName, changes string,
 ) {
 	// Errors intentionally swallowed — audit failure must not break the primary operation.
