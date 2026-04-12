@@ -112,14 +112,19 @@ type AuditLogPage struct {
 
 // Repos groups repository interfaces for a storage backend.
 type Repos interface {
+	Categories() CategoryRepo
 	Materials() MaterialRepo
 	StockLots() StockLotRepo
 	StockMovements() StockMovementRepo
 	AuditLogs() AuditLogRepo
 }
 
+
 // UnitOfWork provides access to repositories and transactional execution.
 type UnitOfWork interface {
 	Repos() Repos
 	WithTx(ctx context.Context, fn func(r Repos) error) error
 }
+
+
+

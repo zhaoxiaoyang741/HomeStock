@@ -25,17 +25,12 @@ func New(cfg *config.Config) (*App, error) {
 	if err != nil { return nil, err }
 	sqlDB, err := db.DB(); if err != nil { return nil, err }
 
-	// Repositories (GORM impl)
-	auditRepo := gormrepo.NewAuditLogRepository(db)
-	categoryRepo := gormrepo.NewCategoryRepository(db)
-	materialRepo := gormrepo.NewMaterialRepository(db)
-
 	// Services
-	materialSvc := service.NewMaterialService(db, materialRepo, auditRepo)
+	materialSvc := service.NewMaterialService(gormrepo.NewUnitOfWork(db))
 	inventorySvc := service.NewInventoryService(gormrepo.NewUnitOfWork(db))
 
 	// Handlers
-	categoryHandler := handler.NewCategoryHandler(categoryRepo, auditRepo)
+	categoryHandler := handler.NewCategoryHandler(service.NewCategoryService(gormrepo.NewUnitOfWork(db)))
 	materialHandler := handler.NewMaterialHandler(materialSvc, inventorySvc)
 	stockLotHandler := handler.NewStockLotHandler(inventorySvc)
 	stockMovementHandler := handler.NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
@@ -55,6 +50,7 @@ func New(cfg *config.Config) (*App, error) {
 func (a *App) Start() error { return a.server.Start() }
 func (a *App) Shutdown(ctx context.Context) error { return a.server.Shutdown(ctx) }
 func (a *App) Close() error { if a == nil || a.sqlDB == nil { return nil }; return a.sqlDB.Close() }
+
 
 
 

@@ -39,15 +39,11 @@ type consumeMaterialRequest struct {
 	Reason   string  `json:"reason"`
 }
 
-func toSvcActor(a httpreq.Actor) service.Actor {
-	return service.Actor{UserName: a.UserName, UserID: a.UserID, Channel: a.Channel, TenantID: a.TenantID}
-}
-
 func (h *MaterialHandler) Create(c *gin.Context) {
 	var req createMaterialRequest
 	if err := c.ShouldBindJSON(&req); err != nil { httpresp.Error(c, http.StatusBadRequest, err.Error()); return }
 	if strings.TrimSpace(req.Name) == "" { httpresp.Error(c, http.StatusBadRequest, "name cannot be empty"); return }
-	created, err := h.materials.Create(c.Request.Context(), toSvcActor(httpreq.From(c)), req.Name, req.Spec, req.CategoryID, req.DefaultUnit)
+	created, err := h.materials.Create(c.Request.Context(), svcActorFromRequest(c), req.Name, req.Spec, req.CategoryID, req.DefaultUnit)
 	if err != nil { handleMaterialRepositoryError(c, err, "create material failed"); return }
 	httpresp.Created(c, created)
 }
@@ -72,7 +68,7 @@ func (h *MaterialHandler) Consume(c *gin.Context) {
 	var req consumeMaterialRequest
 	if err := c.ShouldBindJSON(&req); err != nil { httpresp.Error(c, http.StatusBadRequest, err.Error()); return }
 	if req.Quantity <= 0 { httpresp.Error(c, http.StatusBadRequest, "quantity must be greater than 0"); return }
-	actor := toSvcActor(httpreq.From(c))
+	actor := svcActorFromRequest(c)
 	materialID := strings.TrimSpace(c.Param("id"))
 	results, err := h.inventory.Consume(c.Request.Context(), actor, materialID, actor.TenantID, req.Quantity, req.Reason)
 	if err != nil { handleMaterialRepositoryError(c, err, "consume material failed"); return }
@@ -95,5 +91,3 @@ func handleMaterialRepositoryError(c *gin.Context, err error, fallbackMessage st
 		httpresp.Error(c, http.StatusInternalServerError, fallbackMessage)
 	}
 }
-
-

@@ -11,10 +11,11 @@ import (
 
 type gormRepos struct { db *gorm.DB }
 
-func (r *gormRepos) Materials() repository.MaterialRepo       { return NewMaterialRepository(r.db) }
-func (r *gormRepos) StockLots() repository.StockLotRepo       { return NewStockLotRepository(r.db) }
-func (r *gormRepos) StockMovements() repository.StockMovementRepo { return NewStockMovementRepository(r.db) }
-func (r *gormRepos) AuditLogs() repository.AuditLogRepo       { return NewAuditLogRepository(r.db) }
+func (r *gormRepos) Categories() repository.CategoryRepo            { return NewCategoryRepository(r.db) }
+func (r *gormRepos) Materials() repository.MaterialRepo             { return NewMaterialRepository(r.db) }
+func (r *gormRepos) StockLots() repository.StockLotRepo             { return NewStockLotRepository(r.db) }
+func (r *gormRepos) StockMovements() repository.StockMovementRepo   { return NewStockMovementRepository(r.db) }
+func (r *gormRepos) AuditLogs() repository.AuditLogRepo             { return NewAuditLogRepository(r.db) }
 
 type UnitOfWork struct { db *gorm.DB }
 

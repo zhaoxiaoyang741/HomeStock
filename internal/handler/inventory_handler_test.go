@@ -200,9 +200,8 @@ func newTestServer(t *testing.T) (*httpserver.Server, func()) {
 	sqlDB, err := db.DB()
 	if err != nil { t.Fatalf("db.DB() error = %v", err) }
 
-	auditRepo := gormrepo.NewAuditLogRepository(db)
-	categoryHandler := NewCategoryHandler(gormrepo.NewCategoryRepository(db), auditRepo)
-	materialSvc := service.NewMaterialService(db, gormrepo.NewMaterialRepository(db), auditRepo)
+	categoryHandler := NewCategoryHandler(service.NewCategoryService(gormrepo.NewUnitOfWork(db)))
+	materialSvc := service.NewMaterialService(gormrepo.NewUnitOfWork(db))
 	inventorySvc := service.NewInventoryService(gormrepo.NewUnitOfWork(db))
 	materialHandler := NewMaterialHandler(materialSvc, inventorySvc)
 	stockLotHandler := NewStockLotHandler(inventorySvc)
@@ -233,6 +232,8 @@ func performJSONRequest(
 	if err := json.Unmarshal(rec.Body.Bytes(), &decoded); err != nil { t.Fatalf("json.Unmarshal() error = %v, body = %q", err, rec.Body.String()) }
 	return decoded
 }
+
+
 
 
 
