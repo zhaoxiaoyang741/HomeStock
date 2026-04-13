@@ -1,4 +1,4 @@
-﻿package gormrepo
+package gormrepo
 
 import (
 	"context"
@@ -9,15 +9,20 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
 )
 
-type gormRepos struct { db *gorm.DB }
+type gormRepos struct{ db *gorm.DB }
 
-func (r *gormRepos) Categories() repository.CategoryRepo            { return NewCategoryRepository(r.db) }
-func (r *gormRepos) Materials() repository.MaterialRepo             { return NewMaterialRepository(r.db) }
-func (r *gormRepos) StockLots() repository.StockLotRepo             { return NewStockLotRepository(r.db) }
-func (r *gormRepos) StockMovements() repository.StockMovementRepo   { return NewStockMovementRepository(r.db) }
-func (r *gormRepos) AuditLogs() repository.AuditLogRepo             { return NewAuditLogRepository(r.db) }
+func (r *gormRepos) Categories() repository.CategoryRepo { return NewCategoryRepository(r.db) }
+func (r *gormRepos) Materials() repository.MaterialRepo  { return NewMaterialRepository(r.db) }
+func (r *gormRepos) StockLots() repository.StockLotRepo  { return NewStockLotRepository(r.db) }
+func (r *gormRepos) StockMovements() repository.StockMovementRepo {
+	return NewStockMovementRepository(r.db)
+}
+func (r *gormRepos) AuditLogs() repository.AuditLogRepo { return NewAuditLogRepository(r.db) }
+func (r *gormRepos) SystemSettings() repository.SystemSettingRepo {
+	return NewSystemSettingRepository(r.db)
+}
 
-type UnitOfWork struct { db *gorm.DB }
+type UnitOfWork struct{ db *gorm.DB }
 
 func NewUnitOfWork(db *gorm.DB) *UnitOfWork { return &UnitOfWork{db: db} }
 

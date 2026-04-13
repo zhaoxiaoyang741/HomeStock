@@ -118,6 +118,7 @@ export default function HistoryPage() {
       case 'material': return t('entityMaterial')
       case 'stock_lot': return t('entityStockLot')
       case 'category': return t('entityCategory')
+      case 'system_setting': return t('entitySystemSetting')
       default: return type
     }
   }

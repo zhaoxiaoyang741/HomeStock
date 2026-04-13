@@ -1,4 +1,4 @@
-﻿package app
+package app
 
 import (
 	"context"
@@ -22,19 +22,27 @@ type App struct {
 
 func New(cfg *config.Config) (*App, error) {
 	db, err := database.OpenAndMigrate(cfg.Database)
-	if err != nil { return nil, err }
-	sqlDB, err := db.DB(); if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
 
 	// Services
-	materialSvc := service.NewMaterialService(gormrepo.NewUnitOfWork(db))
-	inventorySvc := service.NewInventoryService(gormrepo.NewUnitOfWork(db))
+	uow := gormrepo.NewUnitOfWork(db)
+	materialSvc := service.NewMaterialService(uow)
+	inventorySvc := service.NewInventoryService(uow)
+	systemSettingsSvc := service.NewSystemSettingsService(uow, cfg)
 
 	// Handlers
-	categoryHandler := handler.NewCategoryHandler(service.NewCategoryService(gormrepo.NewUnitOfWork(db)))
+	categoryHandler := handler.NewCategoryHandler(service.NewCategoryService(uow))
 	materialHandler := handler.NewMaterialHandler(materialSvc, inventorySvc)
 	stockLotHandler := handler.NewStockLotHandler(inventorySvc)
 	stockMovementHandler := handler.NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
-	auditLogHandler := handler.NewAuditLogHandler(service.NewAuditService(gormrepo.NewUnitOfWork(db)))
+	auditLogHandler := handler.NewAuditLogHandler(service.NewAuditService(uow))
+	systemSettingsHandler := handler.NewSystemSettingsHandler(systemSettingsSvc)
 
 	server := httpserver.New(cfg.Server,
 		categoryHandler.RegisterRoutes,
@@ -42,15 +50,17 @@ func New(cfg *config.Config) (*App, error) {
 		stockLotHandler.RegisterRoutes,
 		stockMovementHandler.RegisterRoutes,
 		auditLogHandler.RegisterRoutes,
+		systemSettingsHandler.RegisterRoutes,
 	)
 
 	return &App{server: server, db: db, sqlDB: sqlDB}, nil
 }
 
-func (a *App) Start() error { return a.server.Start() }
+func (a *App) Start() error                       { return a.server.Start() }
 func (a *App) Shutdown(ctx context.Context) error { return a.server.Shutdown(ctx) }
-func (a *App) Close() error { if a == nil || a.sqlDB == nil { return nil }; return a.sqlDB.Close() }
-
-
-
-
+func (a *App) Close() error {
+	if a == nil || a.sqlDB == nil {
+		return nil
+	}
+	return a.sqlDB.Close()
+}

@@ -1,4 +1,4 @@
-﻿package repository
+package repository
 
 import (
 	"context"
@@ -42,6 +42,11 @@ type StockMovementRepo interface {
 type AuditLogRepo interface {
 	Create(log *model.AuditLog) error
 	List(f AuditLogFilter) (*AuditLogPage, error)
+}
+
+type SystemSettingRepo interface {
+	GetByKey(key string) (*model.SystemSetting, error)
+	Upsert(setting *model.SystemSetting) error
 }
 
 // Query filters and public DTOs.
@@ -93,10 +98,10 @@ type StockMovementFilter struct {
 }
 
 type AuditLogFilter struct {
-	TenantID string
-	Action   string
-	Channel  string
-	UserName string
+	TenantID  string
+	Action    string
+	Channel   string
+	UserName  string
 	StartDate time.Time
 	EndDate   time.Time
 	Page      int
@@ -117,14 +122,11 @@ type Repos interface {
 	StockLots() StockLotRepo
 	StockMovements() StockMovementRepo
 	AuditLogs() AuditLogRepo
+	SystemSettings() SystemSettingRepo
 }
-
 
 // UnitOfWork provides access to repositories and transactional execution.
 type UnitOfWork interface {
 	Repos() Repos
 	WithTx(ctx context.Context, fn func(r Repos) error) error
 }
-
-
-

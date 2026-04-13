@@ -1,6 +1,6 @@
 {
   "title": "库存历史",
-  "subtitle": "库存流水作为主历史，审计日志保留为后台操作追踪。",
+  "subtitle": "库存流水作为主历史，审计日志保留后台操作轨迹。",
   "searchPlaceholder": "搜索物料、批次或操作人",
   "allMovementTypes": "全部流水类型",
   "allAuditActions": "全部动作",
@@ -18,6 +18,7 @@
   "entityMaterial": "物料",
   "entityStockLot": "批次",
   "entityCategory": "分类",
+  "entitySystemSetting": "系统配置",
   "tabMovements": "库存流水",
   "tabAudit": "操作审计",
   "colTime": "时间",

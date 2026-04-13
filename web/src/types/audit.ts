@@ -1,5 +1,5 @@
 export type AuditAction = 'create' | 'update' | 'delete'
-export type AuditEntityType = 'material' | 'stock_lot' | 'category'
+export type AuditEntityType = 'material' | 'stock_lot' | 'category' | 'system_setting'
 
 export interface AuditLog {
   id: string

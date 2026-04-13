@@ -18,6 +18,7 @@
   "entityMaterial": "Material",
   "entityStockLot": "Lot",
   "entityCategory": "Category",
+  "entitySystemSetting": "System Setting",
   "tabMovements": "Stock Movements",
   "tabAudit": "Audit Log",
   "colTime": "Time",

@@ -6,12 +6,14 @@ import zhCNNav from './locales/zh-CN/nav.json'
 import zhCNHeader from './locales/zh-CN/header.json'
 import zhCNInventory from './locales/zh-CN/inventory.json'
 import zhCNHistory from './locales/zh-CN/history.json'
+import zhCNSettings from './locales/zh-CN/settings.json'
 
 import enCommon from './locales/en/common.json'
 import enNav from './locales/en/nav.json'
 import enHeader from './locales/en/header.json'
 import enInventory from './locales/en/inventory.json'
 import enHistory from './locales/en/history.json'
+import enSettings from './locales/en/settings.json'
 
 const savedLanguage = (() => {
   try {
@@ -32,6 +34,7 @@ i18n.use(initReactI18next).init({
       header: zhCNHeader,
       inventory: zhCNInventory,
       history: zhCNHistory,
+      settings: zhCNSettings,
     },
     en: {
       common: enCommon,
@@ -39,6 +42,7 @@ i18n.use(initReactI18next).init({
       header: enHeader,
       inventory: enInventory,
       history: enHistory,
+      settings: enSettings,
     },
   },
   interpolation: {
