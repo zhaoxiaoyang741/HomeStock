@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export default function ConsumeMaterialDialog({ open, material, onClose, onSubmit }: Props) {
+  const { t } = useTranslation('inventory')
   const [quantity, setQuantity] = useState('1')
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -36,11 +38,11 @@ export default function ConsumeMaterialDialog({ open, material, onClose, onSubmi
     event.preventDefault()
     const nextQuantity = Number(quantity)
     if (!material) {
-      setError('请先选择物料')
+      setError(t('consume_errorNoMaterial'))
       return
     }
     if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) {
-      setError('消耗数量必须大于 0')
+      setError(t('consume_errorInvalidQuantity'))
       return
     }
 
@@ -53,7 +55,7 @@ export default function ConsumeMaterialDialog({ open, material, onClose, onSubmi
       })
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '消耗失败')
+      setError(err instanceof Error ? err.message : t('consume_errorFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -63,15 +65,20 @@ export default function ConsumeMaterialDialog({ open, material, onClose, onSubmi
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>消耗库存</DialogTitle>
+          <DialogTitle>{t('consume_title')}</DialogTitle>
           <DialogDescription>
-            {material ? `当前物料：${material.name}${material.spec ? ` / ${material.spec}` : ''}` : '请选择一个物料'}
+            {material
+              ? t('consume_descCurrent', {
+                  name: material.name,
+                  spec: material.spec ? ` / ${material.spec}` : '',
+                })
+              : t('consume_descEmpty')}
           </DialogDescription>
         </DialogHeader>
 
         <form className="space-y-4 py-2" onSubmit={handleSubmit}>
           <div className="space-y-1.5">
-            <Label htmlFor="consume-quantity">消耗数量</Label>
+            <Label htmlFor="consume-quantity">{t('consume_labelQuantity')}</Label>
             <Input
               id="consume-quantity"
               type="number"
@@ -82,18 +89,21 @@ export default function ConsumeMaterialDialog({ open, material, onClose, onSubmi
             />
             {material && (
               <p className="text-xs text-on-surface-variant">
-                当前总库存：{material.total_quantity} {material.default_unit}
+                {t('consume_currentStock', {
+                  quantity: material.total_quantity,
+                  unit: material.default_unit,
+                })}
               </p>
             )}
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="consume-reason">原因</Label>
+            <Label htmlFor="consume-reason">{t('common:reason')}</Label>
             <Input
               id="consume-reason"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              placeholder="如：做饭、清理、损耗"
+              placeholder={t('consume_placeholderReason')}
             />
           </div>
 
@@ -101,10 +111,10 @@ export default function ConsumeMaterialDialog({ open, material, onClose, onSubmi
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-              取消
+              {t('common:cancel')}
             </Button>
             <Button type="submit" disabled={submitting || !material}>
-              {submitting ? '处理中…' : '确认消耗'}
+              {submitting ? t('consume_btnSubmitting') : t('consume_btnSubmit')}
             </Button>
           </DialogFooter>
         </form>

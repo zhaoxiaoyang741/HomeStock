@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -40,18 +41,6 @@ interface FormState {
   notes: string
 }
 
-const EMPTY_FORM: FormState = {
-  name: '',
-  spec: '',
-  category_id: '',
-  quantity: '1',
-  unit: '件',
-  location: '',
-  purchased_at: new Date().toISOString().slice(0, 10),
-  expire_at: '',
-  notes: '',
-}
-
 function toRFC3339(dateInput: string): string {
   return dateInput ? new Date(dateInput).toISOString() : ''
 }
@@ -64,7 +53,18 @@ export default function InboundLotDialog({
   onClose,
   onSubmit,
 }: Props) {
-  const [form, setForm] = useState<FormState>(EMPTY_FORM)
+  const { t, i18n } = useTranslation('inventory')
+  const [form, setForm] = useState<FormState>(() => ({
+    name: '',
+    spec: '',
+    category_id: '',
+    quantity: '1',
+    unit: i18n.language === 'en' ? 'pcs' : '件',
+    location: '',
+    purchased_at: new Date().toISOString().slice(0, 10),
+    expire_at: '',
+    notes: '',
+  }))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -72,13 +72,18 @@ export default function InboundLotDialog({
     if (!open) return
     const defaultCategory = categories.find((category) => category.name === '默认分类')
     setForm({
-      ...EMPTY_FORM,
       name: initialName ?? '',
       spec: initialSpec ?? '',
       category_id: defaultCategory?.id ?? '',
+      quantity: '1',
+      unit: i18n.language === 'en' ? 'pcs' : '件',
+      location: '',
+      purchased_at: new Date().toISOString().slice(0, 10),
+      expire_at: '',
+      notes: '',
     })
     setError('')
-  }, [open, categories, initialName, initialSpec])
+  }, [open, categories, initialName, initialSpec, i18n.language])
 
   function setValue<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }))
@@ -87,7 +92,7 @@ export default function InboundLotDialog({
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (!form.name.trim()) {
-      setError('物料名称不能为空')
+      setError(t('inbound_errorNameRequired'))
       return
     }
 
@@ -99,7 +104,7 @@ export default function InboundLotDialog({
         spec: form.spec.trim() || undefined,
         category_id: form.category_id || undefined,
         quantity: Number(form.quantity) || 1,
-        unit: form.unit.trim() || '件',
+        unit: form.unit.trim() || (i18n.language === 'en' ? 'pcs' : '件'),
         location: form.location.trim() || undefined,
         purchased_at: form.purchased_at ? toRFC3339(form.purchased_at) : undefined,
         expire_at: form.expire_at ? toRFC3339(form.expire_at) : undefined,
@@ -107,7 +112,7 @@ export default function InboundLotDialog({
       })
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '入库失败')
+      setError(err instanceof Error ? err.message : t('inbound_errorFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -117,37 +122,37 @@ export default function InboundLotDialog({
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>新增入库批次</DialogTitle>
+          <DialogTitle>{t('inbound_title')}</DialogTitle>
         </DialogHeader>
 
         <form className="space-y-4 py-2" onSubmit={handleSubmit}>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="inbound-name">物料名称</Label>
+              <Label htmlFor="inbound-name">{t('inbound_labelName')}</Label>
               <Input
                 id="inbound-name"
                 value={form.name}
                 onChange={(event) => setValue('name', event.target.value)}
-                placeholder="如：牛奶、土豆、洗衣液"
+                placeholder={t('inbound_placeholderName')}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="inbound-spec">规格</Label>
+              <Label htmlFor="inbound-spec">{t('inbound_labelSpec')}</Label>
               <Input
                 id="inbound-spec"
                 value={form.spec}
                 onChange={(event) => setValue('spec', event.target.value)}
-                placeholder="如：1L、500g"
+                placeholder={t('inbound_placeholderSpec')}
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>分类</Label>
+              <Label>{t('inbound_labelCategory')}</Label>
               <Select value={form.category_id} onValueChange={(value) => setValue('category_id', value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="选择分类" />
+                  <SelectValue placeholder={t('inbound_placeholderCategory')} />
                 </SelectTrigger>
                 <SelectContent>
                   {categories.map((category) => (
@@ -159,19 +164,19 @@ export default function InboundLotDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="inbound-location">位置</Label>
+              <Label htmlFor="inbound-location">{t('inbound_labelLocation')}</Label>
               <Input
                 id="inbound-location"
                 value={form.location}
                 onChange={(event) => setValue('location', event.target.value)}
-                placeholder="如：冰箱、储物间"
+                placeholder={t('inbound_placeholderLocation')}
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="inbound-quantity">数量</Label>
+              <Label htmlFor="inbound-quantity">{t('inbound_labelQuantity')}</Label>
               <Input
                 id="inbound-quantity"
                 type="number"
@@ -182,19 +187,19 @@ export default function InboundLotDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="inbound-unit">单位</Label>
+              <Label htmlFor="inbound-unit">{t('inbound_labelUnit')}</Label>
               <Input
                 id="inbound-unit"
                 value={form.unit}
                 onChange={(event) => setValue('unit', event.target.value)}
-                placeholder="件"
+                placeholder={t('inbound_placeholderUnit')}
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="inbound-purchased-at">购买日期</Label>
+              <Label htmlFor="inbound-purchased-at">{t('inbound_labelPurchasedAt')}</Label>
               <Input
                 id="inbound-purchased-at"
                 type="date"
@@ -203,7 +208,7 @@ export default function InboundLotDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="inbound-expire-at">过期日期</Label>
+              <Label htmlFor="inbound-expire-at">{t('inbound_labelExpireAt')}</Label>
               <Input
                 id="inbound-expire-at"
                 type="date"
@@ -214,14 +219,14 @@ export default function InboundLotDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="inbound-notes">备注</Label>
+            <Label htmlFor="inbound-notes">{t('inbound_labelNotes')}</Label>
             <textarea
               id="inbound-notes"
               rows={3}
               value={form.notes}
               onChange={(event) => setValue('notes', event.target.value)}
               className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
-              placeholder="可记录来源、用途或开封说明"
+              placeholder={t('inbound_placeholderNotes')}
             />
           </div>
 
@@ -229,10 +234,10 @@ export default function InboundLotDialog({
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-              取消
+              {t('common:cancel')}
             </Button>
             <Button type="submit" disabled={submitting}>
-              {submitting ? '保存中…' : '确认入库'}
+              {submitting ? t('inbound_btnSubmitting') : t('inbound_btnSubmit')}
             </Button>
           </DialogFooter>
         </form>

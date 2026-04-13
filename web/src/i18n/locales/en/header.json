@@ -1,0 +1,12 @@
+{
+  "searchPlaceholder": "Search materials...",
+  "toggleSidebarOpen": "Expand sidebar",
+  "toggleSidebarClose": "Collapse sidebar",
+  "toggleDark": "Switch to dark mode",
+  "toggleLight": "Switch to light mode",
+  "sync": "Sync",
+  "notifications": "Notifications",
+  "userAvatar": "User avatar",
+  "userFallback": "U",
+  "switchLanguage": "Switch language"
+}

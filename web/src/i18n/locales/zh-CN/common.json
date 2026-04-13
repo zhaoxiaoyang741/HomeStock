@@ -1,0 +1,17 @@
+{
+  "cancel": "取消",
+  "save": "保存",
+  "delete": "删除",
+  "confirm": "确认",
+  "refresh": "刷新",
+  "loading": "加载中…",
+  "noData": "暂无数据",
+  "error": "错误",
+  "notes": "备注",
+  "location": "位置",
+  "status": "状态",
+  "actions": "操作",
+  "noSpec": "未填写规格",
+  "reason": "原因",
+  "remark": "备注"
+}

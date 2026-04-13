@@ -8,19 +8,21 @@ import {
   LogOut,
   Warehouse,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/appStore'
 
-const NAV_ITEMS = [
-  { path: '/',          icon: BarChart2,     label: '首页' },
-  { path: '/inventory', icon: Package,       label: '物料库存' },
-  { path: '/shopping',  icon: ShoppingCart,  label: '购物列表' },
-  { path: '/history',   icon: ClipboardList, label: '使用记录' },
-  { path: '/settings',  icon: Settings,      label: '系统设置' },
-]
-
 export default function Sidebar() {
   const collapsed = useAppStore((s) => s.collapsed)
+  const { t } = useTranslation('nav')
+
+  const NAV_ITEMS = [
+    { path: '/',          icon: BarChart2,     label: t('home') },
+    { path: '/inventory', icon: Package,       label: t('inventory') },
+    { path: '/shopping',  icon: ShoppingCart,  label: t('shopping') },
+    { path: '/history',   icon: ClipboardList, label: t('history') },
+    { path: '/settings',  icon: Settings,      label: t('settings') },
+  ]
 
   return (
     <aside
@@ -37,7 +39,7 @@ export default function Sidebar() {
         </div>
         <div className={cn('overflow-hidden sidebar-fade flex-1 min-w-0', collapsed ? 'opacity-0 w-0' : 'opacity-100 w-auto')}>
           <p className="text-sm font-semibold text-on-surface leading-tight whitespace-nowrap">Amenity Home</p>
-          <p className="text-xs text-on-surface-variant leading-tight whitespace-nowrap">物料管理</p>
+          <p className="text-xs text-on-surface-variant leading-tight whitespace-nowrap">{t('appSubtitle')}</p>
         </div>
       </div>
 
@@ -73,11 +75,11 @@ export default function Sidebar() {
             'flex items-center cursor-pointer gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors',
             collapsed ? 'justify-center' : ''
           )}
-          title={collapsed ? '退出登录' : undefined}
+          title={collapsed ? t('logout') : undefined}
         >
           <LogOut className="w-5 h-5 shrink-0" />
           <span className={cn('overflow-hidden whitespace-nowrap transition-[opacity,width] duration-300 ease-in-out', collapsed ? 'opacity-0 w-0' : 'opacity-100 w-auto')}>
-            退出登录
+            {t('logout')}
           </span>
         </button>
       </div>

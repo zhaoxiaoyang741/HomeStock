@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -27,6 +28,7 @@ function toRFC3339(dateInput: string): string {
 }
 
 export default function EditLotDialog({ open, lot, onClose, onSubmit }: Props) {
+  const { t } = useTranslation('inventory')
   const [location, setLocation] = useState('')
   const [notes, setNotes] = useState('')
   const [purchasedAt, setPurchasedAt] = useState('')
@@ -56,7 +58,7 @@ export default function EditLotDialog({ open, lot, onClose, onSubmit }: Props) {
       })
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '更新批次失败')
+      setError(err instanceof Error ? err.message : t('editLot_errorFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -66,13 +68,13 @@ export default function EditLotDialog({ open, lot, onClose, onSubmit }: Props) {
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>编辑批次信息</DialogTitle>
+          <DialogTitle>{t('editLot_title')}</DialogTitle>
         </DialogHeader>
 
         <form className="space-y-4 py-2" onSubmit={handleSubmit}>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="edit-lot-location">位置</Label>
+              <Label htmlFor="edit-lot-location">{t('editLot_labelLocation')}</Label>
               <Input
                 id="edit-lot-location"
                 value={location}
@@ -80,7 +82,7 @@ export default function EditLotDialog({ open, lot, onClose, onSubmit }: Props) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="edit-lot-purchased-at">购买日期</Label>
+              <Label htmlFor="edit-lot-purchased-at">{t('editLot_labelPurchasedAt')}</Label>
               <Input
                 id="edit-lot-purchased-at"
                 type="date"
@@ -92,7 +94,7 @@ export default function EditLotDialog({ open, lot, onClose, onSubmit }: Props) {
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label htmlFor="edit-lot-expire-at">过期日期</Label>
+              <Label htmlFor="edit-lot-expire-at">{t('editLot_labelExpireAt')}</Label>
               <Input
                 id="edit-lot-expire-at"
                 type="date"
@@ -101,7 +103,7 @@ export default function EditLotDialog({ open, lot, onClose, onSubmit }: Props) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="edit-lot-notes">备注</Label>
+              <Label htmlFor="edit-lot-notes">{t('editLot_labelNotes')}</Label>
               <Input
                 id="edit-lot-notes"
                 value={notes}
@@ -114,10 +116,10 @@ export default function EditLotDialog({ open, lot, onClose, onSubmit }: Props) {
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-              取消
+              {t('common:cancel')}
             </Button>
             <Button type="submit" disabled={submitting}>
-              {submitting ? '保存中…' : '保存批次'}
+              {submitting ? t('editLot_btnSubmitting') : t('editLot_btnSubmit')}
             </Button>
           </DialogFooter>
         </form>

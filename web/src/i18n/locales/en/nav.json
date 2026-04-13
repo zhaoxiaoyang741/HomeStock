@@ -1,0 +1,9 @@
+{
+  "home": "Home",
+  "inventory": "Inventory",
+  "shopping": "Shopping List",
+  "history": "History",
+  "settings": "Settings",
+  "logout": "Log Out",
+  "appSubtitle": "Inventory Mgmt"
+}

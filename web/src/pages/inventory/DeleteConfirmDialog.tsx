@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export default function DeleteConfirmDialog({ open, itemName, onClose, onConfirm }: Props) {
+  const { t } = useTranslation('inventory')
   const [deleting, setDeleting] = useState(false)
 
   async function handleConfirm() {
@@ -33,17 +35,17 @@ export default function DeleteConfirmDialog({ open, itemName, onClose, onConfirm
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>删除确认</DialogTitle>
+          <DialogTitle>{t('deleteConfirm_title')}</DialogTitle>
           <DialogDescription>
-            确定要删除「<span className="font-medium text-on-surface">{itemName}</span>」吗？此操作不可恢复。
+            {t('deleteConfirm_description', { name: itemName })}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={deleting}>
-            取消
+            {t('common:cancel')}
           </Button>
           <Button variant="destructive" onClick={handleConfirm} disabled={deleting}>
-            {deleting ? '删除中…' : '确认删除'}
+            {deleting ? t('deleteConfirm_btnDeleting') : t('deleteConfirm_btnConfirm')}
           </Button>
         </DialogFooter>
       </DialogContent>

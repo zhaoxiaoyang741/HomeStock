@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Info, RefreshCw } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -34,54 +35,6 @@ import type { StockMovement, StockMovementType } from '@/types/stock'
 import type { AuditAction, AuditLog } from '@/types/audit'
 import { parseChangesDetail } from '@/types/audit'
 
-const REASON_MAP: Record<string, string> = {
-  inbound: '入库',
-  consume: '消耗',
-  'manual consume': '消耗',
-  adjustment: '调整',
-  void: '作废',
-}
-
-function reasonLabel(reason: string, remark: string): string {
-  const r = reason || remark
-  return REASON_MAP[r.toLowerCase()] ?? (r || '—')
-}
-
-function channelLabel(channel: string): string {
-  switch (channel) {
-    case 'web': return '网页'
-    case 'feishu': return '飞书'
-    case 'system': return '系统'
-    default: return channel || '系统'
-  }
-}
-
-function OperatorCell({ userName, userId, channel }: { userName: string; userId: string; channel: string }) {
-  const name = userName || userId || ''
-  const label = channelLabel(channel)
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-sm text-on-surface">{name || label}</span>
-      {name && (
-        <span className="text-xs text-on-surface-variant">{label}</span>
-      )}
-    </div>
-  )
-}
-
-function movementLabel(type: StockMovementType): string {
-  switch (type) {
-    case 'inbound':
-      return '入库'
-    case 'consume':
-      return '消耗'
-    case 'adjustment':
-      return '调整'
-    case 'void':
-      return '作废'
-  }
-}
-
 function movementVariant(type: StockMovementType): 'default' | 'secondary' | 'destructive' {
   switch (type) {
     case 'inbound':
@@ -94,31 +47,20 @@ function movementVariant(type: StockMovementType): 'default' | 'secondary' | 'de
   }
 }
 
-function actionLabel(action: AuditAction): string {
-  switch (action) {
-    case 'create':
-      return '新增'
-    case 'update':
-      return '更新'
-    case 'delete':
-      return '删除'
-  }
-}
-
-function auditEntityLabel(type: string): string {
-  switch (type) {
-    case 'material':
-      return '物料'
-    case 'stock_lot':
-      return '批次'
-    case 'category':
-      return '分类'
-    default:
-      return type
-  }
+function OperatorCell({ userName, userId, channelDisplayLabel }: { userName: string; userId: string; channelDisplayLabel: string }) {
+  const name = userName || userId || ''
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-sm text-on-surface">{name || channelDisplayLabel}</span>
+      {name && (
+        <span className="text-xs text-on-surface-variant">{channelDisplayLabel}</span>
+      )}
+    </div>
+  )
 }
 
 export default function HistoryPage() {
+  const { t, i18n } = useTranslation('history')
   const [movements, setMovements] = useState<StockMovement[]>([])
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(false)
@@ -131,6 +73,54 @@ export default function HistoryPage() {
   const [endDate, setEndDate] = useState('')
   const [selectedAuditLog, setSelectedAuditLog] = useState<AuditLog | null>(null)
   const debouncedSearch = useDebounce(search, 300)
+
+  const REASON_MAP: Record<string, string> = {
+    inbound: t('reasonInbound'),
+    consume: t('reasonConsume'),
+    'manual consume': t('reasonConsume'),
+    adjustment: t('reasonAdjustment'),
+    void: t('reasonVoid'),
+  }
+
+  function reasonLabel(reason: string, remark: string): string {
+    const r = reason || remark
+    return REASON_MAP[r.toLowerCase()] ?? (r || '—')
+  }
+
+  function channelLabel(channel: string): string {
+    switch (channel) {
+      case 'web': return t('channelWeb')
+      case 'feishu': return t('channelFeishu')
+      case 'system': return t('channelSystem')
+      default: return channel || t('channelSystem')
+    }
+  }
+
+  function movementLabel(type: StockMovementType): string {
+    switch (type) {
+      case 'inbound': return t('movementInbound')
+      case 'consume': return t('movementConsume')
+      case 'adjustment': return t('movementAdjustment')
+      case 'void': return t('movementVoid')
+    }
+  }
+
+  function actionLabel(action: AuditAction): string {
+    switch (action) {
+      case 'create': return t('actionCreate')
+      case 'update': return t('actionUpdate')
+      case 'delete': return t('actionDelete')
+    }
+  }
+
+  function auditEntityLabel(type: string): string {
+    switch (type) {
+      case 'material': return t('entityMaterial')
+      case 'stock_lot': return t('entityStockLot')
+      case 'category': return t('entityCategory')
+      default: return type
+    }
+  }
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -154,11 +144,11 @@ export default function HistoryPage() {
       setMovements(movementRes.movements)
       setAuditLogs(auditRes.logs)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载历史失败')
+      setError(err instanceof Error ? err.message : t('loadingFailed'))
     } finally {
       setLoading(false)
     }
-  }, [movementType, auditAction, auditChannel, startDate, endDate])
+  }, [movementType, auditAction, auditChannel, startDate, endDate, t])
 
   useEffect(() => {
     void loadData()
@@ -191,12 +181,12 @@ export default function HistoryPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-on-surface">库存历史</h1>
-          <p className="text-sm text-on-surface-variant mt-0.5">库存流水作为主历史，审计日志保留为后台操作追踪。</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-on-surface">{t('title')}</h1>
+          <p className="text-sm text-on-surface-variant mt-0.5">{t('subtitle')}</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void loadData()} disabled={loading}>
           <RefreshCw className={cn('w-4 h-4 mr-2', loading && 'animate-spin')} />
-          刷新
+          {t('common:refresh')}
         </Button>
       </div>
 
@@ -205,38 +195,38 @@ export default function HistoryPage() {
           className="w-56"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="搜索物料、批次或操作人"
+          placeholder={t('searchPlaceholder')}
         />
         <Select value={movementType} onValueChange={setMovementType}>
           <SelectTrigger className="w-36">
-            <SelectValue placeholder="全部流水类型" />
+            <SelectValue placeholder={t('allMovementTypes')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">全部流水类型</SelectItem>
-            <SelectItem value="inbound">入库</SelectItem>
-            <SelectItem value="consume">消耗</SelectItem>
-            <SelectItem value="adjustment">调整</SelectItem>
+            <SelectItem value="__all__">{t('allMovementTypes')}</SelectItem>
+            <SelectItem value="inbound">{t('movementInbound')}</SelectItem>
+            <SelectItem value="consume">{t('movementConsume')}</SelectItem>
+            <SelectItem value="adjustment">{t('movementAdjustment')}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={auditAction} onValueChange={setAuditAction}>
           <SelectTrigger className="w-32">
-            <SelectValue placeholder="全部审计动作" />
+            <SelectValue placeholder={t('allAuditActions')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">全部动作</SelectItem>
-            <SelectItem value="create">新增</SelectItem>
-            <SelectItem value="update">更新</SelectItem>
-            <SelectItem value="delete">删除</SelectItem>
+            <SelectItem value="__all__">{t('allAuditActions')}</SelectItem>
+            <SelectItem value="create">{t('actionCreate')}</SelectItem>
+            <SelectItem value="update">{t('actionUpdate')}</SelectItem>
+            <SelectItem value="delete">{t('actionDelete')}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={auditChannel} onValueChange={setAuditChannel}>
           <SelectTrigger className="w-32">
-            <SelectValue placeholder="全部渠道" />
+            <SelectValue placeholder={t('allChannels')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">全部渠道</SelectItem>
-            <SelectItem value="web">Web</SelectItem>
-            <SelectItem value="feishu">飞书</SelectItem>
+            <SelectItem value="__all__">{t('allChannels')}</SelectItem>
+            <SelectItem value="web">{t('channelWeb')}</SelectItem>
+            <SelectItem value="feishu">{t('channelFeishu')}</SelectItem>
           </SelectContent>
         </Select>
         <Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="w-40" />
@@ -249,8 +239,8 @@ export default function HistoryPage() {
 
       <Tabs defaultValue="movements" className="space-y-3">
         <TabsList className="bg-surface-container">
-          <TabsTrigger value="movements">库存流水</TabsTrigger>
-          <TabsTrigger value="audit">操作审计</TabsTrigger>
+          <TabsTrigger value="movements">{t('tabMovements')}</TabsTrigger>
+          <TabsTrigger value="audit">{t('tabAudit')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="movements">
@@ -258,41 +248,47 @@ export default function HistoryPage() {
             <Table>
               <TableHeader>
                 <TableRow className="border-outline-variant/20">
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">时间</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">类型</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">物料</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">批次</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">变动</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">原因</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">操作人</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colTime')}</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colType')}</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colMaterial')}</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colLot')}</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colDelta')}</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colReason')}</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colOperator')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredMovements.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="h-32 text-center text-on-surface-variant">
-                      {loading ? '加载中…' : '暂无库存流水'}
+                      {loading ? t('common:loading') : t('noMovements')}
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredMovements.map((movement) => (
                     <TableRow key={movement.id} className="border-outline-variant/10 hover:bg-surface">
                       <TableCell className="text-xs text-on-surface-variant whitespace-nowrap">
-                        {formatDateTime(movement.created_at)}
+                        {formatDateTime(movement.created_at, i18n.language)}
                       </TableCell>
                       <TableCell>
                         <Badge variant={movementVariant(movement.movement_type)}>{movementLabel(movement.movement_type)}</Badge>
                       </TableCell>
                       <TableCell className="text-sm text-on-surface">
                         <div className="font-medium">{movement.material?.name ?? '—'}</div>
-                        <div className="text-xs text-on-surface-variant">{movement.material?.spec || '未填写规格'}</div>
+                        <div className="text-xs text-on-surface-variant">{movement.material?.spec || t('noSpec')}</div>
                       </TableCell>
                       <TableCell className="text-xs text-on-surface-variant">{movement.lot_id}</TableCell>
                       <TableCell className={cn('font-semibold', movement.quantity_delta < 0 ? 'text-error' : 'text-primary')}>
                         {movement.quantity_delta > 0 ? '+' : ''}{movement.quantity_delta} {movement.unit}
                       </TableCell>
                       <TableCell className="text-sm text-on-surface-variant">{reasonLabel(movement.reason, movement.remark)}</TableCell>
-                      <TableCell><OperatorCell userName={movement.user_name} userId={movement.user_id} channel={movement.channel} /></TableCell>
+                      <TableCell>
+                        <OperatorCell
+                          userName={movement.user_name}
+                          userId={movement.user_id}
+                          channelDisplayLabel={channelLabel(movement.channel)}
+                        />
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
@@ -306,28 +302,34 @@ export default function HistoryPage() {
             <Table>
               <TableHeader>
                 <TableRow className="border-outline-variant/20">
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">时间</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">操作人</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">动作</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">对象</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">名称</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant text-right">详情</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colTime')}</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colOperator')}</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colAction')}</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colObject')}</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colName')}</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant text-right">{t('colDetails')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredAuditLogs.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="h-32 text-center text-on-surface-variant">
-                      {loading ? '加载中…' : '暂无审计日志'}
+                      {loading ? t('common:loading') : t('noAuditLogs')}
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredAuditLogs.map((log) => (
                     <TableRow key={log.id} className="border-outline-variant/10 hover:bg-surface">
                       <TableCell className="text-xs text-on-surface-variant whitespace-nowrap">
-                        {formatDateTime(log.created_at)}
+                        {formatDateTime(log.created_at, i18n.language)}
                       </TableCell>
-                      <TableCell><OperatorCell userName={log.user_name} userId={log.user_id} channel={log.channel} /></TableCell>
+                      <TableCell>
+                        <OperatorCell
+                          userName={log.user_name}
+                          userId={log.user_id}
+                          channelDisplayLabel={channelLabel(log.channel)}
+                        />
+                      </TableCell>
                       <TableCell>
                         <Badge variant={log.action === 'delete' ? 'destructive' : log.action === 'update' ? 'secondary' : 'default'}>
                           {actionLabel(log.action)}
@@ -352,18 +354,18 @@ export default function HistoryPage() {
       <Dialog open={selectedAuditLog !== null} onOpenChange={(nextOpen) => !nextOpen && setSelectedAuditLog(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>审计日志详情</DialogTitle>
+            <DialogTitle>{t('auditDialogTitle')}</DialogTitle>
           </DialogHeader>
           {selectedAuditLog && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <span className="text-on-surface-variant">时间</span>
-                <span>{formatDateTime(selectedAuditLog.created_at)}</span>
-                <span className="text-on-surface-variant">操作人</span>
-                <span>{selectedAuditLog.user_name || selectedAuditLog.user_id || '系统'}</span>
-                <span className="text-on-surface-variant">动作</span>
+                <span className="text-on-surface-variant">{t('auditFieldTime')}</span>
+                <span>{formatDateTime(selectedAuditLog.created_at, i18n.language)}</span>
+                <span className="text-on-surface-variant">{t('auditFieldOperator')}</span>
+                <span>{selectedAuditLog.user_name || selectedAuditLog.user_id || t('channelSystem')}</span>
+                <span className="text-on-surface-variant">{t('auditFieldAction')}</span>
                 <span>{actionLabel(selectedAuditLog.action)}</span>
-                <span className="text-on-surface-variant">对象</span>
+                <span className="text-on-surface-variant">{t('auditFieldObject')}</span>
                 <span>{auditEntityLabel(selectedAuditLog.entity_type)} / {selectedAuditLog.entity_name || '—'}</span>
               </div>
               <pre className="text-xs bg-surface-container rounded-lg p-3 overflow-auto max-h-64 text-on-surface whitespace-pre-wrap break-all">

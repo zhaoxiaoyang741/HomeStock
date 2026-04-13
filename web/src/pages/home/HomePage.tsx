@@ -1,3 +1,6 @@
+import { useTranslation } from 'react-i18next'
+
 export default function HomedPage() {
-  return <div className="p-6">首页</div>
+  const { t } = useTranslation('nav')
+  return <div className="p-6">{t('home')}</div>
 }

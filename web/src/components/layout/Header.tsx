@@ -1,6 +1,14 @@
-import { Bell, Moon, Sun, PanelLeftClose, PanelLeftOpen, RefreshCw, Search } from 'lucide-react'
+import { Bell, Moon, Sun, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, Languages } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/appStore'
 import { useTheme } from '@/hooks/useTheme'
@@ -8,6 +16,13 @@ import { useTheme } from '@/hooks/useTheme'
 export default function Header() {
   const { collapsed, toggleCollapsed } = useAppStore()
   const { resolvedTheme, setTheme } = useTheme()
+  const { t, i18n } = useTranslation('header')
+
+  function handleLanguageChange(lang: string) {
+    void i18n.changeLanguage(lang)
+    try { localStorage.setItem('language', lang) } catch {}
+    document.documentElement.lang = lang
+  }
 
   return (
     <header className={cn(
@@ -19,7 +34,7 @@ export default function Header() {
       <button
         onClick={toggleCollapsed}
         className="p-2 rounded-lg cursor-pointer text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors shrink-0"
-        aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
+        aria-label={collapsed ? t('toggleSidebarOpen') : t('toggleSidebarClose')}
       >
         {collapsed
           ? <PanelLeftOpen className="w-5 h-5" />
@@ -30,14 +45,32 @@ export default function Header() {
       {/* Search */}
       <div className="relative w-72">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
-        <Input className="pl-9 bg-surface-container-low border-outline-variant" placeholder="搜索物料..." />
+        <Input className="pl-9 bg-surface-container-low border-outline-variant" placeholder={t('searchPlaceholder')} />
       </div>
 
       {/* Actions */}
       <div className="flex items-center gap-2 ml-auto">
+        {/* Language switcher */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
+              aria-label={t('switchLanguage')}
+            >
+              <Languages className="w-5 h-5 cursor-pointer" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-36">
+            <DropdownMenuRadioGroup value={i18n.language} onValueChange={handleLanguageChange}>
+              <DropdownMenuRadioItem value="zh-CN">中文</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="en">English</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
         <button
           className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
-          aria-label={resolvedTheme === 'dark' ? '切换亮色模式' : '切换暗色模式'}
+          aria-label={resolvedTheme === 'dark' ? t('toggleLight') : t('toggleDark')}
           onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
         >
           {resolvedTheme === 'dark'
@@ -45,15 +78,15 @@ export default function Header() {
             : <Moon className="w-5 h-5 cursor-pointer" />
           }
         </button>
-        <button className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" aria-label="同步">
+        <button className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" aria-label={t('sync')}>
           <RefreshCw className="w-5 h-5 cursor-pointer" />
         </button>
-        <button className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" aria-label="通知">
+        <button className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" aria-label={t('notifications')}>
           <Bell className="w-5 h-5 cursor-pointer" />
         </button>
         <Avatar className="w-8 h-8 ml-1 cursor-pointer">
-          <AvatarImage src="" alt="用户头像" />
-          <AvatarFallback className="bg-primary text-on-primary text-xs">用</AvatarFallback>
+          <AvatarImage src="" alt={t('userAvatar')} />
+          <AvatarFallback className="bg-primary text-on-primary text-xs">{t('userFallback')}</AvatarFallback>
         </Avatar>
       </div>
     </header>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export default function AdjustLotDialog({ open, lot, onClose, onSubmit }: Props) {
+  const { t } = useTranslation('inventory')
   const [targetQuantity, setTargetQuantity] = useState('0')
   const [reason, setReason] = useState('')
   const [remark, setRemark] = useState('')
@@ -38,7 +40,7 @@ export default function AdjustLotDialog({ open, lot, onClose, onSubmit }: Props)
     event.preventDefault()
     const nextQuantity = Number(targetQuantity)
     if (!Number.isFinite(nextQuantity) || nextQuantity < 0) {
-      setError('目标库存不能小于 0')
+      setError(t('adjustLot_errorInvalidQuantity'))
       return
     }
 
@@ -52,7 +54,7 @@ export default function AdjustLotDialog({ open, lot, onClose, onSubmit }: Props)
       })
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '调整库存失败')
+      setError(err instanceof Error ? err.message : t('adjustLot_errorFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -62,15 +64,17 @@ export default function AdjustLotDialog({ open, lot, onClose, onSubmit }: Props)
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>调整批次库存</DialogTitle>
+          <DialogTitle>{t('adjustLot_title')}</DialogTitle>
           <DialogDescription>
-            {lot ? `当前批次库存：${lot.quantity_on_hand} ${lot.unit}` : '请选择一个批次'}
+            {lot
+              ? t('adjustLot_descCurrent', { quantity: lot.quantity_on_hand, unit: lot.unit })
+              : t('adjustLot_descEmpty')}
           </DialogDescription>
         </DialogHeader>
 
         <form className="space-y-4 py-2" onSubmit={handleSubmit}>
           <div className="space-y-1.5">
-            <Label htmlFor="adjust-lot-quantity">目标库存</Label>
+            <Label htmlFor="adjust-lot-quantity">{t('adjustLot_labelTargetQuantity')}</Label>
             <Input
               id="adjust-lot-quantity"
               type="number"
@@ -82,22 +86,22 @@ export default function AdjustLotDialog({ open, lot, onClose, onSubmit }: Props)
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="adjust-lot-reason">原因</Label>
+            <Label htmlFor="adjust-lot-reason">{t('adjustLot_labelReason')}</Label>
             <Input
               id="adjust-lot-reason"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              placeholder="如：盘点、修正、损耗"
+              placeholder={t('adjustLot_placeholderReason')}
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="adjust-lot-remark">备注</Label>
+            <Label htmlFor="adjust-lot-remark">{t('adjustLot_labelRemark')}</Label>
             <Input
               id="adjust-lot-remark"
               value={remark}
               onChange={(event) => setRemark(event.target.value)}
-              placeholder="补充说明"
+              placeholder={t('adjustLot_placeholderRemark')}
             />
           </div>
 
@@ -105,10 +109,10 @@ export default function AdjustLotDialog({ open, lot, onClose, onSubmit }: Props)
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-              取消
+              {t('common:cancel')}
             </Button>
             <Button type="submit" disabled={submitting || !lot}>
-              {submitting ? '调整中…' : '确认调整'}
+              {submitting ? t('adjustLot_btnSubmitting') : t('adjustLot_btnSubmit')}
             </Button>
           </DialogFooter>
         </form>

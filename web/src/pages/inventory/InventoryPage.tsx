@@ -10,6 +10,7 @@ import {
   SlidersHorizontal,
   Warehouse,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -44,24 +45,6 @@ import EditLotDialog from './EditLotDialog'
 import AdjustLotDialog from './AdjustLotDialog'
 import ExpiringLotsDialog from './ExpiringLotsDialog'
 
-const STATUS_MAP: Record<InventoryStatus, { label: string; variant: 'default' | 'outline' | 'destructive' }> = {
-  normal: { label: '正常', variant: 'default' },
-  expiring: { label: '即将过期', variant: 'outline' },
-  expired: { label: '已过期', variant: 'destructive' },
-}
-
-function StatusBadge({ status }: { status: InventoryStatus }) {
-  const meta = STATUS_MAP[status]
-  return (
-    <Badge
-      variant={meta.variant}
-      className={cn(meta.variant === 'outline' && 'text-tertiary border-tertiary/50')}
-    >
-      {meta.label}
-    </Badge>
-  )
-}
-
 function formatLocations(locations: string[]): string {
   if (locations.length === 0) return '—'
   if (locations.length <= 2) return locations.join(' / ')
@@ -69,6 +52,7 @@ function formatLocations(locations: string[]): string {
 }
 
 export default function InventoryPage() {
+  const { t, i18n } = useTranslation('inventory')
   const [materials, setMaterials] = useState<MaterialSummary[]>([])
   const [lots, setLots] = useState<StockLot[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -86,6 +70,24 @@ export default function InventoryPage() {
   const [consumeOpen, setConsumeOpen] = useState(false)
   const [editingLot, setEditingLot] = useState<StockLot | null>(null)
   const [adjustingLot, setAdjustingLot] = useState<StockLot | null>(null)
+
+  const STATUS_MAP: Record<InventoryStatus, { label: string; variant: 'default' | 'outline' | 'destructive' }> = {
+    normal: { label: t('statusNormal'), variant: 'default' },
+    expiring: { label: t('statusExpiring'), variant: 'outline' },
+    expired: { label: t('statusExpired'), variant: 'destructive' },
+  }
+
+  function StatusBadge({ status }: { status: InventoryStatus }) {
+    const meta = STATUS_MAP[status]
+    return (
+      <Badge
+        variant={meta.variant}
+        className={cn(meta.variant === 'outline' && 'text-tertiary border-tertiary/50')}
+      >
+        {meta.label}
+      </Badge>
+    )
+  }
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -117,11 +119,11 @@ export default function InventoryPage() {
         nextMaterials.some((material) => material.id === current) ? current : (nextMaterials[0]?.id ?? ''),
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载库存失败')
+      setError(err instanceof Error ? err.message : t('loadingFailed'))
     } finally {
       setLoading(false)
     }
-  }, [categoryFilter, locationFilter, debouncedSearch])
+  }, [categoryFilter, locationFilter, debouncedSearch, t])
 
   useEffect(() => {
     void loadData()
@@ -174,8 +176,8 @@ export default function InventoryPage() {
     <div className="flex flex-col h-full gap-6">
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-extrabold text-on-surface tracking-tight">物料库存</h1>
-          <p className="text-sm text-on-surface-variant mt-0.5">按物料汇总库存，并在下方查看每个真实批次的库存、日期和位置。</p>
+          <h1 className="text-2xl font-extrabold text-on-surface tracking-tight">{t('title')}</h1>
+          <p className="text-sm text-on-surface-variant mt-0.5">{t('subtitle')}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative min-w-56">
@@ -184,15 +186,15 @@ export default function InventoryPage() {
               className="pl-9"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="搜索物料名称或规格"
+              placeholder={t('searchPlaceholder')}
             />
           </div>
           <Select value={categoryFilter} onValueChange={setCategoryFilter}>
             <SelectTrigger className="w-40">
-              <SelectValue placeholder="全部分类" />
+              <SelectValue placeholder={t('allCategories')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__all__">全部分类</SelectItem>
+              <SelectItem value="__all__">{t('allCategories')}</SelectItem>
               {categories.map((category) => (
                 <SelectItem key={category.id} value={category.id}>
                   {category.name}
@@ -202,10 +204,10 @@ export default function InventoryPage() {
           </Select>
           <Select value={locationFilter} onValueChange={setLocationFilter}>
             <SelectTrigger className="w-40">
-              <SelectValue placeholder="全部位置" />
+              <SelectValue placeholder={t('allLocations')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__all__">全部位置</SelectItem>
+              <SelectItem value="__all__">{t('allLocations')}</SelectItem>
               {locationOptions.map((location) => (
                 <SelectItem key={location} value={location}>
                   {location}
@@ -213,16 +215,16 @@ export default function InventoryPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon" onClick={() => void loadData()} title="刷新">
+          <Button variant="outline" size="icon" onClick={() => void loadData()} title={t('common:refresh')}>
             <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
           </Button>
           <Button variant="outline" onClick={() => setConsumeOpen(true)} disabled={!selectedMaterial}>
             <SlidersHorizontal className="w-4 h-4" />
-            消耗库存
+            {t('btnConsume')}
           </Button>
           <Button onClick={() => setInboundOpen(true)}>
             <PackagePlus className="w-4 h-4" />
-            新增入库
+            {t('btnInbound')}
           </Button>
         </div>
       </div>
@@ -237,7 +239,7 @@ export default function InventoryPage() {
             <Warehouse className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">物料数</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('statMaterials')}</p>
             <p className="text-xl font-extrabold text-on-surface">{materials.length}</p>
           </div>
         </div>
@@ -246,7 +248,7 @@ export default function InventoryPage() {
             <Boxes className="w-5 h-5 text-secondary" />
           </div>
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">批次数</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('statLots')}</p>
             <p className="text-xl font-extrabold text-on-surface">{lots.length}</p>
           </div>
         </div>
@@ -259,7 +261,7 @@ export default function InventoryPage() {
             <Box className="w-5 h-5 text-tertiary" />
           </div>
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">临期批次</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('statExpiring')}</p>
             <p className={cn('text-xl font-extrabold', warningLots > 0 ? 'text-tertiary' : 'text-on-surface')}>
               {warningLots}
             </p>
@@ -271,21 +273,21 @@ export default function InventoryPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-surface-container-low/50 border-outline-variant/20 hover:bg-surface-container-low/50">
-              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">物料名称</TableHead>
-              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">分类</TableHead>
-              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">总库存</TableHead>
-              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">批次数</TableHead>
-              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">最近过期</TableHead>
-              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">位置摘要</TableHead>
-              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">状态</TableHead>
-              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant text-right">操作</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colMaterial')}</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colCategory')}</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colTotalStock')}</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colLotCount')}</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colNearestExpiry')}</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colLocations')}</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('colStatus')}</TableHead>
+              <TableHead className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant text-right">{t('colActions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {materials.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="h-32 text-center text-on-surface-variant">
-                  {loading ? '加载中…' : '暂无物料'}
+                  {loading ? t('common:loading') : t('noMaterials')}
                 </TableCell>
               </TableRow>
             ) : (
@@ -303,13 +305,13 @@ export default function InventoryPage() {
                   >
                     <TableCell className="py-5">
                       <div className="font-bold text-on-surface">{material.name}</div>
-                      <div className="text-xs text-on-surface-variant">{material.spec || '未填写规格'}</div>
+                      <div className="text-xs text-on-surface-variant">{material.spec || t('common:noSpec')}</div>
                     </TableCell>
                     <TableCell className="py-5 text-on-surface-variant">{material.category?.name ?? '—'}</TableCell>
                     <TableCell className="py-5 font-medium">{material.total_quantity} {material.default_unit}</TableCell>
                     <TableCell className="py-5 text-on-surface-variant">{material.lot_count}</TableCell>
                     <TableCell className="py-5 text-on-surface-variant">
-                      {material.nearest_expire_at ? formatDate(material.nearest_expire_at) : '—'}
+                      {material.nearest_expire_at ? formatDate(material.nearest_expire_at, i18n.language) : '—'}
                     </TableCell>
                     <TableCell className="py-5 text-on-surface-variant">{formatLocations(material.locations)}</TableCell>
                     <TableCell className="py-5">
@@ -324,7 +326,7 @@ export default function InventoryPage() {
                           setSelectedMaterialId(material.id)
                           setConsumeOpen(true)
                         }}
-                        title="消耗库存"
+                        title={t('btnConsumeTitle')}
                       >
                         <ChevronRight className="w-4 h-4" />
                       </Button>
@@ -340,18 +342,25 @@ export default function InventoryPage() {
       <div className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest shadow-sm overflow-hidden">
         <div className="px-6 py-5 border-b border-outline-variant/20 flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-on-surface">批次明细</h2>
+            <h2 className="text-lg font-semibold text-on-surface">{t('lotsTitle')}</h2>
             <p className="text-sm text-on-surface-variant mt-0.5">
               {selectedMaterial
-                ? `${selectedMaterial.name}${selectedMaterial.spec ? ` / ${selectedMaterial.spec}` : ''} 的真实库存批次`
-                : '选择上方物料后查看批次明细'}
+                ? t('lotsSubtitleSelected', {
+                    name: selectedMaterial.name,
+                    spec: selectedMaterial.spec ? ` / ${selectedMaterial.spec}` : '',
+                  })
+                : t('lotsSubtitleEmpty')}
             </p>
           </div>
           {selectedMaterial && (
             <div className="text-right">
-              <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">当前汇总</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('lotsSummaryLabel')}</p>
               <p className="text-sm font-semibold text-on-surface">
-                {selectedMaterial.total_quantity} {selectedMaterial.default_unit} / {selectedMaterial.lot_count} 批
+                {t('lotsSummaryValue', {
+                  quantity: selectedMaterial.total_quantity,
+                  unit: selectedMaterial.default_unit,
+                  count: selectedMaterial.lot_count,
+                })}
               </p>
             </div>
           )}
@@ -360,26 +369,26 @@ export default function InventoryPage() {
         <Table>
           <TableHeader>
             <TableRow className="border-outline-variant/20">
-              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">库存</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">位置</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">购买日期</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">过期日期</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">备注</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">状态</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant text-right">操作</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('lotsColStock')}</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('lotsColLocation')}</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('lotsColPurchased')}</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('lotsColExpiry')}</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('lotsColNotes')}</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('lotsColStatus')}</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant text-right">{t('lotsColActions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {!selectedMaterial ? (
               <TableRow>
                 <TableCell colSpan={7} className="h-32 text-center text-on-surface-variant">
-                  请先在上方选择一个物料
+                  {t('lotsSelectFirst')}
                 </TableCell>
               </TableRow>
             ) : selectedLots.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="h-32 text-center text-on-surface-variant">
-                  当前筛选条件下没有批次
+                  {t('lotsEmpty')}
                 </TableCell>
               </TableRow>
             ) : (
@@ -390,10 +399,10 @@ export default function InventoryPage() {
                     <TableCell className="py-5 font-medium">{lot.quantity_on_hand} {lot.unit}</TableCell>
                     <TableCell className="py-5 text-on-surface-variant">{lot.location || '—'}</TableCell>
                     <TableCell className="py-5 text-on-surface-variant">
-                      {lot.purchased_at ? formatDate(lot.purchased_at) : '—'}
+                      {lot.purchased_at ? formatDate(lot.purchased_at, i18n.language) : '—'}
                     </TableCell>
                     <TableCell className="py-5 text-on-surface-variant">
-                      {lot.expire_at ? formatDate(lot.expire_at) : '—'}
+                      {lot.expire_at ? formatDate(lot.expire_at, i18n.language) : '—'}
                     </TableCell>
                     <TableCell className="py-5 text-on-surface-variant">{lot.notes || '—'}</TableCell>
                     <TableCell className="py-5">
@@ -401,11 +410,11 @@ export default function InventoryPage() {
                     </TableCell>
                     <TableCell className="py-5 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => setEditingLot(lot)} title="编辑批次">
+                        <Button variant="ghost" size="icon" onClick={() => setEditingLot(lot)} title={t('btnEditLot')}>
                           <Pencil className="w-4 h-4" />
                         </Button>
                         <Button variant="outline" size="sm" onClick={() => setAdjustingLot(lot)}>
-                          调整
+                          {t('btnAdjustLot')}
                         </Button>
                       </div>
                     </TableCell>

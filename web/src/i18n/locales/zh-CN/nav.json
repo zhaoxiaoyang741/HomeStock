@@ -1,0 +1,9 @@
+{
+  "home": "首页",
+  "inventory": "物料库存",
+  "shopping": "购物列表",
+  "history": "使用记录",
+  "settings": "系统设置",
+  "logout": "退出登录",
+  "appSubtitle": "物料管理"
+}

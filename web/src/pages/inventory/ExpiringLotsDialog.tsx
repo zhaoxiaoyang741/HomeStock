@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Pencil, Trash2, Check, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -40,6 +41,7 @@ function toRFC3339(dateInput: string): string {
 }
 
 export default function ExpiringLotsDialog({ open, lots, onClose, onChanged }: Props) {
+  const { t, i18n } = useTranslation('inventory')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editExpireAt, setEditExpireAt] = useState('')
   const [saving, setSaving] = useState(false)
@@ -75,7 +77,7 @@ export default function ExpiringLotsDialog({ open, lots, onClose, onChanged }: P
       setEditingId(null)
       onChanged()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '更新失败')
+      setError(err instanceof Error ? err.message : t('expiring_errorUpdateFailed'))
     } finally {
       setSaving(false)
     }
@@ -88,7 +90,7 @@ export default function ExpiringLotsDialog({ open, lots, onClose, onChanged }: P
       await stockLotApi.void(lot.id)
       onChanged()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '舍弃失败')
+      setError(err instanceof Error ? err.message : t('expiring_errorVoidFailed'))
     } finally {
       setVoidingId(null)
     }
@@ -98,9 +100,9 @@ export default function ExpiringLotsDialog({ open, lots, onClose, onChanged }: P
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>临期 / 已过期批次</DialogTitle>
+          <DialogTitle>{t('expiring_title')}</DialogTitle>
           <DialogDescription>
-            以下批次即将过期或已过期，可修改过期日期或直接舍弃。
+            {t('expiring_description')}
           </DialogDescription>
         </DialogHeader>
 
@@ -112,19 +114,19 @@ export default function ExpiringLotsDialog({ open, lots, onClose, onChanged }: P
           <Table>
             <TableHeader>
               <TableRow className="bg-surface-container-low/50 border-outline-variant/20 hover:bg-surface-container-low/50">
-                <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">物料</TableHead>
-                <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">库存</TableHead>
-                <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">位置</TableHead>
-                <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">过期日期</TableHead>
-                <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">状态</TableHead>
-                <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant text-right">操作</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('expiring_colMaterial')}</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('expiring_colStock')}</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('expiring_colLocation')}</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('expiring_colExpiry')}</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('expiring_colStatus')}</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant text-right">{t('expiring_colActions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {lots.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="h-24 text-center text-on-surface-variant">
-                    暂无临期或过期批次
+                    {t('expiring_noLots')}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -156,7 +158,7 @@ export default function ExpiringLotsDialog({ open, lots, onClose, onChanged }: P
                             'text-sm',
                             status === 'expired' ? 'text-error' : 'text-tertiary'
                           )}>
-                            {lot.expire_at ? formatDate(lot.expire_at) : '—'}
+                            {lot.expire_at ? formatDate(lot.expire_at, i18n.language) : '—'}
                           </span>
                         )}
                       </TableCell>
@@ -165,7 +167,7 @@ export default function ExpiringLotsDialog({ open, lots, onClose, onChanged }: P
                           variant={status === 'expired' ? 'destructive' : 'outline'}
                           className={cn(status === 'expiring' && 'text-tertiary border-tertiary/50')}
                         >
-                          {status === 'expired' ? '已过期' : '即将过期'}
+                          {status === 'expired' ? t('expiring_statusExpired') : t('expiring_statusExpiring')}
                         </Badge>
                       </TableCell>
                       <TableCell className="py-4 text-right">
@@ -177,11 +179,11 @@ export default function ExpiringLotsDialog({ open, lots, onClose, onChanged }: P
                                 size="icon"
                                 onClick={() => void saveExpireAt(lot)}
                                 disabled={saving}
-                                title="确认"
+                                title={t('expiring_tooltipConfirm')}
                               >
                                 <Check className="w-4 h-4 text-primary" />
                               </Button>
-                              <Button variant="ghost" size="icon" onClick={cancelEdit} disabled={saving} title="取消">
+                              <Button variant="ghost" size="icon" onClick={cancelEdit} disabled={saving} title={t('expiring_tooltipCancel')}>
                                 <X className="w-4 h-4" />
                               </Button>
                             </>
@@ -192,7 +194,7 @@ export default function ExpiringLotsDialog({ open, lots, onClose, onChanged }: P
                                 size="icon"
                                 onClick={() => startEdit(lot)}
                                 disabled={isVoiding}
-                                title="修改过期日期"
+                                title={t('expiring_tooltipEdit')}
                               >
                                 <Pencil className="w-4 h-4" />
                               </Button>
@@ -201,7 +203,7 @@ export default function ExpiringLotsDialog({ open, lots, onClose, onChanged }: P
                                 size="icon"
                                 onClick={() => void handleVoid(lot)}
                                 disabled={isVoiding}
-                                title="舍弃批次"
+                                title={t('expiring_tooltipVoid')}
                               >
                                 <Trash2 className={cn('w-4 h-4 text-error', isVoiding && 'opacity-50')} />
                               </Button>
