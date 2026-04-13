@@ -1,3 +1,5 @@
+export const DEFAULT_REMIND_DAYS = 3
+
 export interface SystemSettingsReminder {
   remind_days: number
   check_time: string

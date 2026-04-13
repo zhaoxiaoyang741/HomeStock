@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { systemSettingsApi } from '@/api/systemSettings'
+import { useSystemSettings } from '@/hooks/useSystemSettings'
 import type { SystemSettings, UpdateSystemSettingsPayload } from '@/types/systemSettings'
 
 type FormState = {
@@ -31,29 +31,19 @@ function formFromSettings(settings: SystemSettings): FormState {
 
 export default function SettingsPage() {
   const { t, i18n } = useTranslation(['settings', 'common', 'history'])
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const { settings, loading, error: settingsError, refreshSettings, updateSettings } = useSystemSettings()
   const [initialSettings, setInitialSettings] = useState<SystemSettings | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
 
-  async function loadSettings() {
-    setLoading(true)
-    setError('')
-    try {
-      const next = await systemSettingsApi.get()
-      setInitialSettings(next)
-      setForm(formFromSettings(next))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('settings:loadFailed'))
-    } finally {
-      setLoading(false)
-    }
-  }
-
   useEffect(() => {
-    void loadSettings()
-  }, [])
+    if (!settings) return
+    if (initialSettings?.version === settings.version) return
+    setInitialSettings(settings)
+    setForm(formFromSettings(settings))
+    setError('')
+  }, [settings, initialSettings?.version])
 
   const dirty = useMemo(() => {
     if (!initialSettings || !form) return false
@@ -83,7 +73,7 @@ export default function SettingsPage() {
           feishu_webhook: form.webhookMode === 'replace' ? form.feishuWebhookInput.trim() : undefined,
         },
       }
-      const saved = await systemSettingsApi.update(payload)
+      const saved = await updateSettings(payload)
       setInitialSettings(saved)
       setForm(formFromSettings(saved))
     } catch (err) {
@@ -127,7 +117,7 @@ export default function SettingsPage() {
           <p className="text-sm text-on-surface-variant mt-0.5">{t('settings:subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void loadSettings()} disabled={loading || saving}>
+          <Button variant="outline" size="sm" onClick={() => void refreshSettings()} disabled={loading || saving}>
             <RefreshCw className={`mr-2 h-4 w-4 ${(loading && form) ? 'animate-spin' : ''}`} />
             {t('common:refresh')}
           </Button>
@@ -141,9 +131,9 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {error && (
+      {(error || settingsError) && (
         <div className="rounded-lg bg-error-container px-4 py-3 text-sm text-error">
-          {error}
+          {error || settingsError || t('settings:loadFailed')}
         </div>
       )}
 

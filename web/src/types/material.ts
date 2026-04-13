@@ -56,13 +56,13 @@ export interface MaterialListResponse {
   total: number
 }
 
-export function getInventoryStatus(dateLike: string | null | undefined): InventoryStatus {
+export function getInventoryStatus(dateLike: string | null | undefined, remindDays: number = 3): InventoryStatus {
   if (!dateLike) return 'normal'
   const now = new Date()
   const target = new Date(dateLike)
   if (Number.isNaN(target.getTime())) return 'normal'
   if (target < now) return 'expired'
   const days = (target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-  if (days <= 30) return 'expiring'
+  if (days <= remindDays) return 'expiring'
   return 'normal'
 }

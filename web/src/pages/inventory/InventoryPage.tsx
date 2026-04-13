@@ -32,6 +32,7 @@ import {
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import { useDebounce } from '@/hooks/useDebounce'
+import { useSystemSettings } from '@/hooks/useSystemSettings'
 import { categoryApi } from '@/api/category'
 import { materialApi } from '@/api/material'
 import { stockLotApi } from '@/api/stockLot'
@@ -46,13 +47,14 @@ import AdjustLotDialog from './AdjustLotDialog'
 import ExpiringLotsDialog from './ExpiringLotsDialog'
 
 function formatLocations(locations: string[]): string {
-  if (locations.length === 0) return '—'
+  if (!locations ||  locations.length === 0) return '—'
   if (locations.length <= 2) return locations.join(' / ')
   return `${locations.slice(0, 2).join(' / ')} +${locations.length - 2}`
 }
 
 export default function InventoryPage() {
   const { t, i18n } = useTranslation('inventory')
+  const { remindDays } = useSystemSettings()
   const [materials, setMaterials] = useState<MaterialSummary[]>([])
   const [lots, setLots] = useState<StockLot[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -145,8 +147,8 @@ export default function InventoryPage() {
   )
 
   const warningLots = useMemo(
-    () => lots.filter((lot) => getInventoryStatus(lot.expire_at) !== 'normal').length,
-    [lots],
+    () => lots.filter((lot) => getInventoryStatus(lot.expire_at, remindDays) !== 'normal').length,
+    [lots, remindDays],
   )
 
   async function handleInbound(payload: InboundStockLotPayload) {
@@ -292,7 +294,7 @@ export default function InventoryPage() {
               </TableRow>
             ) : (
               materials.map((material) => {
-                const status = getInventoryStatus(material.nearest_expire_at)
+                const status = getInventoryStatus(material.nearest_expire_at, remindDays)
                 const selected = material.id === selectedMaterialId
                 return (
                   <TableRow
@@ -393,7 +395,7 @@ export default function InventoryPage() {
               </TableRow>
             ) : (
               selectedLots.map((lot) => {
-                const status = getInventoryStatus(lot.expire_at)
+                const status = getInventoryStatus(lot.expire_at, remindDays)
                 return (
                   <TableRow key={lot.id} className="border-outline-variant/10 hover:bg-surface">
                     <TableCell className="py-5 font-medium">{lot.quantity_on_hand} {lot.unit}</TableCell>
@@ -428,7 +430,7 @@ export default function InventoryPage() {
 
       <ExpiringLotsDialog
         open={expiringOpen}
-        lots={lots.filter((lot) => getInventoryStatus(lot.expire_at) !== 'normal')}
+        lots={lots.filter((lot) => getInventoryStatus(lot.expire_at, remindDays) !== 'normal')}
         onClose={() => setExpiringOpen(false)}
         onChanged={() => void loadData()}
       />
