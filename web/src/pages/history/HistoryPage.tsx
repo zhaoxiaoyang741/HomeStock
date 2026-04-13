@@ -34,6 +34,41 @@ import type { StockMovement, StockMovementType } from '@/types/stock'
 import type { AuditAction, AuditLog } from '@/types/audit'
 import { parseChangesDetail } from '@/types/audit'
 
+const REASON_MAP: Record<string, string> = {
+  inbound: '入库',
+  consume: '消耗',
+  'manual consume': '消耗',
+  adjustment: '调整',
+  void: '作废',
+}
+
+function reasonLabel(reason: string, remark: string): string {
+  const r = reason || remark
+  return REASON_MAP[r.toLowerCase()] ?? (r || '—')
+}
+
+function channelLabel(channel: string): string {
+  switch (channel) {
+    case 'web': return '网页'
+    case 'feishu': return '飞书'
+    case 'system': return '系统'
+    default: return channel || '系统'
+  }
+}
+
+function OperatorCell({ userName, userId, channel }: { userName: string; userId: string; channel: string }) {
+  const name = userName || userId || ''
+  const label = channelLabel(channel)
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-sm text-on-surface">{name || label}</span>
+      {name && (
+        <span className="text-xs text-on-surface-variant">{label}</span>
+      )}
+    </div>
+  )
+}
+
 function movementLabel(type: StockMovementType): string {
   switch (type) {
     case 'inbound':
@@ -256,8 +291,8 @@ export default function HistoryPage() {
                       <TableCell className={cn('font-semibold', movement.quantity_delta < 0 ? 'text-error' : 'text-primary')}>
                         {movement.quantity_delta > 0 ? '+' : ''}{movement.quantity_delta} {movement.unit}
                       </TableCell>
-                      <TableCell className="text-sm text-on-surface-variant">{movement.reason || movement.remark || '—'}</TableCell>
-                      <TableCell className="text-sm text-on-surface-variant">{movement.user_name || movement.user_id || '系统'}</TableCell>
+                      <TableCell className="text-sm text-on-surface-variant">{reasonLabel(movement.reason, movement.remark)}</TableCell>
+                      <TableCell><OperatorCell userName={movement.user_name} userId={movement.user_id} channel={movement.channel} /></TableCell>
                     </TableRow>
                   ))
                 )}
@@ -273,7 +308,6 @@ export default function HistoryPage() {
                 <TableRow className="border-outline-variant/20">
                   <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">时间</TableHead>
                   <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">操作人</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">渠道</TableHead>
                   <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">动作</TableHead>
                   <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">对象</TableHead>
                   <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">名称</TableHead>
@@ -283,7 +317,7 @@ export default function HistoryPage() {
               <TableBody>
                 {filteredAuditLogs.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-32 text-center text-on-surface-variant">
+                    <TableCell colSpan={6} className="h-32 text-center text-on-surface-variant">
                       {loading ? '加载中…' : '暂无审计日志'}
                     </TableCell>
                   </TableRow>
@@ -293,8 +327,7 @@ export default function HistoryPage() {
                       <TableCell className="text-xs text-on-surface-variant whitespace-nowrap">
                         {formatDateTime(log.created_at)}
                       </TableCell>
-                      <TableCell className="text-sm text-on-surface">{log.user_name || log.user_id || '系统'}</TableCell>
-                      <TableCell className="text-sm text-on-surface-variant">{log.channel}</TableCell>
+                      <TableCell><OperatorCell userName={log.user_name} userId={log.user_id} channel={log.channel} /></TableCell>
                       <TableCell>
                         <Badge variant={log.action === 'delete' ? 'destructive' : log.action === 'update' ? 'secondary' : 'default'}>
                           {actionLabel(log.action)}

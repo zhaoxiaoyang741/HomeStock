@@ -75,7 +75,7 @@ func (s *InventoryService) Inbound(ctx context.Context, actor Actor, in InboundI
 		if err := lotRepo.Create(lot); err != nil {
 			return err
 		}
-		if err := moveRepo.Create(&model.StockMovement{TenantID: in.TenantID, MaterialID: material.ID, LotID: lot.ID, MovementType: "inbound", QuantityDelta: in.Quantity, Unit: unit, Reason: "inbound", Channel: actor.Channel, UserName: actor.UserName, UserID: actor.UserID, Remark: strings.TrimSpace(in.Notes)}); err != nil {
+		if err := moveRepo.Create(&model.StockMovement{TenantID: in.TenantID, MaterialID: material.ID, LotID: lot.ID, MovementType: "inbound", QuantityDelta: in.Quantity, Unit: unit, Reason: "入库", Channel: actor.Channel, UserName: actor.UserName, UserID: actor.UserID, Remark: strings.TrimSpace(in.Notes)}); err != nil {
 			return err
 		}
 		var err2 error
@@ -118,6 +118,10 @@ func (s *InventoryService) Consume(ctx context.Context, actor Actor, materialID,
 			return repository.ErrInsufficientStock
 		}
 
+		consumeReason := strings.TrimSpace(reason)
+		if consumeReason == "" {
+			consumeReason = "消耗"
+		}
 		for _, l := range lots {
 			if remaining <= 0 {
 				break
@@ -136,7 +140,7 @@ func (s *InventoryService) Consume(ctx context.Context, actor Actor, materialID,
 			if err := lotRepo.Update(&l); err != nil {
 				return err
 			}
-			if err := moveRepo.Create(&model.StockMovement{TenantID: tenantID, MaterialID: material.ID, LotID: l.ID, MovementType: "consume", QuantityDelta: -take, Unit: l.Unit, Reason: strings.TrimSpace(reason), Channel: actor.Channel, UserName: actor.UserName, UserID: actor.UserID, Remark: strings.TrimSpace(reason)}); err != nil {
+			if err := moveRepo.Create(&model.StockMovement{TenantID: tenantID, MaterialID: material.ID, LotID: l.ID, MovementType: "consume", QuantityDelta: -take, Unit: l.Unit, Reason: consumeReason, Channel: actor.Channel, UserName: actor.UserName, UserID: actor.UserID, Remark: consumeReason}); err != nil {
 				return err
 			}
 			results = append(results, ConsumeResult{LotID: l.ID, ConsumedQuantity: take, RemainingQuantity: l.QuantityOnHand, Location: l.Location, ExpireAt: l.ExpireAt})
@@ -172,8 +176,12 @@ func (s *InventoryService) Adjust(ctx context.Context, actor Actor, lotID, tenan
 		if err := lotRepo.Update(lot); err != nil {
 			return err
 		}
+		adjustReason := strings.TrimSpace(reason)
+		if adjustReason == "" {
+			adjustReason = "调整"
+		}
 		if delta != 0 {
-			if err := moveRepo.Create(&model.StockMovement{TenantID: tenantID, MaterialID: lot.MaterialID, LotID: lot.ID, MovementType: "adjustment", QuantityDelta: delta, Unit: lot.Unit, Reason: strings.TrimSpace(reason), Channel: actor.Channel, UserName: actor.UserName, UserID: actor.UserID, Remark: strings.TrimSpace(remark)}); err != nil {
+			if err := moveRepo.Create(&model.StockMovement{TenantID: tenantID, MaterialID: lot.MaterialID, LotID: lot.ID, MovementType: "adjustment", QuantityDelta: delta, Unit: lot.Unit, Reason: adjustReason, Channel: actor.Channel, UserName: actor.UserName, UserID: actor.UserID, Remark: strings.TrimSpace(remark)}); err != nil {
 				return err
 			}
 		}
@@ -230,7 +238,7 @@ func (s *InventoryService) VoidLot(ctx context.Context, actor Actor, lotID, tena
 			return err
 		}
 		if delta != 0 {
-			if err := moveRepo.Create(&model.StockMovement{TenantID: tenantID, MaterialID: lot.MaterialID, LotID: lot.ID, MovementType: "void", QuantityDelta: delta, Unit: lot.Unit, Reason: "void", Channel: actor.Channel, UserName: actor.UserName, UserID: actor.UserID}); err != nil {
+			if err := moveRepo.Create(&model.StockMovement{TenantID: tenantID, MaterialID: lot.MaterialID, LotID: lot.ID, MovementType: "void", QuantityDelta: delta, Unit: lot.Unit, Reason: "作废", Channel: actor.Channel, UserName: actor.UserName, UserID: actor.UserID}); err != nil {
 				return err
 			}
 		}
