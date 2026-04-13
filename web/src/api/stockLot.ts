@@ -43,4 +43,9 @@ export const stockLotApi = {
     const res = await api.post<Result<StockLot>>(`/v1/stock-lots/${id}/adjust`, payload)
     return res.data
   },
+
+  void: async (id: string): Promise<StockLot> => {
+    const res = await api.post<Result<StockLot>>(`/v1/stock-lots/${id}/void`, {})
+    return res.data
+  },
 }

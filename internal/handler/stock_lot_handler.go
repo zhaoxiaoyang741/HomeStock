@@ -12,15 +12,18 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 )
 
-type StockLotHandler struct { inventory *service.InventoryService }
+type StockLotHandler struct{ inventory *service.InventoryService }
 
-func NewStockLotHandler(inventory *service.InventoryService) *StockLotHandler { return &StockLotHandler{inventory: inventory} }
+func NewStockLotHandler(inventory *service.InventoryService) *StockLotHandler {
+	return &StockLotHandler{inventory: inventory}
+}
 
 func (h *StockLotHandler) RegisterRoutes(api *gin.RouterGroup) {
 	api.GET("/stock-lots", h.List)
 	api.POST("/stock-lots/inbound", h.Inbound)
 	api.PUT("/stock-lots/:id", h.Update)
 	api.POST("/stock-lots/:id/adjust", h.Adjust)
+	api.POST("/stock-lots/:id/void", h.Void)
 }
 
 type inboundStockLotRequest struct {
@@ -59,45 +62,105 @@ func (h *StockLotHandler) List(c *gin.Context) {
 		Keyword:      strings.TrimSpace(c.Query("keyword")),
 		ExpiringSoon: strings.EqualFold(strings.TrimSpace(c.Query("expiring_soon")), "true"),
 	})
-	if err != nil { handleStockLotRepositoryError(c, err, "list stock lots failed"); return }
+	if err != nil {
+		handleStockLotRepositoryError(c, err, "list stock lots failed")
+		return
+	}
 	httpresp.List(c, lots, len(lots), 0, 0)
 }
 
 func (h *StockLotHandler) Inbound(c *gin.Context) {
 	var req inboundStockLotRequest
-	if err := c.ShouldBindJSON(&req); err != nil { httpresp.Error(c, http.StatusBadRequest, err.Error()); return }
-	if req.Quantity <= 0 { httpresp.Error(c, http.StatusBadRequest, "quantity must be greater than 0"); return }
-	if strings.TrimSpace(req.MaterialID) == "" && strings.TrimSpace(req.Name) == "" { httpresp.Error(c, http.StatusBadRequest, "material_id or name is required"); return }
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpresp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.Quantity <= 0 {
+		httpresp.Error(c, http.StatusBadRequest, "quantity must be greater than 0")
+		return
+	}
+	if strings.TrimSpace(req.MaterialID) == "" && strings.TrimSpace(req.Name) == "" {
+		httpresp.Error(c, http.StatusBadRequest, "material_id or name is required")
+		return
+	}
 	actor := svcActorFromRequest(c)
-	expireAt, err := parseOptionalRFC3339(req.ExpireAt); if err != nil { httpresp.Error(c, http.StatusBadRequest, "invalid expire_at, must be RFC3339"); return }
-	purchasedAt, err := parseOptionalRFC3339(req.PurchasedAt); if err != nil { httpresp.Error(c, http.StatusBadRequest, "invalid purchased_at, must be RFC3339"); return }
+	expireAt, err := parseOptionalRFC3339(req.ExpireAt)
+	if err != nil {
+		httpresp.Error(c, http.StatusBadRequest, "invalid expire_at, must be RFC3339")
+		return
+	}
+	purchasedAt, err := parseOptionalRFC3339(req.PurchasedAt)
+	if err != nil {
+		httpresp.Error(c, http.StatusBadRequest, "invalid purchased_at, must be RFC3339")
+		return
+	}
 	lot, err := h.inventory.Inbound(c.Request.Context(), actor, service.InboundInput{
 		TenantID: actor.TenantID, Name: req.Name, Spec: req.Spec, CategoryID: req.CategoryID, MaterialID: req.MaterialID, Quantity: req.Quantity, Unit: req.Unit, Location: req.Location, ExpireAt: expireAt, PurchasedAt: purchasedAt, Notes: req.Notes,
 	})
-	if err != nil { handleStockLotRepositoryError(c, err, "inbound stock lot failed"); return }
+	if err != nil {
+		handleStockLotRepositoryError(c, err, "inbound stock lot failed")
+		return
+	}
 	httpresp.Created(c, lot)
 }
 
 func (h *StockLotHandler) Update(c *gin.Context) {
 	var req updateStockLotRequest
-	if err := c.ShouldBindJSON(&req); err != nil { httpresp.Error(c, http.StatusBadRequest, err.Error()); return }
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpresp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
 	actor := svcActorFromRequest(c)
 	var expireAt, purchasedAt *time.Time
 	var err error
-	if req.ExpireAt != nil { expireAt, err = parseNullableRFC3339(*req.ExpireAt); if err != nil { httpresp.Error(c, http.StatusBadRequest, err.Error()); return } }
-	if req.PurchasedAt != nil { purchasedAt, err = parseNullableRFC3339(*req.PurchasedAt); if err != nil { httpresp.Error(c, http.StatusBadRequest, err.Error()); return } }
+	if req.ExpireAt != nil {
+		expireAt, err = parseNullableRFC3339(*req.ExpireAt)
+		if err != nil {
+			httpresp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if req.PurchasedAt != nil {
+		purchasedAt, err = parseNullableRFC3339(*req.PurchasedAt)
+		if err != nil {
+			httpresp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	updated, err := h.inventory.UpdateLot(c.Request.Context(), actor, strings.TrimSpace(c.Param("id")), actor.TenantID, service.UpdateLotInput{ExpireAt: expireAt, PurchasedAt: purchasedAt, Location: req.Location, Notes: req.Notes})
-	if err != nil { handleStockLotRepositoryError(c, err, "update stock lot failed"); return }
+	if err != nil {
+		handleStockLotRepositoryError(c, err, "update stock lot failed")
+		return
+	}
+	httpresp.OK(c, updated)
+}
+
+func (h *StockLotHandler) Void(c *gin.Context) {
+	actor := svcActorFromRequest(c)
+	updated, err := h.inventory.VoidLot(c.Request.Context(), actor, strings.TrimSpace(c.Param("id")), actor.TenantID)
+	if err != nil {
+		handleStockLotRepositoryError(c, err, "void stock lot failed")
+		return
+	}
 	httpresp.OK(c, updated)
 }
 
 func (h *StockLotHandler) Adjust(c *gin.Context) {
 	var req adjustStockLotRequest
-	if err := c.ShouldBindJSON(&req); err != nil { httpresp.Error(c, http.StatusBadRequest, err.Error()); return }
-	if req.TargetQuantity < 0 { httpresp.Error(c, http.StatusBadRequest, "target_quantity cannot be negative"); return }
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpresp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.TargetQuantity < 0 {
+		httpresp.Error(c, http.StatusBadRequest, "target_quantity cannot be negative")
+		return
+	}
 	actor := svcActorFromRequest(c)
 	updated, err := h.inventory.Adjust(c.Request.Context(), actor, strings.TrimSpace(c.Param("id")), actor.TenantID, req.TargetQuantity, req.Reason, req.Remark)
-	if err != nil { handleStockLotRepositoryError(c, err, "adjust stock lot failed"); return }
+	if err != nil {
+		handleStockLotRepositoryError(c, err, "adjust stock lot failed")
+		return
+	}
 	httpresp.OK(c, updated)
 }
 
@@ -117,14 +180,24 @@ func handleStockLotRepositoryError(c *gin.Context, err error, fallbackMessage st
 
 func parseOptionalRFC3339(raw string) (*time.Time, error) {
 	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" { return nil, nil }
-	t, err := time.Parse(time.RFC3339, trimmed); if err != nil { return nil, err }
+	if trimmed == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339, trimmed)
+	if err != nil {
+		return nil, err
+	}
 	return &t, nil
 }
 
 func parseNullableRFC3339(raw string) (*time.Time, error) {
 	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" { return nil, nil }
-	t, err := time.Parse(time.RFC3339, trimmed); if err != nil { return nil, err }
+	if trimmed == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339, trimmed)
+	if err != nil {
+		return nil, err
+	}
 	return &t, nil
 }

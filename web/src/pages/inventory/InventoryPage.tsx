@@ -42,6 +42,7 @@ import InboundLotDialog from './InboundLotDialog'
 import ConsumeMaterialDialog from './ConsumeMaterialDialog'
 import EditLotDialog from './EditLotDialog'
 import AdjustLotDialog from './AdjustLotDialog'
+import ExpiringLotsDialog from './ExpiringLotsDialog'
 
 const STATUS_MAP: Record<InventoryStatus, { label: string; variant: 'default' | 'outline' | 'destructive' }> = {
   normal: { label: '正常', variant: 'default' },
@@ -80,6 +81,7 @@ export default function InventoryPage() {
   const [locationFilter, setLocationFilter] = useState('__all__')
   const debouncedSearch = useDebounce(search, 300)
 
+  const [expiringOpen, setExpiringOpen] = useState(false)
   const [inboundOpen, setInboundOpen] = useState(false)
   const [consumeOpen, setConsumeOpen] = useState(false)
   const [editingLot, setEditingLot] = useState<StockLot | null>(null)
@@ -248,7 +250,11 @@ export default function InventoryPage() {
             <p className="text-xl font-extrabold text-on-surface">{lots.length}</p>
           </div>
         </div>
-        <div className="p-5 bg-surface-container-lowest rounded-xl border border-outline-variant/20 flex items-center gap-4 shadow-sm">
+        <button
+          type="button"
+          className="p-5 bg-surface-container-lowest rounded-xl border border-outline-variant/20 flex items-center gap-4 shadow-sm text-left hover:bg-surface-container transition-colors cursor-pointer w-full"
+          onClick={() => setExpiringOpen(true)}
+        >
           <div className="w-11 h-11 rounded-full bg-tertiary-container/20 flex items-center justify-center shrink-0">
             <Box className="w-5 h-5 text-tertiary" />
           </div>
@@ -258,7 +264,7 @@ export default function InventoryPage() {
               {warningLots}
             </p>
           </div>
-        </div>
+        </button>
       </div>
 
       <div className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest shadow-sm overflow-hidden">
@@ -411,6 +417,12 @@ export default function InventoryPage() {
         </Table>
       </div>
 
+      <ExpiringLotsDialog
+        open={expiringOpen}
+        lots={lots.filter((lot) => getInventoryStatus(lot.expire_at) !== 'normal')}
+        onClose={() => setExpiringOpen(false)}
+        onChanged={() => void loadData()}
+      />
       <InboundLotDialog
         open={inboundOpen}
         categories={categories}
