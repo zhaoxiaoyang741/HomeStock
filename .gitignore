@@ -26,3 +26,5 @@ agent-tmp
 # ai
 CLAUDE.md
 .claude
+.openclaw/agents/
+openclaw-plugin/examples/

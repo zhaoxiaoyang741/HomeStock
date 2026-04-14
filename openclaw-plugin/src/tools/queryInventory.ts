@@ -63,14 +63,27 @@ function filterMaterialByKeyword(materials: MaterialSummary[], keyword?: string)
   return materials.filter((material) => `${material.name} ${material.spec}`.toLowerCase().includes(query));
 }
 
+function materialLocations(material: MaterialSummary): string[] {
+  return Array.isArray(material.locations) ? material.locations : [];
+}
+
+function hasMaterialStock(material: MaterialSummary): boolean {
+  return Number.isFinite(material.total_quantity) && material.total_quantity > 0;
+}
+
+function hasLotStock(lot: StockLot): boolean {
+  return Number.isFinite(lot.quantity_on_hand) && lot.quantity_on_hand > 0;
+}
+
 function buildMaterialLine(material: MaterialSummary): string {
   let line = `• ${material.name}`;
   if (material.spec) {
     line += ` / ${material.spec}`;
   }
   line += ` ${material.total_quantity}${material.default_unit}`;
-  if (material.locations.length > 0) {
-    line += ` [${material.locations.join('、')}]`;
+  const locations = materialLocations(material);
+  if (locations.length > 0) {
+    line += ` [${locations.join('、')}]`;
   }
   if (material.nearest_expire_at) {
     const daysLeft = daysUntilExpiry(material.nearest_expire_at);
@@ -100,12 +113,13 @@ function buildLotLine(lot: StockLot): string {
 
 async function explainServiceState(client: InventoryClient, queryError: unknown): Promise<string> {
   const health = await client.checkHealth();
+  const commandHint = '如需走确定性兜底，请直接使用 /query_inventory，并尽量带上位置、分类或关键字。';
 
   if (health.ok) {
-    return `HomeStock 服务在线（${health.baseUrl}），但库存查询失败：${(queryError as Error).message}`;
+    return `HomeStock 服务在线（${health.baseUrl}），但库存查询失败：${(queryError as Error).message}。${commandHint}`;
   }
 
-  return `HomeStock 服务当前不可用（${health.baseUrl}）。健康检查失败：${health.error ?? '未知错误'}。库存查询未执行成功。`;
+  return `HomeStock 服务当前不可用（${health.baseUrl}）。健康检查失败：${health.error ?? '未知错误'}。库存查询未执行成功。${commandHint}`;
 }
 
 export async function queryInventory(
@@ -128,12 +142,13 @@ export async function queryInventory(
         keyword: parsed.keyword?.trim() || undefined,
         expiring_soon: true,
       });
+      const activeLots = lots.filter(hasLotStock);
 
-      if (lots.length === 0) {
+      if (activeLots.length === 0) {
         return '当前没有临期批次。';
       }
 
-      return `临期批次（共 ${lots.length} 条）\n${lots.map(buildLotLine).join('\n')}`;
+      return `临期批次（共 ${activeLots.length} 条）\n${activeLots.map(buildLotLine).join('\n')}`;
     }
 
     const { materials } = await client.listMaterials({
@@ -141,10 +156,10 @@ export async function queryInventory(
       keyword: parsed.keyword?.trim() || undefined,
     });
 
-    let filtered = filterMaterialByKeyword(materials, parsed.keyword);
+    let filtered = filterMaterialByKeyword(materials, parsed.keyword).filter(hasMaterialStock);
     if (parsed.location?.trim()) {
       const location = parsed.location.trim();
-      filtered = filtered.filter((material) => material.locations.includes(location));
+      filtered = filtered.filter((material) => materialLocations(material).includes(location));
     }
 
     if (filtered.length === 0) {

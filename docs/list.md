@@ -6,27 +6,27 @@
 
 ## 概述
 
-通过飞书向 OpenClaw AI Agent 发送自然语言指令，OpenClaw 理解意图后调用 HomeStock 插件，插件调用后端 REST API 完成物料增删查操作，结果通过飞书回复给用户。
+通过飞书向 OpenClaw 库存专用 Agent 发送自然语言指令，OpenClaw 理解意图后调用 HomeStock 插件，插件调用后端 REST API 完成物料增删查操作，结果通过飞书回复给用户。对查询类问题，正式兜底入口为 `/query_inventory ...`。
 
 ---
 
 ## 系统架构
 
 ```
-飞书用户（发送消息："帮我添加5个土豆放冰箱"）
+飞书用户（发送消息："帮我入库5个土豆放冰箱"）
   │
   │  WebSocket 长连接（OpenClaw 内置，无需公网 IP）
   ▼
-OpenClaw AI Agent
-  │  LLM 解析意图 → tool_use: add_item({name:"土豆", quantity:5, location:"冰箱"})
+OpenClaw Inventory Agent
+  │  LLM 解析意图 → tool_use: inbound_stock({name:"土豆", quantity:5, location:"冰箱"})
   ▼
 openclaw-plugin（TypeScript，本目录）
-  │  HTTP POST /api/v1/items
+  │  HTTP POST /api/v1/stock-lots/inbound
   ▼
-HomeStock Go 后端（localhost:8080）
-  │  写入 SQLite，返回 Item 对象
+HomeStock Go 后端（localhost:8888）
+  │  写入 SQLite，返回 StockLot 对象
   ▼
-openclaw-plugin → OpenClaw → 飞书回复："✅ 已添加 土豆 5个，存放在【冰箱】"
+openclaw-plugin → OpenClaw → 飞书回复："✅ 已入库 土豆 5个，存放在【冰箱】"
 ```
 
 ---
@@ -36,8 +36,8 @@ openclaw-plugin → OpenClaw → 飞书回复："✅ 已添加 土豆 5个，存
 | 组件 | 位置 | 职责 |
 |------|------|------|
 | HomeStock 后端 | `cmd/server/` | REST API，物料 CRUD，数据持久化 |
-| openclaw-plugin | `openclaw-plugin/` | 连接 OpenClaw 与后端，实现 3 个 tool |
-| OpenClaw 配置 | `openclaw.config.yaml` | 飞书凭证、插件路径、LLM 配置 |
+| openclaw-plugin | `openclaw-plugin/` | 连接 OpenClaw 与后端，实现 5 个库存相关 tool |
+| OpenClaw 配置 | `openclaw.config.yaml` | 飞书凭证、插件路径、多 agent 路由与模型配置 |
 
 ---
 
@@ -45,9 +45,11 @@ openclaw-plugin → OpenClaw → 飞书回复："✅ 已添加 土豆 5个，存
 
 | Tool | 触发示例 | 说明 |
 |------|---------|------|
-| `add_item` | "帮我加5个土豆放冰箱"、"买了两瓶酱油" | 向库存添加物料 |
-| `remove_item` | "刚用掉一个土豆"、"鸡蛋吃完了" | 消耗或删除物料 |
-| `query_items` | "冰箱里有什么"、"还有什么快过期的" | 查询库存 |
+| `inbound_stock` | "帮我入库5个土豆放冰箱"、"买了两瓶酱油" | 向库存新增一条入库批次 |
+| `consume_material` | "刚用掉一个土豆"、"鸡蛋吃完了" | 按物料消耗库存 |
+| `query_inventory` | "冰箱里有什么"、"还有没有土豆"、"还有什么快过期的" | 查询库存 |
+| `update_stock_lot` | "把牛奶改成3瓶"、"把这批土豆位置改成厨房" | 更新单个批次 |
+| `check_homestock_service` | "库存服务通不通" | 检查后端可用性 |
 
 ---
 
@@ -94,6 +96,7 @@ pnpm build
 #   channels.feishu.app_id
 #   channels.feishu.app_secret
 #   llm.api_key
+#   agents.list / bindings（已在示例中预置）
 
 # 4. 启动 OpenClaw
 cd ..
@@ -141,9 +144,11 @@ pnpm build
 
 | 发送消息 | 期望回复 |
 |---------|---------|
-| `帮我添加5个土豆放冰箱` | `✅ 已添加 土豆 5个，存放在【冰箱】` |
-| `冰箱里有什么` | `📦 【冰箱】库存（共 1 项）：• 土豆 5个` |
-| `刚用掉一个土豆` | `✅ 已消耗 土豆 1个，剩余 4个` |
+| `帮我入库5个土豆放冰箱` | `✅ 已入库 土豆 5个，存放在【冰箱】` |
+| `冰箱里有什么` | `物料汇总（共 1 项）` |
+| `还有没有土豆` | `物料汇总（共 1 项）` |
+| `/query_inventory 冰箱` | 在不依赖自然语言匹配的情况下返回冰箱库存 |
+| `刚用掉一个土豆` | `✅ 已消耗 土豆 1个，剩余库存以系统结果为准` |
 
 同时用 `curl GET /api/v1/items` 确认数据库记录与回复一致。
 
@@ -172,6 +177,13 @@ llm:
 2. 确认已加入测试企业或应用已正式发布
 3. 查看 OpenClaw 日志：`openclaw start --log-level debug`
 4. 私聊机器人无需 @，群聊需要 @机器人
+
+### Q: “冰箱里还有什么” 还是偶尔匹配不到？
+
+1. 优先确认 `bindings` 是否把飞书入口路由到 `inventory` agent
+2. 确认 `inventory` agent 只暴露库存相关 skills
+3. 若自然语言偶发失效，直接使用 `/query_inventory 冰箱`、`/query_inventory 冰箱 调料`、`/query_inventory expiring`
+4. 若 `inventory` agent 报缺少 API key，按 OpenClaw 官方方式为新 agent 初始化 auth profile
 
 ### Q: 如何添加更多 Tool（如查询过期提醒）？
 

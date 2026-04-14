@@ -10,14 +10,86 @@ channels:
 plugins:
   - path: ./openclaw-plugin                 # 插件目录（相对于本配置文件）
 
+# 若你仍在使用旧版 llm.provider / llm.api_key 认证流程，可继续保留本段。
+# 新版多 agent 推荐通过 `openclaw onboard` 或 `openclaw agents add <id>` 写入 auth profile。
 llm:
-  provider: anthropic                       # 可选：anthropic / openai / ollama
+  provider: anthropic
   api_key: "sk-ant-..."                     # 替换：LLM API Key
-  model: "claude-haiku-4-5-20251001"        # 推荐：速度快、成本低
+  model: "anthropic/claude-haiku-4-5"       # 默认主助手：更省成本
   # 国内备选（无需翻墙）：
   # provider: ollama
   # base_url: http://localhost:11434
   # model: qwen2.5:7b
+
+agents:
+  defaults:
+    workspace: ./.openclaw/workspaces/main
+    agentDir: ./.openclaw/agents/main/agent
+    model: "anthropic/claude-haiku-4-5"
+    tools:
+      profile: messaging
+      deny:
+        - "group:fs"
+        - "group:runtime"
+        - "group:web"
+        - "group:ui"
+        - "group:automation"
+        - "group:nodes"
+        - "group:media"
+        - "group:agents"
+    # 仅在 workspace 下读取 AGENTS.md / IDENTITY.md 等约束文件，避免扫描整个仓库。
+    sandbox:
+      mode: all
+      scope: agent
+      workspaceAccess: workspace-write
+
+  list:
+    - id: main
+      default: true
+      workspace: ./.openclaw/workspaces/main
+      agentDir: ./.openclaw/agents/main/agent
+      systemPromptOverride: |
+        You are the default HomeStock assistant.
+        Prefer concise replies.
+        If the request is clearly about HomeStock inventory, storage locations, expiry, consumption, or HomeStock service health, hand it to the inventory agent instead of improvising.
+
+    - id: inventory
+      name: HomeStock Inventory
+      workspace: ./.openclaw/workspaces/inventory
+      agentDir: ./.openclaw/agents/inventory/agent
+      model: "anthropic/claude-sonnet-4-5"
+      skills:
+        - inbound_stock
+        - consume_material
+        - query_inventory
+        - update_stock_lot
+        - check_homestock_service
+      tools:
+        profile: messaging
+        deny:
+          - "group:fs"
+          - "group:runtime"
+          - "group:web"
+          - "group:ui"
+          - "group:automation"
+          - "group:nodes"
+          - "group:media"
+          - "group:agents"
+      systemPromptOverride: |
+        You are the dedicated HomeStock inventory agent.
+        Stay strictly inside HomeStock inventory operations: inbound stock, consume stock, query inventory, update stock lots, and HomeStock service health checks.
+        Prefer the installed HomeStock plugin tools over free-form answers.
+        If a user asks a non-HomeStock question, refuse briefly and tell them this bot only handles HomeStock inventory.
+        Never suggest making a checklist, writing a file, or tracking inventory outside HomeStock.
+        If inventory lookup fails, either return the deterministic HomeStock tool error or tell the user to use /query_inventory with explicit filters.
+
+bindings:
+  # 当前默认把飞书入口整体绑定到库存专用 agent。
+  # 若未来同一渠道存在多个账号，可改成具体 accountId，而不是 "*"。
+  - agentId: inventory
+    match:
+      channel: feishu
+      accountId: "*"
 
 log:
   level: info

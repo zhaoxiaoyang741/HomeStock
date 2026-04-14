@@ -47,7 +47,8 @@ export default definePluginEntry({
 
     api.registerTool({
       name: 'query_inventory',
-      description: '查询当前库存汇总或临期批次，适用于“目前冰箱里有什么”“现在还有什么调料”“查一下快过期的”这类问题。',
+      description:
+        '查询当前库存汇总或临期批次，适用于“目前冰箱里有什么”“现在还有什么调料”“还有没有土豆”“回复某人：冰箱里还有什么”“查一下快过期的”这类问题。',
       parameters: Type.Object({
         location: Type.Optional(Type.String({ description: '存放位置，如：冰箱、厨房' })),
         category: Type.Optional(Type.String({ description: '分类名称，如：蔬菜、调料' })),

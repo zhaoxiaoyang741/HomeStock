@@ -222,7 +222,40 @@ test('inboundStock auto-creates categories and normalizes date input', async () 
 });
 
 test('queryInventory returns expiring lots when requested', async () => {
-  const client = createClient();
+  const client = createClient({
+    async listStockLots() {
+      return {
+        lots: [
+          createLot({
+            id: 'lot-0',
+            quantity_on_hand: 0,
+            material: createMaterial({ name: '土豆' }) as unknown as never,
+          }),
+          createLot({
+            id: 'lot-2',
+            material_id: 'mat-2',
+            material: createMaterial({
+              id: 'mat-2',
+              name: '酱油',
+              spec: '500ml',
+              category_id: 'cat-2',
+              category: { id: 'cat-2', tenant_id: 'default', name: '调料' },
+              default_unit: '瓶',
+              total_quantity: 2,
+              lot_count: 1,
+              locations: ['厨房'],
+              nearest_expire_at: '2026-04-08T15:59:59.999Z',
+            }) as unknown as never,
+            quantity_on_hand: 2,
+            unit: '瓶',
+            location: '厨房',
+            expire_at: '2026-04-08T15:59:59.999Z',
+          }),
+        ],
+        total: 2,
+      };
+    },
+  });
   const result = await queryInventory(
     { category: '调料', keyword: '酱', expiring_soon: true },
     client,
@@ -230,6 +263,24 @@ test('queryInventory returns expiring lots when requested', async () => {
 
   assert.match(result, /临期批次/);
   assert.match(result, /酱油/);
+  assert.doesNotMatch(result, /土豆/);
+});
+
+test('queryInventory tolerates null locations after client normalization', async () => {
+  const client = createClient({
+    async listMaterials() {
+      return {
+        materials: [
+          createMaterial({ id: 'mat-1', name: '牛奶', locations: null as unknown as string[], total_quantity: 1 }),
+        ],
+        total: 1,
+      };
+    },
+  });
+
+  const result = await queryInventory({ location: '冰箱' }, client);
+
+  assert.equal(result, '当前条件下没有匹配的库存记录。');
 });
 
 test('queryInventory falls back to health check when inventory query fails', async () => {

@@ -48,7 +48,8 @@
 
 ### OpenClaw 插件
 
-- Tool：`add_item`、`remove_item`、`query_items`、`parse_receipt`；`SKILL.md` 描述触发话术；`openclaw.plugin.json` 声明插件。
+- Tool：`inbound_stock`、`consume_material`、`query_inventory`、`update_stock_lot`、`check_homestock_service`；`SKILL.md` 描述触发话术；`openclaw.plugin.json` 声明插件。
+- 推荐以“库存专用 agent + slash command 兜底”方式部署飞书入口；`/query_inventory ...` 可绕过自然语言匹配，作为稳定兜底路径。
 - 运行时通过 `INVENTORY_API_URL` 等形式指向 Go 后端，将 LLM 解析结果转为 API 调用并格式化回复。
 
 ### 前端（React）

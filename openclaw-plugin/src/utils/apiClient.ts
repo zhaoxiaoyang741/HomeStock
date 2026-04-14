@@ -100,6 +100,19 @@ export interface HealthCheckResult {
   error?: string;
 }
 
+interface ResultEnvelope<T> {
+  code?: number;
+  message?: string;
+  data?: T;
+}
+
+interface PageEnvelope<T> {
+  items?: T[];
+  total?: number;
+  page?: number;
+  page_size?: number;
+}
+
 export interface UserHeaders {
   userName?: string;
   userID?: string;
@@ -156,16 +169,115 @@ function formatAxiosError(err: unknown): string {
   const responseMessage =
     typeof err.response?.data === 'object' &&
     err.response?.data !== null &&
-    'error' in err.response.data &&
-    typeof (err.response.data as { error?: unknown }).error === 'string'
-      ? (err.response.data as { error: string }).error
-      : undefined;
+    (('error' in err.response.data &&
+      typeof (err.response.data as { error?: unknown }).error === 'string' &&
+      (err.response.data as { error: string }).error) ||
+      ('message' in err.response.data &&
+        typeof (err.response.data as { message?: unknown }).message === 'string' &&
+        (err.response.data as { message: string }).message));
 
   if (responseMessage) {
     return responseMessage;
   }
 
   return err.message;
+}
+
+function unwrapResult<T>(payload: T | ResultEnvelope<T>): T {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'data' in payload &&
+    'message' in payload
+  ) {
+    return (payload as ResultEnvelope<T>).data as T;
+  }
+
+  return payload as T;
+}
+
+function unwrapPage<T>(
+  payload:
+    | ListMaterialsResponse
+    | ListStockLotsResponse
+    | { categories: Category[]; total: number }
+    | ResultEnvelope<PageEnvelope<T>>
+    | PageEnvelope<T>,
+): { items: T[]; total: number } {
+  const unwrapped = unwrapResult<PageEnvelope<T> | { items?: T[]; total?: number }>(payload);
+  if (unwrapped && typeof unwrapped === 'object' && Array.isArray(unwrapped.items)) {
+    return {
+      items: unwrapped.items,
+      total: typeof unwrapped.total === 'number' ? unwrapped.total : unwrapped.items.length,
+    };
+  }
+
+  const legacyRecord = payload as Record<string, unknown>;
+  if (Array.isArray(legacyRecord.materials)) {
+    const items = legacyRecord.materials as T[];
+    return {
+      items,
+      total: typeof legacyRecord.total === 'number' ? (legacyRecord.total as number) : items.length,
+    };
+  }
+
+  if (Array.isArray(legacyRecord.lots)) {
+    const items = legacyRecord.lots as T[];
+    return {
+      items,
+      total: typeof legacyRecord.total === 'number' ? (legacyRecord.total as number) : items.length,
+    };
+  }
+
+  if (Array.isArray(legacyRecord.categories)) {
+    const items = legacyRecord.categories as T[];
+    return {
+      items,
+      total: typeof legacyRecord.total === 'number' ? (legacyRecord.total as number) : items.length,
+    };
+  }
+
+  return { items: [], total: 0 };
+}
+
+function normalizeMaterialSummary(raw: MaterialSummary): MaterialSummary {
+  return {
+    ...raw,
+    spec: typeof raw.spec === 'string' ? raw.spec : '',
+    default_unit: typeof raw.default_unit === 'string' ? raw.default_unit : '',
+    status: typeof raw.status === 'string' ? raw.status : '',
+    total_quantity: typeof raw.total_quantity === 'number' ? raw.total_quantity : 0,
+    lot_count: typeof raw.lot_count === 'number' ? raw.lot_count : 0,
+    nearest_expire_at: typeof raw.nearest_expire_at === 'string' ? raw.nearest_expire_at : null,
+    locations: Array.isArray(raw.locations) ? raw.locations.filter((value): value is string => typeof value === 'string') : [],
+  };
+}
+
+function normalizeMaterialDetail(raw: MaterialDetail): MaterialDetail {
+  return normalizeMaterialSummary(raw);
+}
+
+function normalizeStockLot(raw: StockLot): StockLot {
+  return {
+    ...raw,
+    quantity_on_hand: typeof raw.quantity_on_hand === 'number' ? raw.quantity_on_hand : 0,
+    unit: typeof raw.unit === 'string' ? raw.unit : '',
+    location: typeof raw.location === 'string' ? raw.location : '',
+    expire_at: typeof raw.expire_at === 'string' ? raw.expire_at : null,
+    purchased_at: typeof raw.purchased_at === 'string' ? raw.purchased_at : null,
+    received_at: typeof raw.received_at === 'string' ? raw.received_at : '',
+    notes: typeof raw.notes === 'string' ? raw.notes : '',
+    status: typeof raw.status === 'string' ? raw.status : '',
+    material: raw.material ? normalizeMaterialDetail(raw.material) : null,
+  };
+}
+
+function normalizeCategory(raw: Category): Category {
+  return {
+    ...raw,
+    tenant_id: typeof raw.tenant_id === 'string' ? raw.tenant_id : '',
+    name: typeof raw.name === 'string' ? raw.name : '',
+  };
 }
 
 export class InventoryAPIClient implements InventoryClient {
@@ -201,26 +313,37 @@ export class InventoryAPIClient implements InventoryClient {
     if (params.purchased_at) payload.purchased_at = params.purchased_at;
     if (params.notes) payload.notes = params.notes;
 
-    const { data } = await this.client.post<StockLot>('/api/v1/stock-lots/inbound', payload);
-    return data;
+    const { data } = await this.client.post<ResultEnvelope<StockLot> | StockLot>('/api/v1/stock-lots/inbound', payload);
+    return normalizeStockLot(unwrapResult(data));
   }
 
   async listMaterials(filter: { category_id?: string; keyword?: string }): Promise<ListMaterialsResponse> {
     const params: Record<string, string> = {};
     if (filter.category_id) params.category_id = filter.category_id;
     if (filter.keyword) params.keyword = filter.keyword;
-    const { data } = await this.client.get<ListMaterialsResponse>('/api/v1/materials', { params });
-    return data;
+    const { data } = await this.client.get<ResultEnvelope<PageEnvelope<MaterialSummary>> | ListMaterialsResponse>(
+      '/api/v1/materials',
+      { params },
+    );
+    const page = unwrapPage<MaterialSummary>(data);
+    return { materials: page.items.map(normalizeMaterialSummary), total: page.total };
   }
 
   async getMaterial(id: string): Promise<MaterialDetail> {
-    const { data } = await this.client.get<MaterialDetail>(`/api/v1/materials/${id}`);
-    return data;
+    const { data } = await this.client.get<ResultEnvelope<MaterialDetail> | MaterialDetail>(`/api/v1/materials/${id}`);
+    return normalizeMaterialDetail(unwrapResult(data));
   }
 
   async consumeMaterial(id: string, params: { quantity: number; reason?: string }): Promise<ConsumeMaterialResponse> {
-    const { data } = await this.client.post<ConsumeMaterialResponse>(`/api/v1/materials/${id}/consume`, params);
-    return data;
+    const { data } = await this.client.post<ResultEnvelope<ConsumeMaterialResponse> | ConsumeMaterialResponse>(
+      `/api/v1/materials/${id}/consume`,
+      params,
+    );
+    const unwrapped = unwrapResult(data);
+    return {
+      ...unwrapped,
+      material: normalizeMaterialDetail(unwrapped.material),
+    };
   }
 
   async listStockLots(filter: {
@@ -238,28 +361,40 @@ export class InventoryAPIClient implements InventoryClient {
     if (filter.status) params.status = filter.status;
     if (filter.keyword) params.keyword = filter.keyword;
     if (filter.expiring_soon) params.expiring_soon = 'true';
-    const { data } = await this.client.get<ListStockLotsResponse>('/api/v1/stock-lots', { params });
-    return data;
+    const { data } = await this.client.get<ResultEnvelope<PageEnvelope<StockLot>> | ListStockLotsResponse>(
+      '/api/v1/stock-lots',
+      { params },
+    );
+    const page = unwrapPage<StockLot>(data);
+    return { lots: page.items.map(normalizeStockLot), total: page.total };
   }
 
   async updateStockLot(id: string, params: UpdateStockLotPayload): Promise<StockLot> {
-    const { data } = await this.client.put<StockLot>(`/api/v1/stock-lots/${id}`, params);
-    return data;
+    const { data } = await this.client.put<ResultEnvelope<StockLot> | StockLot>(`/api/v1/stock-lots/${id}`, params);
+    return normalizeStockLot(unwrapResult(data));
   }
 
   async adjustStockLot(id: string, params: AdjustStockLotPayload): Promise<StockLot> {
-    const { data } = await this.client.post<StockLot>(`/api/v1/stock-lots/${id}/adjust`, params);
-    return data;
+    const { data } = await this.client.post<ResultEnvelope<StockLot> | StockLot>(
+      `/api/v1/stock-lots/${id}/adjust`,
+      params,
+    );
+    return normalizeStockLot(unwrapResult(data));
   }
 
   async listCategories(): Promise<{ categories: Category[]; total: number }> {
-    const { data } = await this.client.get<{ categories: Category[]; total: number }>('/api/v1/categories');
-    return data;
+    const { data } = await this.client.get<
+      ResultEnvelope<PageEnvelope<Category>> | { categories: Category[]; total: number }
+    >('/api/v1/categories');
+    const page = unwrapPage<Category>(data);
+    return { categories: page.items.map(normalizeCategory), total: page.total };
   }
 
   async createCategory(name: string): Promise<Category> {
-    const { data } = await this.client.post<Category>('/api/v1/categories', { name: name.trim() });
-    return data;
+    const { data } = await this.client.post<ResultEnvelope<Category> | Category>('/api/v1/categories', {
+      name: name.trim(),
+    });
+    return normalizeCategory(unwrapResult(data));
   }
 
   async findCategoryByName(name: string): Promise<Category | null> {
@@ -314,11 +449,12 @@ export class InventoryAPIClient implements InventoryClient {
 
   async checkHealth(): Promise<HealthCheckResult> {
     try {
-      const { data } = await this.client.get<HealthCheckResponse>('/api/v1/health');
+      const { data } = await this.client.get<ResultEnvelope<HealthCheckResponse> | HealthCheckResponse>('/api/v1/health');
+      const unwrapped = unwrapResult(data);
       return {
-        ok: data.status === 'ok',
+        ok: unwrapped.status === 'ok',
         baseUrl: this.baseURL,
-        status: data.status,
+        status: unwrapped.status,
       };
     } catch (err) {
       return {
