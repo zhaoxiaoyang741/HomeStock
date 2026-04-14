@@ -1,0 +1,21 @@
+{
+  "title": "Overview",
+  "total_materials": "Total Materials",
+  "total_quantity": "Total Quantity",
+  "expiring_soon": "Expiring Soon",
+  "expired": "Expired",
+  "by_category": "Inventory by Category",
+  "status_distribution": "Status Distribution",
+  "recent_movements": "Recent Movements",
+  "quantity_unit": "",
+  "status_normal": "Normal",
+  "status_expiring": "Expiring",
+  "status_expired": "Expired",
+  "movement_type_inbound": "Inbound",
+  "movement_type_consume": "Consume",
+  "movement_type_adjustment": "Adjustment",
+  "movement_type_void": "Void",
+  "no_data": "No data",
+  "loading": "Loading...",
+  "error": "Failed to load data"
+}

@@ -1,0 +1,21 @@
+{
+  "title": "数据概览",
+  "total_materials": "物料总数",
+  "total_quantity": "库存总量",
+  "expiring_soon": "即将过期",
+  "expired": "已过期",
+  "by_category": "各分类库存量",
+  "status_distribution": "库存状态分布",
+  "recent_movements": "最近库存动态",
+  "quantity_unit": "件",
+  "status_normal": "正常",
+  "status_expiring": "即将过期",
+  "status_expired": "已过期",
+  "movement_type_inbound": "入库",
+  "movement_type_consume": "出库",
+  "movement_type_adjustment": "调整",
+  "movement_type_void": "作废",
+  "no_data": "暂无数据",
+  "loading": "加载中...",
+  "error": "数据加载失败"
+}
