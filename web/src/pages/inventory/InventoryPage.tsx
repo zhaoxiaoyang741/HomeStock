@@ -147,7 +147,7 @@ export default function InventoryPage() {
   )
 
   const warningLots = useMemo(
-    () => lots.filter((lot) => getInventoryStatus(lot.expire_at, remindDays) !== 'normal').length,
+    () => lots.filter((lot) => lot.quantity_on_hand > 0 && getInventoryStatus(lot.expire_at, remindDays) !== 'normal').length,
     [lots, remindDays],
   )
 
@@ -398,7 +398,14 @@ export default function InventoryPage() {
                 const status = getInventoryStatus(lot.expire_at, remindDays)
                 return (
                   <TableRow key={lot.id} className="border-outline-variant/10 hover:bg-surface">
-                    <TableCell className="py-5 font-medium">{lot.quantity_on_hand} {lot.unit}</TableCell>
+                    <TableCell className="py-5 font-medium">
+                      <div className="flex items-center gap-2">
+                        <span className={cn(lot.quantity_on_hand === 0 && 'text-on-surface-variant')}>{lot.quantity_on_hand} {lot.unit}</span>
+                        {lot.quantity_on_hand === 0 && (
+                          <Badge variant="outline" className="text-xs text-on-surface-variant border-outline-variant/50">{t('statusZero')}</Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="py-5 text-on-surface-variant">{lot.location || '—'}</TableCell>
                     <TableCell className="py-5 text-on-surface-variant">
                       {lot.purchased_at ? formatDate(lot.purchased_at, i18n.language) : '—'}
@@ -430,7 +437,7 @@ export default function InventoryPage() {
 
       <ExpiringLotsDialog
         open={expiringOpen}
-        lots={lots.filter((lot) => getInventoryStatus(lot.expire_at, remindDays) !== 'normal')}
+        lots={lots.filter((lot) => lot.quantity_on_hand > 0 && getInventoryStatus(lot.expire_at, remindDays) !== 'normal')}
         onClose={() => setExpiringOpen(false)}
         onChanged={() => void loadData()}
       />

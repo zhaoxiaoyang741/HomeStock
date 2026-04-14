@@ -36,6 +36,7 @@
   "lotsColActions": "操作",
   "lotsSelectFirst": "请先在上方选择一个物料",
   "lotsEmpty": "当前筛选条件下没有批次",
+  "statusZero": "已清零",
   "btnEditLot": "编辑批次",
   "btnAdjustLot": "调整",
   "btnConsumeTitle": "消耗库存",

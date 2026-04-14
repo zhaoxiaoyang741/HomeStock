@@ -36,6 +36,7 @@
   "lotsColActions": "Actions",
   "lotsSelectFirst": "Select a material above first",
   "lotsEmpty": "No lots match the current filters",
+  "statusZero": "Cleared",
   "btnEditLot": "Edit lot",
   "btnAdjustLot": "Adjust",
   "btnConsumeTitle": "Consume stock",
