@@ -1,5 +1,8 @@
 {
   "title": "System Settings",
+  "navScheduler": "Scheduler",
+  "navReminder": "Reminders",
+  "navChannel": "Channels",
   "subtitle": "Manage runtime reminder and notification settings for the current server.",
   "reminderTitle": "Reminder Settings",
   "reminderDescription": "Control when expiration reminders are generated.",
