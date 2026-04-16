@@ -103,7 +103,7 @@ func defaultConfig() *Config {
 			CheckTime:  "08:00",
 		},
 		Log: LogConfig{
-			Level: 1, // INFO
+			Level: 0, // INFO
 			Path:  "logs/info.log",
 		},
 	}

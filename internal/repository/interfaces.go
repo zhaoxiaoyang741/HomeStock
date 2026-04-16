@@ -49,7 +49,28 @@ type SystemSettingRepo interface {
 	Upsert(setting *model.SystemSetting) error
 }
 
+type NotificationRepo interface {
+	CreateBatch(notifications []*model.Notification) error
+	ExistsForLotToday(lotID string, date time.Time) (bool, error)
+	List(filter NotificationFilter) (*NotificationPage, error)
+	UpdateStatus(id, status string) error
+}
+
 // Query filters and public DTOs.
+
+type NotificationFilter struct {
+	LotID    string
+	Status   string
+	Page     int
+	PageSize int
+}
+
+type NotificationPage struct {
+	Items    []*model.Notification `json:"items"`
+	Total    int64                 `json:"total"`
+	Page     int                   `json:"page"`
+	PageSize int                   `json:"page_size"`
+}
 
 type MaterialFilter struct {
 	TenantID   string
@@ -79,13 +100,14 @@ type MaterialDetail struct {
 }
 
 type StockLotFilter struct {
-	TenantID     string
-	MaterialID   string
-	CategoryID   string
-	Location     string
-	Status       string
-	Keyword      string
-	ExpiringSoon bool
+	TenantID          string
+	MaterialID        string
+	CategoryID        string
+	Location          string
+	Status            string
+	Keyword           string
+	ExpiringSoon      bool
+	ExpiringSoonDays  int // 0 means default (7 days)
 }
 
 type StockMovementFilter struct {
@@ -123,6 +145,7 @@ type Repos interface {
 	StockMovements() StockMovementRepo
 	AuditLogs() AuditLogRepo
 	SystemSettings() SystemSettingRepo
+	Notifications() NotificationRepo
 }
 
 // UnitOfWork provides access to repositories and transactional execution.

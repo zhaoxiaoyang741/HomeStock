@@ -15,9 +15,10 @@ import (
 )
 
 type App struct {
-	server *httpserver.Server
-	db     *gorm.DB
-	sqlDB  *sql.DB
+	server       *httpserver.Server
+	db           *gorm.DB
+	sqlDB        *sql.DB
+	schedulerSvc *service.SchedulerService
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -35,6 +36,11 @@ func New(cfg *config.Config) (*App, error) {
 	materialSvc := service.NewMaterialService(uow)
 	inventorySvc := service.NewInventoryService(uow)
 	systemSettingsSvc := service.NewSystemSettingsService(uow, cfg)
+	notificationSvc := service.NewNotificationService(uow, systemSettingsSvc)
+	schedulerSvc := service.NewSchedulerService(notificationSvc, systemSettingsSvc)
+
+	// Repositories exposed directly for handlers that don't need a service layer
+	notificationRepo := gormrepo.NewNotificationRepository(db)
 
 	// Handlers
 	categoryHandler := handler.NewCategoryHandler(service.NewCategoryService(uow))
@@ -43,6 +49,8 @@ func New(cfg *config.Config) (*App, error) {
 	stockMovementHandler := handler.NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
 	auditLogHandler := handler.NewAuditLogHandler(service.NewAuditService(uow))
 	systemSettingsHandler := handler.NewSystemSettingsHandler(systemSettingsSvc)
+	schedulerHandler := handler.NewSchedulerHandler(schedulerSvc)
+	notificationHandler := handler.NewNotificationHandler(notificationRepo)
 
 	server := httpserver.New(cfg.Server,
 		categoryHandler.RegisterRoutes,
@@ -51,13 +59,29 @@ func New(cfg *config.Config) (*App, error) {
 		stockMovementHandler.RegisterRoutes,
 		auditLogHandler.RegisterRoutes,
 		systemSettingsHandler.RegisterRoutes,
+		schedulerHandler.RegisterRoutes,
+		notificationHandler.RegisterRoutes,
 	)
 
-	return &App{server: server, db: db, sqlDB: sqlDB}, nil
+	return &App{
+		server:       server,
+		db:           db,
+		sqlDB:        sqlDB,
+		schedulerSvc: schedulerSvc,
+	}, nil
 }
 
-func (a *App) Start() error                       { return a.server.Start() }
-func (a *App) Shutdown(ctx context.Context) error { return a.server.Shutdown(ctx) }
+func (a *App) Start() error {
+	// Start scheduler in background before serving HTTP
+	a.schedulerSvc.Start(context.Background())
+	return a.server.Start()
+}
+
+func (a *App) Shutdown(ctx context.Context) error {
+	a.schedulerSvc.Stop()
+	return a.server.Shutdown(ctx)
+}
+
 func (a *App) Close() error {
 	if a == nil || a.sqlDB == nil {
 		return nil

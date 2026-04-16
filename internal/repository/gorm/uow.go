@@ -21,6 +21,9 @@ func (r *gormRepos) AuditLogs() repository.AuditLogRepo { return NewAuditLogRepo
 func (r *gormRepos) SystemSettings() repository.SystemSettingRepo {
 	return NewSystemSettingRepository(r.db)
 }
+func (r *gormRepos) Notifications() repository.NotificationRepo {
+	return NewNotificationRepository(r.db)
+}
 
 type UnitOfWork struct{ db *gorm.DB }
 

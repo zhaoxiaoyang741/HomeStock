@@ -377,6 +377,22 @@ func maskWebhook(raw string) string {
 	return trimmed[:8] + "***" + trimmed[len(trimmed)-4:]
 }
 
+// GetFeishuWebhook returns the raw (unmasked) Feishu webhook URL, or empty string if not set.
+func (s *SystemSettingsService) GetFeishuWebhook(ctx context.Context) (string, error) {
+	setting, err := s.uow.Repos().SystemSettings().GetByKey(globalSystemSettingsKey)
+	if err != nil {
+		if repository.IsNotFound(err) {
+			return strings.TrimSpace(s.defaults.Notify.FeishuWebhook), nil
+		}
+		return "", err
+	}
+	stored, err := decodeStoredSystemSettings(setting.Payload)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(stored.Notify.FeishuWebhook), nil
+}
+
 func IsSystemSettingsValidationError(err error) bool {
 	var target *SystemSettingsValidationError
 	return errors.As(err, &target)

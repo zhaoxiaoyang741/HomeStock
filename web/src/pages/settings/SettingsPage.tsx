@@ -10,6 +10,8 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { useSystemSettings } from '@/hooks/useSystemSettings'
 import type { SystemSettings, UpdateSystemSettingsPayload } from '@/types/systemSettings'
+import { SchedulerStatusCard } from './SchedulerStatusCard'
+import { NotificationHistorySection } from './NotificationHistorySection'
 
 type FormState = {
   remindDays: string
@@ -256,6 +258,10 @@ export default function SettingsPage() {
           </Card>
         </div>
       )}
+
+      <SchedulerStatusCard />
+
+      <NotificationHistorySection />
 
       {initialSettings && (
         <div className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest px-4 py-4 shadow-sm">

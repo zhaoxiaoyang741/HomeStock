@@ -45,7 +45,14 @@ func (r *StockLotRepository) List(f repository.StockLotFilter) ([]model.StockLot
 	if f.Location != "" { q = q.Where("stock_lots.location = ?", strings.TrimSpace(f.Location)) }
 	if f.Status != "" { q = q.Where("stock_lots.status = ?", strings.TrimSpace(f.Status)) }
 	if kw := strings.TrimSpace(f.Keyword); kw != "" { q = q.Where("LOWER(materials.name) LIKE ? OR LOWER(materials.spec) LIKE ?", "%"+strings.ToLower(kw)+"%", "%"+strings.ToLower(kw)+"%") }
-	if f.ExpiringSoon { cutoff := time.Now().Add(7*24*time.Hour); q = q.Where("stock_lots.expire_at IS NOT NULL AND stock_lots.expire_at <= ?", cutoff) }
+	if f.ExpiringSoon {
+		days := f.ExpiringSoonDays
+		if days <= 0 {
+			days = 7
+		}
+		cutoff := time.Now().Add(time.Duration(days) * 24 * time.Hour)
+		q = q.Where("stock_lots.expire_at IS NOT NULL AND stock_lots.expire_at <= ?", cutoff)
+	}
 	var lots []model.StockLot
 	if err := q.Preload("Material.Category").Order("CASE WHEN stock_lots.expire_at IS NULL THEN 1 ELSE 0 END ASC").Order("stock_lots.expire_at ASC").Order("stock_lots.purchased_at ASC").Order("stock_lots.created_at ASC").Find(&lots).Error; err != nil { return nil, err }
 	return lots, nil
