@@ -11,14 +11,16 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/httpserver"
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/taskcenter"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/tasks"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 )
 
 type App struct {
-	server       *httpserver.Server
-	db           *gorm.DB
-	sqlDB        *sql.DB
-	schedulerSvc *service.SchedulerService
+	server        *httpserver.Server
+	db            *gorm.DB
+	sqlDB         *sql.DB
+	taskCenterSvc *taskcenter.TaskCenterService
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -37,7 +39,10 @@ func New(cfg *config.Config) (*App, error) {
 	inventorySvc := service.NewInventoryService(uow)
 	systemSettingsSvc := service.NewSystemSettingsService(uow, cfg)
 	notificationSvc := service.NewNotificationService(uow, systemSettingsSvc)
-	schedulerSvc := service.NewSchedulerService(notificationSvc, systemSettingsSvc)
+	taskCenterSvc := taskcenter.NewTaskCenterService(
+		uow,
+		tasks.NewExpiryNotificationTaskDefinition(notificationSvc),
+	)
 
 	// Repositories exposed directly for handlers that don't need a service layer
 	notificationRepo := gormrepo.NewNotificationRepository(db)
@@ -49,7 +54,8 @@ func New(cfg *config.Config) (*App, error) {
 	stockMovementHandler := handler.NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
 	auditLogHandler := handler.NewAuditLogHandler(service.NewAuditService(uow))
 	systemSettingsHandler := handler.NewSystemSettingsHandler(systemSettingsSvc)
-	schedulerHandler := handler.NewSchedulerHandler(schedulerSvc)
+	scheduledTaskHandler := handler.NewScheduledTaskHandler(taskCenterSvc)
+	schedulerHandler := handler.NewSchedulerHandler(taskCenterSvc)
 	notificationHandler := handler.NewNotificationHandler(notificationRepo)
 
 	server := httpserver.New(cfg.Server,
@@ -59,26 +65,28 @@ func New(cfg *config.Config) (*App, error) {
 		stockMovementHandler.RegisterRoutes,
 		auditLogHandler.RegisterRoutes,
 		systemSettingsHandler.RegisterRoutes,
+		scheduledTaskHandler.RegisterRoutes,
 		schedulerHandler.RegisterRoutes,
 		notificationHandler.RegisterRoutes,
 	)
 
 	return &App{
-		server:       server,
-		db:           db,
-		sqlDB:        sqlDB,
-		schedulerSvc: schedulerSvc,
+		server:        server,
+		db:            db,
+		sqlDB:         sqlDB,
+		taskCenterSvc: taskCenterSvc,
 	}, nil
 }
 
 func (a *App) Start() error {
-	// Start scheduler in background before serving HTTP
-	a.schedulerSvc.Start(context.Background())
+	if err := a.taskCenterSvc.Start(context.Background()); err != nil {
+		return err
+	}
 	return a.server.Start()
 }
 
 func (a *App) Shutdown(ctx context.Context) error {
-	a.schedulerSvc.Stop()
+	a.taskCenterSvc.Stop()
 	return a.server.Shutdown(ctx)
 }
 

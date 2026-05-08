@@ -11,6 +11,8 @@ import (
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/model"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/taskcenter"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 )
 
 // NotificationService checks expiring lots and dispatches Feishu notifications.
@@ -19,6 +21,8 @@ type NotificationService struct {
 	settingsSvc *SystemSettingsService
 	httpClient  *http.Client
 }
+
+const expiryNotificationLogComponent = "expiry_notification"
 
 func NewNotificationService(uow repository.UnitOfWork, settingsSvc *SystemSettingsService) *NotificationService {
 	return &NotificationService{
@@ -30,14 +34,34 @@ func NewNotificationService(uow repository.UnitOfWork, settingsSvc *SystemSettin
 
 // CheckAndNotify queries lots expiring within remindDays, creates Notification records,
 // and sends Feishu webhooks for each new notification.
-func (s *NotificationService) CheckAndNotify(ctx context.Context) error {
+func (s *NotificationService) CheckAndNotify(ctx context.Context) (taskcenter.TaskResult, error) {
+	result := expiryNotificationTaskResult{}
+	startedAt := time.Now()
+
+	logger.InfoCF(expiryNotificationLogComponent, "task execution started", nil)
+
 	settings, err := s.settingsSvc.Get(ctx)
 	if err != nil {
-		return fmt.Errorf("get system settings: %w", err)
+		logger.ErrorCF(expiryNotificationLogComponent, "failed to load system settings", map[string]any{
+			"error": err.Error(),
+		})
+		return result.toTaskResult(), fmt.Errorf("get system settings: %w", err)
 	}
 
+	logger.InfoCF(expiryNotificationLogComponent, "task settings loaded", map[string]any{
+		"remind_days":        settings.Reminder.RemindDays,
+		"notify_enabled":     settings.Notify.Enabled,
+		"webhook_configured": settings.Notify.FeishuWebhookConfigured,
+	})
+
 	if !settings.Notify.Enabled || !settings.Notify.FeishuWebhookConfigured {
-		return nil
+		result.Summary = "notifications are disabled or webhook is not configured"
+		logger.WarnCF(expiryNotificationLogComponent, "task execution skipped because notifications are unavailable", map[string]any{
+			"notify_enabled":     settings.Notify.Enabled,
+			"webhook_configured": settings.Notify.FeishuWebhookConfigured,
+			"summary":            result.Summary,
+		})
+		return result.toTaskResult(), nil
 	}
 
 	remindDays := settings.Reminder.RemindDays
@@ -51,8 +75,18 @@ func (s *NotificationService) CheckAndNotify(ctx context.Context) error {
 		Status:           "active",
 	})
 	if err != nil {
-		return fmt.Errorf("list expiring lots: %w", err)
+		logger.ErrorCF(expiryNotificationLogComponent, "failed to query expiring lots", map[string]any{
+			"remind_days": remindDays,
+			"error":       err.Error(),
+		})
+		return result.toTaskResult(), fmt.Errorf("list expiring lots: %w", err)
 	}
+	result.ScannedCount = len(lots)
+
+	logger.InfoCF(expiryNotificationLogComponent, "expiring lots loaded", map[string]any{
+		"remind_days": remindDays,
+		"lot_count":   len(lots),
+	})
 
 	today := time.Now()
 	notifRepo := s.uow.Repos().Notifications()
@@ -60,9 +94,16 @@ func (s *NotificationService) CheckAndNotify(ctx context.Context) error {
 	for _, lot := range lots {
 		exists, err := notifRepo.ExistsForLotToday(lot.ID, today)
 		if err != nil {
-			return fmt.Errorf("check exists lot %s: %w", lot.ID, err)
+			logger.ErrorCF(expiryNotificationLogComponent, "failed to check existing notification", lotLogFields(lot, map[string]any{
+				"error": err.Error(),
+			}))
+			return result.toTaskResult(), fmt.Errorf("check exists lot %s: %w", lot.ID, err)
 		}
 		if exists {
+			result.SkippedExistingCount++
+			logger.InfoCF(expiryNotificationLogComponent, "skipped lot because notification already exists today", lotLogFields(lot, map[string]any{
+				"skipped_existing_count": result.SkippedExistingCount,
+			}))
 			continue
 		}
 
@@ -75,25 +116,109 @@ func (s *NotificationService) CheckAndNotify(ctx context.Context) error {
 			Message:  msg,
 		}
 		if err := notifRepo.CreateBatch([]*model.Notification{n}); err != nil {
-			return fmt.Errorf("create notification for lot %s: %w", lot.ID, err)
+			logger.ErrorCF(expiryNotificationLogComponent, "failed to create notification record", lotLogFields(lot, map[string]any{
+				"error": err.Error(),
+			}))
+			return result.toTaskResult(), fmt.Errorf("create notification for lot %s: %w", lot.ID, err)
 		}
+
+		logger.InfoCF(expiryNotificationLogComponent, "notification record created", lotLogFields(lot, map[string]any{
+			"notification_id": n.ID,
+			"channel":         n.Channel,
+		}))
 
 		// We need the actual webhook from stored settings (not masked).
 		// Re-fetch via the raw stored settings through SystemSettingsService.
 		webhook, err := s.settingsSvc.GetFeishuWebhook(ctx)
 		if err != nil || webhook == "" {
-			_ = notifRepo.UpdateStatus(n.ID, "failed")
+			if updateErr := notifRepo.UpdateStatus(n.ID, "failed"); updateErr != nil {
+				logger.WarnCF(expiryNotificationLogComponent, "failed to update notification status after missing webhook", lotLogFields(lot, map[string]any{
+					"notification_id": n.ID,
+					"status":          "failed",
+					"error":           updateErr.Error(),
+				}))
+			}
+			result.FailedCount++
+
+			fields := lotLogFields(lot, map[string]any{
+				"notification_id": n.ID,
+				"failed_count":    result.FailedCount,
+			})
+			if err != nil {
+				fields["error"] = err.Error()
+			}
+			logger.WarnCF(expiryNotificationLogComponent, "webhook unavailable for notification delivery", fields)
 			continue
 		}
 
 		sendErr := s.sendFeishu(webhook, msg)
 		if sendErr != nil {
-			_ = notifRepo.UpdateStatus(n.ID, "failed")
-		} else {
-			_ = notifRepo.UpdateStatus(n.ID, "sent")
+			if updateErr := notifRepo.UpdateStatus(n.ID, "failed"); updateErr != nil {
+				logger.WarnCF(expiryNotificationLogComponent, "failed to update notification status after send failure", lotLogFields(lot, map[string]any{
+					"notification_id": n.ID,
+					"status":          "failed",
+					"error":           updateErr.Error(),
+				}))
+			}
+			result.FailedCount++
+			logger.WarnCF(expiryNotificationLogComponent, "notification delivery failed", lotLogFields(lot, map[string]any{
+				"notification_id": n.ID,
+				"failed_count":    result.FailedCount,
+				"error":           sendErr.Error(),
+			}))
+			continue
 		}
+
+		if updateErr := notifRepo.UpdateStatus(n.ID, "sent"); updateErr != nil {
+			logger.WarnCF(expiryNotificationLogComponent, "failed to update notification status after send success", lotLogFields(lot, map[string]any{
+				"notification_id": n.ID,
+				"status":          "sent",
+				"error":           updateErr.Error(),
+			}))
+		}
+		result.SentCount++
+		logger.InfoCF(expiryNotificationLogComponent, "notification delivered", lotLogFields(lot, map[string]any{
+			"notification_id": n.ID,
+			"sent_count":      result.SentCount,
+		}))
 	}
-	return nil
+
+	finalResult := result.toTaskResult()
+	logger.InfoCF(expiryNotificationLogComponent, "task execution finished", map[string]any{
+		"duration_ms":            time.Since(startedAt).Milliseconds(),
+		"scanned_count":          result.ScannedCount,
+		"sent_count":             result.SentCount,
+		"failed_count":           result.FailedCount,
+		"skipped_existing_count": result.SkippedExistingCount,
+		"summary":                finalResult.Summary,
+	})
+	return finalResult, nil
+}
+
+type expiryNotificationTaskResult struct {
+	ScannedCount         int    `json:"scanned_count"`
+	SentCount            int    `json:"sent_count"`
+	FailedCount          int    `json:"failed_count"`
+	SkippedExistingCount int    `json:"skipped_existing_count"`
+	Summary              string `json:"summary"`
+}
+
+func (r expiryNotificationTaskResult) toTaskResult() taskcenter.TaskResult {
+	summary := strings.TrimSpace(r.Summary)
+	if summary == "" {
+		summary = fmt.Sprintf(
+			"scanned=%d sent=%d failed=%d skipped_existing=%d",
+			r.ScannedCount,
+			r.SentCount,
+			r.FailedCount,
+			r.SkippedExistingCount,
+		)
+	}
+	r.Summary = summary
+	return taskcenter.TaskResult{
+		Summary: summary,
+		Payload: r,
+	}
 }
 
 func buildExpiryMessage(lot model.StockLot, remindDays int) string {
@@ -128,6 +253,32 @@ func locationHint(location string) string {
 		return ""
 	}
 	return "，位置：" + location
+}
+
+func lotLogFields(lot model.StockLot, extra map[string]any) map[string]any {
+	fields := map[string]any{
+		"lot_id":           lot.ID,
+		"material_id":      lot.MaterialID,
+		"quantity_on_hand": lot.QuantityOnHand,
+		"unit":             lot.Unit,
+		"location":         strings.TrimSpace(lot.Location),
+		"status":           lot.Status,
+	}
+	if lot.Material != nil {
+		if strings.TrimSpace(lot.Material.Name) != "" {
+			fields["material_name"] = lot.Material.Name
+		}
+		if strings.TrimSpace(lot.Material.Spec) != "" {
+			fields["material_spec"] = lot.Material.Spec
+		}
+	}
+	if lot.ExpireAt != nil {
+		fields["expire_at"] = lot.ExpireAt.Format(time.RFC3339)
+	}
+	for key, value := range extra {
+		fields[key] = value
+	}
+	return fields
 }
 
 type feishuTextMessage struct {

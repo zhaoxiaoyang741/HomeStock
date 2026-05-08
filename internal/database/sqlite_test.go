@@ -48,6 +48,12 @@ func TestOpenAndMigrateSQLite(t *testing.T) {
 	if !db.Migrator().HasTable(&model.Notification{}) {
 		t.Fatal("notifications table was not created")
 	}
+	if !db.Migrator().HasTable(&model.ScheduledTask{}) {
+		t.Fatal("scheduled_tasks table was not created")
+	}
+	if !db.Migrator().HasTable(&model.ScheduledTaskRun{}) {
+		t.Fatal("scheduled_task_runs table was not created")
+	}
 
 	var foreignKeys int
 	if err := db.Raw("PRAGMA foreign_keys").Scan(&foreignKeys).Error; err != nil {
@@ -175,5 +181,29 @@ func TestCategoryMaterialLotAndNotificationDefaults(t *testing.T) {
 	}
 	if notification.Channel != "feishu" {
 		t.Fatalf("Channel = %q", notification.Channel)
+	}
+
+	task := &model.ScheduledTask{
+		Code:              "unique_task",
+		Name:              "Unique Task",
+		CronSpec:          "0 8 * * *",
+		Enabled:           true,
+		Registered:        true,
+		RunTimeoutSeconds: 60,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("Create(task) error = %v", err)
+	}
+
+	duplicate := &model.ScheduledTask{
+		Code:              "unique_task",
+		Name:              "Duplicate Task",
+		CronSpec:          "0 9 * * *",
+		Enabled:           true,
+		Registered:        true,
+		RunTimeoutSeconds: 60,
+	}
+	if err := db.Create(duplicate).Error; err == nil {
+		t.Fatal("expected duplicate scheduled task code to fail")
 	}
 }

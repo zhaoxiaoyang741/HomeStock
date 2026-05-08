@@ -1,4 +1,4 @@
-﻿package httpserver
+package httpserver
 
 import (
 	"context"
@@ -61,13 +61,17 @@ func (s *Server) Engine() *gin.Engine { return s.engine }
 func (s *Server) Start() error {
 	logger.InfoCF("http", "starting server", map[string]any{"addr": s.addr})
 	err := s.httpServer.ListenAndServe()
-	if errors.Is(err, http.ErrServerClosed) { return nil }
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
 	return err
 }
 
 // Shutdown gracefully stops the underlying HTTP server.
 func (s *Server) Shutdown(ctx context.Context) error {
-	if s.httpServer == nil { return nil }
+	if s.httpServer == nil {
+		return nil
+	}
 	return s.httpServer.Shutdown(ctx)
 }
 
@@ -77,7 +81,10 @@ func requestLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
-		path := c.FullPath(); if path == "" { path = c.Request.URL.Path }
+		path := c.FullPath()
+		if path == "" {
+			path = c.Request.URL.Path
+		}
 		fields := map[string]any{
 			"method":     c.Request.Method,
 			"path":       path,
@@ -85,7 +92,9 @@ func requestLogger() gin.HandlerFunc {
 			"latency_ms": time.Since(start).Milliseconds(),
 			"client_ip":  c.ClientIP(),
 		}
-		if len(c.Errors) > 0 { fields["errors"] = c.Errors.String() }
+		if len(c.Errors) > 0 {
+			fields["errors"] = c.Errors.String()
+		}
 		logger.InfoCF("http", "request completed", fields)
 	}
 }
@@ -93,14 +102,19 @@ func requestLogger() gin.HandlerFunc {
 func corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, X-Tenant-ID, X-User-Name, X-User-ID, X-Channel")
-		if c.Request.Method == http.MethodOptions { c.AbortWithStatus(http.StatusNoContent); return }
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
 		c.Next()
 	}
 }
 
 func normalizeAddr(port string) string {
-	if port == "" { port = "8080" }
+	if port == "" {
+		port = "8080"
+	}
 	return fmt.Sprintf("0.0.0.0:%s", port)
 }

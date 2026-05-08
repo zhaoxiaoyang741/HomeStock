@@ -8,7 +8,6 @@ import { NotificationHistorySection } from './NotificationHistorySection'
 
 type FormState = {
   remindDays: string
-  checkTime: string
   notifyEnabled: boolean
 }
 
@@ -35,7 +34,7 @@ export function ReminderSection({ form, onChange }: Props) {
           </div>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="settings-remind-days">{t('fieldRemindDays')}</Label>
               <Input
@@ -47,14 +46,8 @@ export function ReminderSection({ form, onChange }: Props) {
                 onChange={(e) => onChange({ remindDays: e.target.value })}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="settings-check-time">{t('fieldCheckTime')}</Label>
-              <Input
-                id="settings-check-time"
-                type="time"
-                value={form.checkTime}
-                onChange={(e) => onChange({ checkTime: e.target.value })}
-              />
+            <div className="rounded-lg border border-outline-variant/20 bg-surface-container px-4 py-3 text-sm text-on-surface-variant">
+              {t('reminderScheduleManagedHint')}
             </div>
           </div>
           <div className="rounded-lg bg-surface-container px-4 py-3 text-sm text-on-surface-variant">

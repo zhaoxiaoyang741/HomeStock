@@ -141,6 +141,11 @@ func (r *fakeRepos) StockLots() repository.StockLotRepo           { panic("unuse
 func (r *fakeRepos) StockMovements() repository.StockMovementRepo { panic("unused") }
 func (r *fakeRepos) AuditLogs() repository.AuditLogRepo           { return r.auditLogs }
 func (r *fakeRepos) SystemSettings() repository.SystemSettingRepo { return r.systemSettings }
+func (r *fakeRepos) Notifications() repository.NotificationRepo   { panic("unused") }
+func (r *fakeRepos) ScheduledTasks() repository.ScheduledTaskRepo { panic("unused") }
+func (r *fakeRepos) ScheduledTaskRuns() repository.ScheduledTaskRunRepo {
+	panic("unused")
+}
 
 type fakeSystemSettingsRepo struct {
 	setting  *model.SystemSetting

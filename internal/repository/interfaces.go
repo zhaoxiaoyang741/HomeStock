@@ -56,6 +56,19 @@ type NotificationRepo interface {
 	UpdateStatus(id, status string) error
 }
 
+type ScheduledTaskRepo interface {
+	Create(task *model.ScheduledTask) error
+	GetByCode(code string) (*model.ScheduledTask, error)
+	List() ([]*model.ScheduledTask, error)
+	Save(task *model.ScheduledTask) error
+}
+
+type ScheduledTaskRunRepo interface {
+	Create(run *model.ScheduledTaskRun) error
+	Save(run *model.ScheduledTaskRun) error
+	List(filter ScheduledTaskRunFilter) (*ScheduledTaskRunPage, error)
+}
+
 // Query filters and public DTOs.
 
 type NotificationFilter struct {
@@ -70,6 +83,21 @@ type NotificationPage struct {
 	Total    int64                 `json:"total"`
 	Page     int                   `json:"page"`
 	PageSize int                   `json:"page_size"`
+}
+
+type ScheduledTaskRunFilter struct {
+	TaskCode      string
+	Status        string
+	TriggerSource string
+	Page          int
+	PageSize      int
+}
+
+type ScheduledTaskRunPage struct {
+	Items    []*model.ScheduledTaskRun `json:"items"`
+	Total    int64                     `json:"total"`
+	Page     int                       `json:"page"`
+	PageSize int                       `json:"page_size"`
 }
 
 type MaterialFilter struct {
@@ -100,14 +128,14 @@ type MaterialDetail struct {
 }
 
 type StockLotFilter struct {
-	TenantID          string
-	MaterialID        string
-	CategoryID        string
-	Location          string
-	Status            string
-	Keyword           string
-	ExpiringSoon      bool
-	ExpiringSoonDays  int // 0 means default (7 days)
+	TenantID         string
+	MaterialID       string
+	CategoryID       string
+	Location         string
+	Status           string
+	Keyword          string
+	ExpiringSoon     bool
+	ExpiringSoonDays int // 0 means default (7 days)
 }
 
 type StockMovementFilter struct {
@@ -146,6 +174,8 @@ type Repos interface {
 	AuditLogs() AuditLogRepo
 	SystemSettings() SystemSettingRepo
 	Notifications() NotificationRepo
+	ScheduledTasks() ScheduledTaskRepo
+	ScheduledTaskRuns() ScheduledTaskRunRepo
 }
 
 // UnitOfWork provides access to repositories and transactional execution.

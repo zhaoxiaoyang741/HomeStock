@@ -186,7 +186,7 @@ export default function SettingsPage() {
 
           {activeSection === 'reminder' && form && (
             <ReminderSection
-              form={{ remindDays: form.remindDays, checkTime: form.checkTime, notifyEnabled: form.notifyEnabled }}
+              form={{ remindDays: form.remindDays, notifyEnabled: form.notifyEnabled }}
               onChange={patchForm}
             />
           )}

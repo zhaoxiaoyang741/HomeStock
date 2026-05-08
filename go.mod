@@ -5,6 +5,7 @@ go 1.25.4
 require (
 	github.com/gin-gonic/gin v1.10.1
 	github.com/glebarez/sqlite v1.11.0
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/zerolog v1.35.0
 	gorm.io/gorm v1.25.12
 )

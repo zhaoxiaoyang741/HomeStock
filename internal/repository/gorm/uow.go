@@ -24,6 +24,12 @@ func (r *gormRepos) SystemSettings() repository.SystemSettingRepo {
 func (r *gormRepos) Notifications() repository.NotificationRepo {
 	return NewNotificationRepository(r.db)
 }
+func (r *gormRepos) ScheduledTasks() repository.ScheduledTaskRepo {
+	return NewScheduledTaskRepository(r.db)
+}
+func (r *gormRepos) ScheduledTaskRuns() repository.ScheduledTaskRunRepo {
+	return NewScheduledTaskRunRepository(r.db)
+}
 
 type UnitOfWork struct{ db *gorm.DB }
 
