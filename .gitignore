@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-.docs/
 
 # Environment
 .env
@@ -26,5 +25,7 @@ agent-tmp
 # ai
 CLAUDE.md
 .claude
-.openclaw/agents/
+.codex/
+.docs/
+.openclaw/
 openclaw-plugin/examples/

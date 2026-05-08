@@ -1,4 +1,0 @@
-interface:
-  display_name: "HomeStock UI Extension"
-  short_description: "Add HomeStock UI features with consistent layout and styling."
-  default_prompt: "Use $homestock-ui-extension to add or refine a HomeStock UI feature while preserving the current design system."
