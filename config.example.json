@@ -12,5 +12,19 @@
   "scheduler": {
     "remind_days": 3,
     "check_time": "08:00"
-  }
+  },
+  "channels": {
+    "feishu": {
+      "enabled": false,
+      "app_id": "",
+      "app_secret": ""
+    }
+  },
+  "model_list": [
+    {
+      "model_name": "default",
+      "model": "openai/gpt-4o",
+      "api_key": "sk-your-key"
+    }
+  ]
 }

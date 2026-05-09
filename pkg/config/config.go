@@ -18,6 +18,10 @@ type Config struct {
 	Notify NotifyConfig `json:"notify"`
 	// Scheduler controls reminder scheduling settings.
 	Scheduler SchedulerConfig `json:"scheduler"`
+	// Channels controls external messaging channel configurations.
+	Channels ChannelsConfig `json:"channels"`
+	// ModelList is the list of LLM model configurations for multi-model support.
+	ModelList []ModelConfig `json:"model_list"`
 
 	Log LogConfig `json:"log"`
 }
@@ -44,6 +48,27 @@ type SchedulerConfig struct {
 	RemindDays int `json:"remind_days"`
 	// CheckTime is the daily reminder check time in HH:MM format.
 	CheckTime string `json:"check_time"`
+}
+
+type ChannelsConfig struct {
+	Feishu FeishuChannelConfig `json:"feishu"`
+}
+
+type FeishuChannelConfig struct {
+	Enabled   bool   `json:"enabled"`
+	AppID     string `json:"app_id"`
+	AppSecret string `json:"app_secret"`
+}
+
+type ModelConfig struct {
+	// ModelName is a human-readable label used to reference this model config.
+	ModelName string `json:"model_name"`
+	// Model is the model identifier passed to the API, e.g. "openai/gpt-4o" or "gpt-4o".
+	Model string `json:"model"`
+	// APIKey is the API key for the LLM provider.
+	APIKey string `json:"api_key"`
+	// APIBase is the base URL for the API, optional — defaults to the provider's default.
+	APIBase string `json:"api_base,omitempty"`
 }
 
 type LogConfig struct {
@@ -101,6 +126,20 @@ func defaultConfig() *Config {
 		Scheduler: SchedulerConfig{
 			RemindDays: 3,
 			CheckTime:  "08:00",
+		},
+		Channels: ChannelsConfig{
+			Feishu: FeishuChannelConfig{
+				Enabled:   false,
+				AppID:     "",
+				AppSecret: "",
+			},
+		},
+		ModelList: []ModelConfig{
+			{
+				ModelName: "default",
+				Model:     "openai/gpt-4o",
+				APIKey:    "",
+			},
 		},
 		Log: LogConfig{
 			Level: 0, // INFO
@@ -166,6 +205,16 @@ func applyEnvOverrides(cfg *Config) error {
 
 	if value, ok := os.LookupEnv("HOMESTOCK_SCHEDULER_CHECK_TIME"); ok {
 		cfg.Scheduler.CheckTime = value
+	}
+
+	if value, ok := os.LookupEnv("HOMESTOCK_CHANNELS_FEISHU_APP_ID"); ok {
+		cfg.Channels.Feishu.AppID = value
+		cfg.Channels.Feishu.Enabled = true
+	}
+
+	if value, ok := os.LookupEnv("HOMESTOCK_CHANNELS_FEISHU_APP_SECRET"); ok {
+		cfg.Channels.Feishu.AppSecret = value
+		cfg.Channels.Feishu.Enabled = true
 	}
 
 	return nil
