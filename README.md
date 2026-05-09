@@ -1,16 +1,30 @@
 # 家库 · HomeStock
 
-家用物料管理系统：管理食材与日用品库存，跟踪保质期，并在临期前提醒，减少浪费。支持飞书多模态录入（文字 / 语音 / 小票拍照）与 Web 管理界面，AI 层基于 **OpenClaw**。
+家用物料管理系统 — 管理食材与日用品库存，跟踪保质期，临期提醒，减少浪费。
 
-对外可见信息以本 README 为准；详细设计文档仅内部维护，不随仓库公开。
+- **AI 入口**：通过飞书发送文字、语音或小票照片，即可完成入库、查询、出库
+- **Web 管理**：响应式仪表盘与库存管理界面，支持物料分类、批次跟踪、库存流水
+- **轻量部署**：支持树莓派 / NAS / PC，SQLite 或 PostgreSQL 按需切换
 
 ---
 
-## 特性概览
+## 架构概览
 
-- **自然语言与多模态录入**：说话、发文字、拍购物小票即可更新库存。
-- **保质期与临期提醒**：自动维护到期时间，定时扫描并推送通知（如飞书）。
-- **轻量部署**：支持树莓派 / NAS / PC；数据库可在 SQLite 与 PostgreSQL 间按场景切换。
+```
+用户入口
+  ├── 飞书（文字 / 语音 / 图片） → OpenClaw → LLM → 插件 → HTTP
+  └── 浏览器（Web UI）           → React  → HTTP
+                                    │
+                                    ▼
+                            Go REST API
+                            ├── 物料 / 批次 CRUD
+                            ├── 保质期扫描 & 推送
+                            ├── 飞书 Webhook 通知
+                            └── 配置热重载
+                                    │
+                                    ▼
+                          SQLite / PostgreSQL
+```
 
 ---
 
@@ -18,81 +32,185 @@
 
 | 模块 | 技术 |
 |------|------|
-| AI Agent | OpenClaw |
-| 后端 | Go、Gin、GORM、robfig/cron |
-| 前端 | React、Vite、Tailwind |
-| 插件 | TypeScript（OpenClaw） |
-| 数据 | SQLite / PostgreSQL |
-| 交付 | Docker、Docker Compose |
+| 后端 | Go、Gin、GORM、robfig/cron、zerolog |
+| 前端 | React 19、TypeScript、Vite 8、Tailwind CSS 4 |
+| AI Agent | OpenClaw + TypeScript 插件 |
+| 大模型 | OpenAI（GPT-4o 等）/ Ollama（Qwen2.5 等），支持运行时切换 |
+| 渠道 | 飞书（OAuth 授权 / Webhook 推送）、可扩展 Channel 接口 |
+| 数据 | SQLite（嵌入式）/ PostgreSQL |
+| 交付 | 交叉编译单二进制、Docker Compose、Nginx 静态托管 |
 
 ---
 
-## 设计与实现概要
+## 特性
 
-以下为内部设计文档的对外摘要，便于贡献者理解全貌。
+### 库存管理
 
-### 整体架构
+- **物料主数据**：名称、规格、分类、默认单位
+- **批次追踪**：每批独立记录数量、存放位置、购买日期、到期日期、备注
+- **库存操作**：入库、消耗出库、数量调整、批次废弃
+- **多维筛选**：按分类、存放位置、关键字搜索，批次详情联动展示
+- **库存仪表盘**：总量统计、分类分布、临期看板、最近流水
 
-- **入口**：飞书（文字 / 语音 / 图片）→ OpenClaw；浏览器 → React。
-- **中间层**：OpenClaw 插件（TypeScript）负责 LLM 意图、ASR、小票 OCR，经 HTTP 调用后端。
-- **核心服务**：Go REST API（物料 CRUD、保质期、按配置的 Cron 扫描临期项、飞书 Webhook 推送）。
-- **数据**：SQLite（嵌入式 / 轻量），或 PostgreSQL（NAS / 云端 / 多租户）。
-- **录入链路**：文字/语音经 LLM 调 Tool；小票图片经 OCR 批量入库；Web 表单直连 API。
-- **部署梯度**：单机（树莓派 + SQLite）、家用 Docker Compose（SQLite 或 PostgreSQL）、SaaS（PostgreSQL + `tenant_id` + JWT）。
+### 保质期与提醒
 
-### 后端（Go）
+- 自动标记 `normal` / `expiring` / `expired` 状态
+- 定时扫描临期批次
+- 飞书机器人推送提醒
 
-- 分层：`cmd/server`、`config`（Viper + 环境变量）、`model` / `repository` / `service`、`handler`、到期 `scheduler`、飞书 `notifier`。
-- 能力：REST `/api/v1/items`（增删改查、按位置/分类/临期筛选）、`/api/v1/health`；内置常见食材保质期字典，可结合 LLM 兜底未知品类。
-- 配置项示例：服务端口、数据库 DSN、飞书 Webhook、提前提醒天数与每日检查时刻。
+### AI 自然语言交互
 
-### OpenClaw 插件
+通过飞书 + OpenClaw + LLM，支持以下操作：
 
-- Tool：`inbound_stock`、`consume_material`、`query_inventory`、`update_stock_lot`、`check_homestock_service`；`SKILL.md` 描述触发话术；`openclaw.plugin.json` 声明插件。
-- 推荐以“库存专用 agent + slash command 兜底”方式部署飞书入口；`/query_inventory ...` 可绕过自然语言匹配，作为稳定兜底路径。
-- 运行时通过 `INVENTORY_API_URL` 等形式指向 Go 后端，将 LLM 解析结果转为 API 调用并格式化回复。
+| 能力 | 说明 |
+|------|------|
+| 入库 | "买了 2 斤苹果，放在冰箱" |
+| 出库 | "用了 3 个鸡蛋" |
+| 查询 | "还剩多少牛奶？" |
+| 更新 | "把牛肉的保质期改到下周三" |
+| 健康检查 | 确认后端服务状态 |
 
-### 前端（React）
+### 渠道集成
 
-- 技术：Vite、TypeScript、Tailwind、TanStack Query、React Router；目标是在低端设备浏览器上可用。
-- 页面能力：按存放位置分组展示、临期看板与颜色标识、手动添加/编辑、设置；`VITE_API_URL` 指向后端。
+- **飞书**：OAuth 2.0 授权接入，支持事件订阅（长连接），免公网 IP
+- **Webhook 通知**：自定义机器人推送临期提醒
+- **可扩展**：`Channel` 接口，可接入微信等更多渠道
 
-### 数据库
+### 配置热重载
 
-- 主表 `items`：名称、分类、数量单位、位置、`expire_at`（可空）、购买时间、备注、`tenant_id`（家用默认 `default`）。
-- 表 `notifications`：与物料关联的通知记录（状态、渠道、时间）。
-- GORM `AutoMigrate` 建表；复杂变更可用 golang-migrate；备份可拷贝 SQLite 文件或使用 `pg_dump`。
+- `config.json` 文件变更自动检测（2s 轮询）
+- LLM 模型切换、飞书凭据更新无需重启服务
+- Web 管理界面直接编辑配置并持久化
 
-### 部署与运维
+### 多模型支持
 
-- **推荐**：Docker Compose 同时拉起后端（数据卷持久化 DB）与前端（Nginx 托管静态资源）；`.env` 存 Webhook 等敏感项。
-- **裸机 / 树莓派**：交叉编译或直接 `go build`；前端 `npm run build`；可选 embed 静态资源进单二进制；systemd 保活。
-- **局域网**：固定路由器 DHCP / 静态 IP，访问 `:3000`（前端）与 `:8080`（API）。
-- **SaaS**：HTTPS（如 Nginx + Let’s Encrypt）、JWT、PostgreSQL；多架构镜像可用 `buildx`。
-- **资源参考**：仅后端与前端空载约 20–40MB 量级内存；OpenClaw / LLM 另行占用，可拆机部署。
-
-### 飞书
-
-- **完整对话**：开放平台自建应用 + 权限（收消息、发消息等）+ 事件「接收消息」**长连接**（免公网 IP）；在 OpenClaw 中配置 `app_id` / `app_secret` 与 LLM。
-- **仅提醒**：群「自定义机器人」Webhook URL 配进后端，后端 Cron 推送文本。
-- 可先通 Webhook 验证提醒，再接入 OpenClaw 做多模态与对话。
+- 配置多个 LLM 模型（OpenAI / Ollama）
+- Web 设置界面一键切换活跃模型
+- API Key 安全编辑（不回显）
 
 ---
 
 ## 快速开始
 
-代码目录与一键启动命令将在各模块落地后补充。初始化时准备：Docker（可选）、数据库路径或 PostgreSQL、飞书 Webhook 或开放平台凭证、OpenClaw 与插件路径、以及前端 `VITE_API_URL`。
+### 前置准备
+
+- Go 1.25+
+- Node.js + pnpm（前端构建）
+- Docker + Docker Compose（可选）
+- 飞书开放平台凭证（可选）
+- LLM API Key（OpenAI 或 Ollama）
+
+### 本地开发
 
 ```bash
+# 1. 克隆仓库
 git clone <repository-url>
 cd agent
-# 后续：配置环境变量、数据库与 Docker Compose 等
+
+# 2. 配置
+cp config.example.json config.json
+# 编辑 config.json：填入 LLM API Key、飞书凭证等
+
+# 3. 启动后端
+go run ./cmd/server
+
+# 4. 启动前端（新终端）
+cd web
+pnpm install
+pnpm dev
 ```
+
+前端默认运行于 `http://localhost:5173`，后端 API 位于 `http://localhost:8888`。
+
+### 生产构建
+
+```bash
+# 全平台交叉编译（含前端构建与嵌入）
+make build-all
+
+# 或仅当前平台
+make build
+```
+
+构建产物输出至 `bin/` 目录。
+
+### 飞书接入
+
+完整对话（OpenClaw + 事件订阅）：
+
+1. 飞书开放平台创建自建应用，开启"接收消息"事件
+2. 配置 `openclaw.config.yaml` 中的 `channels.feishu` 与 `llm` 字段
+3. 在 Web 设置页面完成 OAuth 授权
+
+仅提醒推送：
+
+1. 飞书群添加自定义机器人，获取 Webhook URL
+2. 配置 `channels.feishu` 的推送相关参数
+
+---
+
+## 项目结构
+
+```
+├── cmd/
+│   ├── server/              # 后端入口
+│   └── homestock/           # CLI 工具
+├── internal/
+│   ├── agent/               # AgentLoop + MessageBus
+│   ├── app/                 # 应用组装/启动/关闭
+│   ├── channel/             # 消息渠道接口 + Manager
+│   │   └── feishu/          # 飞书渠道 + OAuth
+│   ├── database/            # 数据库连接与迁移
+│   ├── handler/             # HTTP 处理器
+│   ├── hotreload/           # 配置热重载 Orchestrator
+│   ├── httpserver/          # Gin 服务器封装
+│   ├── llm/                 # LLM Provider（OpenAI / Ollama）
+│   ├── model/               # GORM 数据模型
+│   ├── repository/          # 数据访问层
+│   ├── service/             # 业务逻辑层
+│   └── tool/                # LLM Tool 注册与分发
+├── pkg/
+│   └── config/              # 配置管理（JSON + 环境变量覆盖）
+├── web/
+│   └── src/
+│       ├── api/             # API 调用封装
+│       ├── components/      # UI 组件（shadcdn 风格）
+│       ├── pages/           # 页面：dashboard / inventory / shopping / history / settings
+│       └── hooks/           # 自定义 Hooks
+└── openclaw-plugin/         # OpenClaw 插件（TypeScript）
+    ├── src/                 # Tool 实现
+    └── skills/              # Skill 描述
+```
+
+---
+
+## 配置
+
+配置通过 `config.json` 管理，支持环境变量覆盖。
+
+| 配置项 | 环境变量 | 说明 |
+|--------|----------|------|
+| `server.port` | `HOMESTOCK_SERVER_PORT` | 监听端口，默认 `8888` |
+| `server.hot_reload` | — | 启用配置热重载 |
+| `database.driver` | `HOMESTOCK_DATABASE_DRIVER` | `sqlite` / `postgres` |
+| `database.dsn` | `HOMESTOCK_DATABASE_DSN` | 数据源名称 |
+| `channels.feishu.app_id` | `HOMESTOCK_CHANNELS_FEISHU_APP_ID` | 飞书 App ID |
+| `channels.feishu.app_secret` | `HOMESTOCK_CHANNELS_FEISHU_APP_SECRET` | 飞书 App Secret |
+| `model_list` | — | LLM 模型列表，每个含 provider / model / api_key |
+
+---
+
+## 部署方案
+
+| 场景 | 方案 |
+|------|------|
+| 树莓派 / 低功耗设备 | SQLite + 单二进制 + systemd |
+| 家用服务器 | Docker Compose（后端 + Nginx） |
+| 局域网访问 | 路由器 DHCP 固定 IP，前端 :5173 / API :8888 |
+| SaaS | PostgreSQL + JWT + HTTPS |
 
 ---
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE)。
-
-若将项目 fork 或对外发布，可将 `LICENSE` 中的版权持有人行（`Copyright (c) 2026 …`）替换为你的姓名或组织名称。
+[MIT License](LICENSE)
