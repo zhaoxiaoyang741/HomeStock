@@ -11,6 +11,7 @@ import (
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/agent"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/channel/feishu"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/database"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/httpserver"
@@ -90,6 +91,38 @@ func New(cfg *config.Config) (*App, error) {
 
 	// Channel manager — channels are added via factory or manually
 	channelMgr := channel.NewManager()
+	if cfg.Channels.Feishu.Enabled {
+		fc := feishu.NewFeishuChannel(cfg.Channels.Feishu.AppID, cfg.Channels.Feishu.AppSecret)
+		fc.SetInboundHandler(func(ctx context.Context, msg channel.InboundMessage) {
+			if err := bus.PublishInbound(ctx, agent.InboundMessage{
+				Channel:    msg.Channel,
+				ChatID:     msg.ChatID,
+				SenderID:   msg.SenderID,
+				SenderName: msg.SenderName,
+				Text:       msg.Text,
+				MediaType:  msg.MediaType,
+				FileKey:    msg.FileKey,
+			}); err != nil {
+				logger.ErrorCF("app", "publish inbound failed", map[string]any{
+					"channel": msg.Channel,
+					"error":   err.Error(),
+				})
+			}
+		})
+		channelMgr.AddChannel(fc)
+		logger.InfoCF("app", "Feishu channel enabled", nil)
+	}
+
+	// Tool registration
+	tool.RegisterInventoryTools(disp, &tool.InventoryTools{
+		InventorySvc: inventorySvc,
+		MaterialSvc:  materialSvc,
+	})
+	tool.RegisterHealthTool(disp, fmt.Sprintf("http://localhost:%s", cfg.Server.Port))
+
+	defs := tool.InventoryToolDefinitions()
+	defs = append(defs, tool.HealthToolDefinition())
+	disp.SetDefinitions(defs)
 
 	// Handlers
 	categoryHandler := handler.NewCategoryHandler(service.NewCategoryService(uow))

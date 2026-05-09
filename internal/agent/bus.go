@@ -40,6 +40,11 @@ func (b *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) err
 	select {
 	case <-b.done:
 		return context.Canceled
+	default:
+	}
+	select {
+	case <-b.done:
+		return context.Canceled
 	case <-ctx.Done():
 		return ctx.Err()
 	case b.inbound <- msg:
@@ -54,6 +59,11 @@ func (b *MessageBus) InboundChan() <-chan InboundMessage {
 
 // PublishOutbound sends a response message from the AgentLoop into the bus.
 func (b *MessageBus) PublishOutbound(ctx context.Context, msg OutboundMessage) error {
+	select {
+	case <-b.done:
+		return context.Canceled
+	default:
+	}
 	select {
 	case <-b.done:
 		return context.Canceled
