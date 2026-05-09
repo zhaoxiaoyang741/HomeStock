@@ -29,3 +29,4 @@ CLAUDE.md
 .docs/
 .openclaw/
 openclaw-plugin/examples/
+config.json

@@ -102,5 +102,20 @@
   "notifStatusFailed": "Failed",
   "notifFilterAll": "All",
   "notifFilterSent": "Sent",
-  "notifFilterFailed": "Failed"
+  "notifFilterFailed": "Failed",
+  "navFeishu": "Feishu Bot",
+  "feishuBotTitle": "Feishu Bot",
+  "feishuBotDescription": "Connect your Feishu bot to manage inventory via Feishu messages.",
+  "feishuConnected": "Connected",
+  "feishuDisconnected": "Disconnected",
+  "feishuStatusChecking": "Checking...",
+  "feishuBadgeConnected": "Connected",
+  "feishuBadgeDisconnected": "Not Connected",
+  "feishuAppId": "App ID",
+  "feishuAuthorize": "Authorize",
+  "feishuDisconnect": "Disconnect",
+  "feishuAuthFailed": "Failed to get authorization URL",
+  "feishuDisconnectFailed": "Failed to disconnect",
+  "feishuStatusFailed": "Failed to get status",
+  "feishuNotConfiguredHint": "Configure the Feishu App ID and App Secret in config file or environment variables."
 }

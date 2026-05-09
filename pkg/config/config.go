@@ -55,9 +55,11 @@ type ChannelsConfig struct {
 }
 
 type FeishuChannelConfig struct {
-	Enabled   bool   `json:"enabled"`
-	AppID     string `json:"app_id"`
-	AppSecret string `json:"app_secret"`
+	Enabled      bool   `json:"enabled"`
+	AppID        string `json:"app_id"`
+	AppSecret    string `json:"app_secret"`
+	RedirectURI  string `json:"redirect_uri,omitempty"`
+	FrontendURL  string `json:"frontend_url,omitempty"`
 }
 
 type ModelConfig struct {
@@ -129,9 +131,11 @@ func defaultConfig() *Config {
 		},
 		Channels: ChannelsConfig{
 			Feishu: FeishuChannelConfig{
-				Enabled:   false,
-				AppID:     "",
-				AppSecret: "",
+				Enabled:     false,
+				AppID:       "",
+				AppSecret:   "",
+				RedirectURI: "http://localhost:8888/api/v1/feishu/callback",
+				FrontendURL: "http://localhost:5173",
 			},
 		},
 		ModelList: []ModelConfig{
@@ -215,6 +219,14 @@ func applyEnvOverrides(cfg *Config) error {
 	if value, ok := os.LookupEnv("HOMESTOCK_CHANNELS_FEISHU_APP_SECRET"); ok {
 		cfg.Channels.Feishu.AppSecret = value
 		cfg.Channels.Feishu.Enabled = true
+	}
+
+	if value, ok := os.LookupEnv("HOMESTOCK_CHANNELS_FEISHU_REDIRECT_URI"); ok {
+		cfg.Channels.Feishu.RedirectURI = value
+	}
+
+	if value, ok := os.LookupEnv("HOMESTOCK_CHANNELS_FEISHU_FRONTEND_URL"); ok {
+		cfg.Channels.Feishu.FrontendURL = value
 	}
 
 	return nil

@@ -91,26 +91,49 @@ func New(cfg *config.Config) (*App, error) {
 
 	// Channel manager — channels are added via factory or manually
 	channelMgr := channel.NewManager()
+
+	// Always create the FeishuChannel wrapper for OAuth lifecycle management;
+	// only add it to the manager when config has it enabled.
+	inboundHandler := func(ctx context.Context, msg channel.InboundMessage) {
+		if err := bus.PublishInbound(ctx, agent.InboundMessage{
+			Channel:    msg.Channel,
+			ChatID:     msg.ChatID,
+			SenderID:   msg.SenderID,
+			SenderName: msg.SenderName,
+			Text:       msg.Text,
+			MediaType:  msg.MediaType,
+			FileKey:    msg.FileKey,
+		}); err != nil {
+			logger.ErrorCF("app", "publish inbound failed", map[string]any{
+				"channel": msg.Channel,
+				"error":   err.Error(),
+			})
+		}
+	}
+
+	fc := feishu.NewFeishuChannel(cfg.Channels.Feishu.AppID, cfg.Channels.Feishu.AppSecret)
+	fc.SetInboundHandler(inboundHandler)
 	if cfg.Channels.Feishu.Enabled {
-		fc := feishu.NewFeishuChannel(cfg.Channels.Feishu.AppID, cfg.Channels.Feishu.AppSecret)
-		fc.SetInboundHandler(func(ctx context.Context, msg channel.InboundMessage) {
-			if err := bus.PublishInbound(ctx, agent.InboundMessage{
-				Channel:    msg.Channel,
-				ChatID:     msg.ChatID,
-				SenderID:   msg.SenderID,
-				SenderName: msg.SenderName,
-				Text:       msg.Text,
-				MediaType:  msg.MediaType,
-				FileKey:    msg.FileKey,
-			}); err != nil {
-				logger.ErrorCF("app", "publish inbound failed", map[string]any{
-					"channel": msg.Channel,
-					"error":   err.Error(),
-				})
-			}
-		})
 		channelMgr.AddChannel(fc)
 		logger.InfoCF("app", "Feishu channel enabled", nil)
+	}
+
+	// OAuth service and handler for Feishu (always registered, channel can be started
+	// dynamically after OAuth callback).
+	oauthSvc := feishu.NewOAuthService(
+		cfg.Channels.Feishu.AppID,
+		cfg.Channels.Feishu.AppSecret,
+		cfg.Channels.Feishu.RedirectURI,
+		cfg.Channels.Feishu.FrontendURL,
+		uow.Repos().SystemSettings(),
+	)
+	feishuHandler := handler.NewFeishuHandler(oauthSvc, channelMgr, fc, cfg.Channels.Feishu.FrontendURL)
+
+	// Seed the Feishu token cache from stored OAuth credentials (non-fatal on error).
+	if cfg.Channels.Feishu.Enabled {
+		if err := oauthSvc.SeedTokenCache(context.Background(), fc.GetTokenCache()); err != nil {
+			logger.WarnCF("app", "feishu token cache seed failed", map[string]any{"error": err.Error()})
+		}
 	}
 
 	// Tool registration
@@ -145,6 +168,7 @@ func New(cfg *config.Config) (*App, error) {
 		scheduledTaskHandler.RegisterRoutes,
 		schedulerHandler.RegisterRoutes,
 		notificationHandler.RegisterRoutes,
+		feishuHandler.RegisterRoutes,
 	)
 
 	return &App{

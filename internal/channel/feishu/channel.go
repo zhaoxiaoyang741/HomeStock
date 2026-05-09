@@ -344,4 +344,7 @@ func (c *FeishuChannel) invalidateTokenOnAuthError(code int) {
 	}
 }
 
+// GetTokenCache returns the internal token cache for seeding OAuth tokens.
+func (c *FeishuChannel) GetTokenCache() *tokenCache { return c.tokenCache }
+
 var _ channel.Channel = (*FeishuChannel)(nil)

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { RefreshCw, Save, Clock, Bell, Webhook } from 'lucide-react'
+import { RefreshCw, Save, Clock, Bell, Webhook, Bot } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -10,8 +10,9 @@ import type { SystemSettings, UpdateSystemSettingsPayload } from '@/types/system
 import { SchedulerSection } from './SchedulerSection'
 import { ReminderSection } from './ReminderSection'
 import { ChannelSection } from './ChannelSection'
+import { FeishuBotSection } from './FeishuBotSection'
 
-type SectionId = 'scheduler' | 'reminder' | 'channel'
+type SectionId = 'scheduler' | 'reminder' | 'channel' | 'feishu'
 
 type NavItem = { id: SectionId; labelKey: string; icon: LucideIcon }
 
@@ -19,6 +20,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'scheduler', labelKey: 'navScheduler', icon: Clock },
   { id: 'reminder',  labelKey: 'navReminder',  icon: Bell },
   { id: 'channel',   labelKey: 'navChannel',   icon: Webhook },
+  { id: 'feishu',    labelKey: 'navFeishu',    icon: Bot },
 ]
 
 type FormState = {
@@ -198,6 +200,8 @@ export default function SettingsPage() {
               onChange={patchForm}
             />
           )}
+
+          {activeSection === 'feishu' && <FeishuBotSection />}
 
           {/* Metadata footer (form sections only) */}
           {isFormSection && initialSettings && (
