@@ -21,7 +21,6 @@ import {
 } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
-import { useSystemSettings } from '@/hooks/useSystemSettings'
 import { stockLotApi } from '@/api/stockLot'
 import type { StockLot, UpdateStockLotPayload } from '@/types/stock'
 import { getInventoryStatus } from '@/types/material'
@@ -43,7 +42,6 @@ function toRFC3339(dateInput: string): string {
 
 export default function ExpiringLotsDialog({ open, lots, onClose, onChanged }: Props) {
   const { t, i18n } = useTranslation('inventory')
-  const { remindDays } = useSystemSettings()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editExpireAt, setEditExpireAt] = useState('')
   const [saving, setSaving] = useState(false)
@@ -133,7 +131,7 @@ export default function ExpiringLotsDialog({ open, lots, onClose, onChanged }: P
                 </TableRow>
               ) : (
                 lots.map((lot) => {
-                  const status = getInventoryStatus(lot.expire_at, remindDays)
+                  const status = getInventoryStatus(lot.expire_at)
                   const isEditing = editingId === lot.id
                   const isVoiding = voidingId === lot.id
                   return (

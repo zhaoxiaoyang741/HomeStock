@@ -6,13 +6,6 @@
     "driver": "sqlite",
     "dsn": "/data/inventory.db"
   },
-  "notify": {
-    "feishu_webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/your-token"
-  },
-  "scheduler": {
-    "remind_days": 3,
-    "check_time": "08:00"
-  },
   "channels": {
     "feishu": {
       "enabled": false,

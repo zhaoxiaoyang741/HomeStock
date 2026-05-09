@@ -7,9 +7,6 @@ func AutoMigrateModels() []any {
 		&Material{},
 		&StockLot{},
 		&StockMovement{},
-		&Notification{},
-		&ScheduledTask{},
-		&ScheduledTaskRun{},
 		&AuditLog{},
 		&SystemSetting{},
 	}

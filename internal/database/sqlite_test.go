@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/model"
 	appconfig "github.com/zhaoxiaoyang741/HomeStock/pkg/config"
@@ -44,15 +43,6 @@ func TestOpenAndMigrateSQLite(t *testing.T) {
 	}
 	if !db.Migrator().HasTable(&model.StockMovement{}) {
 		t.Fatal("stock_movements table was not created")
-	}
-	if !db.Migrator().HasTable(&model.Notification{}) {
-		t.Fatal("notifications table was not created")
-	}
-	if !db.Migrator().HasTable(&model.ScheduledTask{}) {
-		t.Fatal("scheduled_tasks table was not created")
-	}
-	if !db.Migrator().HasTable(&model.ScheduledTaskRun{}) {
-		t.Fatal("scheduled_task_runs table was not created")
 	}
 
 	var foreignKeys int
@@ -97,7 +87,7 @@ func TestOpenCreatesNestedSQLiteDirectory(t *testing.T) {
 	}
 }
 
-func TestCategoryMaterialLotAndNotificationDefaults(t *testing.T) {
+func TestCategoryAndMaterialDefaults(t *testing.T) {
 	db, err := OpenAndMigrate(appconfig.DatabaseConfig{
 		Driver: "sqlite",
 		DSN:    ":memory:",
@@ -163,47 +153,5 @@ func TestCategoryMaterialLotAndNotificationDefaults(t *testing.T) {
 	}
 	if lot.ReceivedAt.IsZero() {
 		t.Fatal("expected ReceivedAt to be populated")
-	}
-
-	notification := &model.Notification{
-		LotID:    lot.ID,
-		NotifyAt: time.Now(),
-	}
-	if err := db.Create(notification).Error; err != nil {
-		t.Fatalf("Create(notification) error = %v", err)
-	}
-
-	if notification.ID == "" {
-		t.Fatal("expected notification ID to be generated")
-	}
-	if notification.Status != "pending" {
-		t.Fatalf("Status = %q", notification.Status)
-	}
-	if notification.Channel != "feishu" {
-		t.Fatalf("Channel = %q", notification.Channel)
-	}
-
-	task := &model.ScheduledTask{
-		Code:              "unique_task",
-		Name:              "Unique Task",
-		CronSpec:          "0 8 * * *",
-		Enabled:           true,
-		Registered:        true,
-		RunTimeoutSeconds: 60,
-	}
-	if err := db.Create(task).Error; err != nil {
-		t.Fatalf("Create(task) error = %v", err)
-	}
-
-	duplicate := &model.ScheduledTask{
-		Code:              "unique_task",
-		Name:              "Duplicate Task",
-		CronSpec:          "0 9 * * *",
-		Enabled:           true,
-		Registered:        true,
-		RunTimeoutSeconds: 60,
-	}
-	if err := db.Create(duplicate).Error; err == nil {
-		t.Fatal("expected duplicate scheduled task code to fail")
 	}
 }

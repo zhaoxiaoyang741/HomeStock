@@ -9,7 +9,6 @@ import { formatDateTime } from '@/lib/format'
 import { useDashboardStats } from '@/hooks/useDashboardStats'
 import { useTheme } from '@/hooks/useTheme'
 import type { StockMovementType } from '@/types/stock'
-import { useSystemSettings } from '@/hooks/useSystemSettings'
 
 function getCssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
@@ -69,9 +68,7 @@ function movementBadgeVariant(type: StockMovementType): 'default' | 'secondary' 
 
 export default function HomePage() {
   const { t } = useTranslation('dashboard')
-  const { settings } = useSystemSettings()
-  const remindDays = settings?.reminder?.remind_days ?? 3
-  const { stats, loading, error } = useDashboardStats(remindDays)
+  const { stats, loading, error } = useDashboardStats()
   const colors = useChartColors()
 
   const movementTypeLabel = (type: StockMovementType) => {

@@ -32,7 +32,6 @@ import {
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import { useDebounce } from '@/hooks/useDebounce'
-import { useSystemSettings } from '@/hooks/useSystemSettings'
 import { categoryApi } from '@/api/category'
 import { materialApi } from '@/api/material'
 import { stockLotApi } from '@/api/stockLot'
@@ -54,7 +53,6 @@ function formatLocations(locations: string[]): string {
 
 export default function InventoryPage() {
   const { t, i18n } = useTranslation('inventory')
-  const { remindDays } = useSystemSettings()
   const [materials, setMaterials] = useState<MaterialSummary[]>([])
   const [lots, setLots] = useState<StockLot[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -147,8 +145,8 @@ export default function InventoryPage() {
   )
 
   const warningLots = useMemo(
-    () => lots.filter((lot) => lot.quantity_on_hand > 0 && getInventoryStatus(lot.expire_at, remindDays) !== 'normal').length,
-    [lots, remindDays],
+    () => lots.filter((lot) => lot.quantity_on_hand > 0 && getInventoryStatus(lot.expire_at) !== 'normal').length,
+    [lots],
   )
 
   async function handleInbound(payload: InboundStockLotPayload) {
@@ -294,7 +292,7 @@ export default function InventoryPage() {
               </TableRow>
             ) : (
               materials.map((material) => {
-                const status = getInventoryStatus(material.nearest_expire_at, remindDays)
+                const status = getInventoryStatus(material.nearest_expire_at)
                 const selected = material.id === selectedMaterialId
                 return (
                   <TableRow
@@ -395,7 +393,7 @@ export default function InventoryPage() {
               </TableRow>
             ) : (
               selectedLots.map((lot) => {
-                const status = getInventoryStatus(lot.expire_at, remindDays)
+                const status = getInventoryStatus(lot.expire_at)
                 return (
                   <TableRow key={lot.id} className="border-outline-variant/10 hover:bg-surface">
                     <TableCell className="py-5 font-medium">
@@ -437,7 +435,7 @@ export default function InventoryPage() {
 
       <ExpiringLotsDialog
         open={expiringOpen}
-        lots={lots.filter((lot) => lot.quantity_on_hand > 0 && getInventoryStatus(lot.expire_at, remindDays) !== 'normal')}
+        lots={lots.filter((lot) => lot.quantity_on_hand > 0 && getInventoryStatus(lot.expire_at) !== 'normal')}
         onClose={() => setExpiringOpen(false)}
         onChanged={() => void loadData()}
       />

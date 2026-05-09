@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"sync"
 )
 
@@ -14,10 +13,6 @@ type Config struct {
 	Server ServerConfig `json:"server"`
 	// Database controls storage backend settings.
 	Database DatabaseConfig `json:"database"`
-	// Notify controls outbound notification settings.
-	Notify NotifyConfig `json:"notify"`
-	// Scheduler controls reminder scheduling settings.
-	Scheduler SchedulerConfig `json:"scheduler"`
 	// Channels controls external messaging channel configurations.
 	Channels ChannelsConfig `json:"channels"`
 	// ModelList is the list of LLM model configurations for multi-model support.
@@ -36,18 +31,6 @@ type DatabaseConfig struct {
 	Driver string `json:"driver"`
 	// DSN is the database connection string or sqlite file path.
 	DSN string `json:"dsn"`
-}
-
-type NotifyConfig struct {
-	// FeishuWebhook is the Feishu bot webhook URL used for reminder delivery.
-	FeishuWebhook string `json:"feishu_webhook"`
-}
-
-type SchedulerConfig struct {
-	// RemindDays is how many days before expiration to send reminders.
-	RemindDays int `json:"remind_days"`
-	// CheckTime is the daily reminder check time in HH:MM format.
-	CheckTime string `json:"check_time"`
 }
 
 type ChannelsConfig struct {
@@ -127,13 +110,6 @@ func defaultConfig() *Config {
 			Driver: "sqlite",
 			DSN:    "./data/inventory.db",
 		},
-		Notify: NotifyConfig{
-			FeishuWebhook: "",
-		},
-		Scheduler: SchedulerConfig{
-			RemindDays: 3,
-			CheckTime:  "08:00",
-		},
 		Channels: ChannelsConfig{
 			Feishu: FeishuChannelConfig{
 				Enabled:     false,
@@ -199,22 +175,6 @@ func applyEnvOverrides(cfg *Config) error {
 
 	if value, ok := os.LookupEnv("HOMESTOCK_DATABASE_DSN"); ok {
 		cfg.Database.DSN = value
-	}
-
-	if value, ok := os.LookupEnv("HOMESTOCK_NOTIFY_FEISHU_WEBHOOK"); ok {
-		cfg.Notify.FeishuWebhook = value
-	}
-
-	if value, ok := os.LookupEnv("HOMESTOCK_SCHEDULER_REMIND_DAYS"); ok {
-		remindDays, err := strconv.Atoi(value)
-		if err != nil {
-			return fmt.Errorf("parse HOMESTOCK_SCHEDULER_REMIND_DAYS: %w", err)
-		}
-		cfg.Scheduler.RemindDays = remindDays
-	}
-
-	if value, ok := os.LookupEnv("HOMESTOCK_SCHEDULER_CHECK_TIME"); ok {
-		cfg.Scheduler.CheckTime = value
 	}
 
 	if value, ok := os.LookupEnv("HOMESTOCK_CHANNELS_FEISHU_APP_ID"); ok {
