@@ -85,15 +85,23 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 	logger.InfoC("feishu", "Feishu channel started (websocket mode)")
 
 	go func() {
-		err := wsClient.Start(runCtx)
-		if err != nil {
+		for {
+			err := wsClient.Start(runCtx)
 			c.mu.Lock()
 			isRunning := c.cancel != nil
 			c.mu.Unlock()
-			if isRunning {
-				logger.ErrorCF("feishu", "Feishu websocket stopped with error", map[string]any{
+			if !isRunning {
+				return // channel was stopped
+			}
+			if err != nil {
+				logger.WarnCF("feishu", "WebSocket disconnected, reconnecting in 5s...", map[string]any{
 					"error": err.Error(),
 				})
+			}
+			select {
+			case <-runCtx.Done():
+				return
+			case <-time.After(5 * time.Second):
 			}
 		}
 	}()
@@ -148,6 +156,27 @@ func (c *FeishuChannel) Send(ctx context.Context, msg channel.OutboundMessage) e
 func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	if event == nil || event.Event == nil || event.Event.Message == nil {
 		return nil
+	}
+
+	// The SDK's ctx is tied to this wsClient instance. When the channel is
+	// stopped and restarted, the old wsClient still holds a canceled context
+	// but its WebSocket connection remains open (the SDK's Start() blocks
+	// forever with select{} and provides no public Close/Stop method). Any
+	// messages delivered to the stale connection would fail with "context
+	// canceled". Use the channel's current context instead so that inbound
+	// messages always flow through a valid context, regardless of which
+	// wsClient delivered them.
+	//
+	// TODO: remove this workaround once the lark SDK exposes a public
+	// disconnect API (or Start respects ctx.Done()).
+	channelCtx := c.Context()
+	if channelCtx == nil {
+		return nil
+	}
+	select {
+	case <-channelCtx.Done():
+		return nil
+	default:
 	}
 
 	message := event.Event.Message
@@ -238,7 +267,7 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		FileKey:    fileKey,
 	}
 
-	c.HandleInbound(ctx, inbound)
+	c.HandleInbound(channelCtx, inbound)
 	return nil
 }
 

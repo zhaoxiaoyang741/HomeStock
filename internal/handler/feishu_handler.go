@@ -10,6 +10,7 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel/feishu"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 )
 
 // FeishuHandler serves OAuth, status and config endpoints for the Feishu channel.
@@ -48,6 +49,7 @@ func (h *FeishuHandler) RegisterRoutes(api *gin.RouterGroup) {
 	api.GET("/feishu/callback", h.Callback)
 	api.GET("/feishu/status", h.Status)
 	api.POST("/feishu/disconnect", h.Disconnect)
+	api.POST("/feishu/reconnect", h.Reconnect)
 	api.PATCH("/feishu/config", h.UpdateConfig)
 }
 
@@ -74,6 +76,13 @@ func (h *FeishuHandler) Callback(c *gin.Context) {
 	if err := h.authSvc.HandleCallback(c.Request.Context(), code, state); err != nil {
 		http.Redirect(c.Writer, c.Request, h.frontend+"/settings?section=channel&error="+err.Error(), http.StatusFound)
 		return
+	}
+
+	// Seed token cache with the newly obtained OAuth token
+	if h.feishuCh != nil {
+		if err := h.authSvc.SeedTokenCache(c.Request.Context(), h.feishuCh.GetTokenCache()); err != nil {
+			logger.WarnCF("feishu", "seed token cache after oauth failed", map[string]any{"error": err.Error()})
+		}
 	}
 
 	// Start or restart the Feishu channel if we have a reference
@@ -126,6 +135,48 @@ func (h *FeishuHandler) Disconnect(c *gin.Context) {
 	}
 
 	httpresp.OK(c, gin.H{"message": "disconnected"})
+}
+
+// Reconnect stops and restarts the Feishu channel, seeding the token cache first.
+func (h *FeishuHandler) Reconnect(c *gin.Context) {
+	if h.feishuCh == nil {
+		httpresp.Error(c, http.StatusBadRequest, "feishu channel not initialized")
+		return
+	}
+
+	seedCtx := c.Request.Context()
+
+	// Seed token cache from stored OAuth token
+	if err := h.authSvc.SeedTokenCache(seedCtx, h.feishuCh.GetTokenCache()); err != nil {
+		logger.WarnCF("feishu", "seed token cache before reconnect failed", map[string]any{"error": err.Error()})
+	}
+
+	// Ensure channel is in the manager
+	_, exists := h.chMgr.GetChannel("feishu")
+	if !exists {
+		h.chMgr.AddChannel(h.feishuCh)
+	}
+
+	// Use background context for channel lifecycle — the channel must outlive
+	// the HTTP request, otherwise the WebSocket connection is torn down when
+	// the handler returns.
+	bgCtx := context.Background()
+
+	// Stop the channel if running
+	if h.feishuCh.IsRunning() {
+		if err := h.feishuCh.Stop(bgCtx); err != nil {
+			httpresp.Error(c, http.StatusInternalServerError, "stop channel failed: "+err.Error())
+			return
+		}
+	}
+
+	// Start the channel
+	if err := h.feishuCh.Start(bgCtx); err != nil {
+		httpresp.Error(c, http.StatusInternalServerError, "start channel failed: "+err.Error())
+		return
+	}
+
+	httpresp.OK(c, gin.H{"message": "reconnected"})
 }
 
 // UpdateConfig handles runtime updates to the Feishu channel configuration.

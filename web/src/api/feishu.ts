@@ -16,6 +16,10 @@ export async function disconnectFeishu(): Promise<void> {
   await api.post<Result<unknown>>('/v1/feishu/disconnect', {})
 }
 
+export async function reconnectFeishu(): Promise<void> {
+  await api.post<Result<unknown>>('/v1/feishu/reconnect', {})
+}
+
 export async function updateFeishuConfig(payload: UpdateFeishuConfigPayload): Promise<void> {
   await api.patch<Result<unknown>>('/v1/feishu/config', payload)
 }

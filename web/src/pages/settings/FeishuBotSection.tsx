@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
-import { getFeishuAuthUrl, getFeishuStatus, disconnectFeishu, updateFeishuConfig } from '@/api/feishu'
+import { getFeishuAuthUrl, getFeishuStatus, disconnectFeishu, updateFeishuConfig, reconnectFeishu } from '@/api/feishu'
 import type { FeishuStatus } from '@/types/feishu'
 
 export function FeishuBotSection() {
@@ -19,6 +19,7 @@ export function FeishuBotSection() {
   const [error, setError] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
 
   // Config form state
   const [enabled, setEnabled] = useState(false)
@@ -136,6 +137,19 @@ export function FeishuBotSection() {
     }
   }
 
+  async function handleReconnect() {
+    setReconnecting(true)
+    setError('')
+    try {
+      await reconnectFeishu()
+      await fetchStatus()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('feishuReconnectFailed'))
+    } finally {
+      setReconnecting(false)
+    }
+  }
+
   const isConfigured = status?.configured ?? false
   const isConnected = status?.connected ?? false
 
@@ -191,22 +205,37 @@ export function FeishuBotSection() {
             </div>
           )}
 
-          {/* Authorize / Disconnect / Refresh actions */}
+          {/* Authorize / Reconnect / Disconnect / Refresh actions */}
           <div className="flex items-center gap-3 flex-wrap">
             {!isConnected ? (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => void handleAuthorize()}
-                disabled={authLoading || !isConfigured}
-              >
-                {authLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                )}
-                {t('feishuAuthorize')}
-              </Button>
+              <>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => void handleReconnect()}
+                  disabled={reconnecting || !isConfigured}
+                >
+                  {reconnecting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  {t('feishuReconnect')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleAuthorize()}
+                  disabled={authLoading || !isConfigured}
+                >
+                  {authLoading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                  )}
+                  {t('feishuAuthorize')}
+                </Button>
+              </>
             ) : (
               <Button
                 variant="destructive"
