@@ -25,6 +25,7 @@ const (
 type AgentLoop struct {
 	bus        *MessageBus
 	provider   llm.LLMProvider
+	providerMu sync.RWMutex
 	dispatcher *tool.Dispatcher
 
 	systemPrompt string
@@ -63,6 +64,13 @@ func (l *AgentLoop) Stop() {
 		l.cancel()
 	}
 	l.wg.Wait()
+}
+
+// SwapProvider atomically replaces the LLM provider at runtime.
+func (l *AgentLoop) SwapProvider(provider llm.LLMProvider) {
+	l.providerMu.Lock()
+	defer l.providerMu.Unlock()
+	l.provider = provider
 }
 
 func (l *AgentLoop) run() {
@@ -136,7 +144,9 @@ func (l *AgentLoop) chatWithTools(messages []llm.Message, tools []llm.ToolDefini
 		return "抱歉，操作步骤过多，请简化您的请求。", nil
 	}
 
+	l.providerMu.RLock()
 	resp, err := l.provider.Chat(l.ctx, messages, tools, "")
+	l.providerMu.RUnlock()
 	if err != nil {
 		return "", fmt.Errorf("llm chat: %w", err)
 	}

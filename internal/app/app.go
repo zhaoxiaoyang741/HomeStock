@@ -152,6 +152,22 @@ func New(cfg *config.Config, configPath string) (*App, error) {
 		}
 	}
 
+	// Model configuration handler
+	activeModelName := ""
+	if modelCfg != nil {
+		activeModelName = modelCfg.ModelName
+	}
+	modelHandler := handler.NewModelHandler(configPath)
+	modelHandler.SetActiveName(activeModelName)
+	modelHandler.SetSwapFn(func(name string, cfg config.ModelConfig) error {
+		provider, err := llm.NewProvider(cfg)
+		if err != nil {
+			return fmt.Errorf("create provider for model %q: %w", name, err)
+		}
+		agentLoop.SwapProvider(provider)
+		return nil
+	})
+
 	// Tool registration
 	tool.RegisterInventoryTools(disp, &tool.InventoryTools{
 		InventorySvc: inventorySvc,
@@ -177,6 +193,7 @@ func New(cfg *config.Config, configPath string) (*App, error) {
 		stockMovementHandler.RegisterRoutes,
 		auditLogHandler.RegisterRoutes,
 		feishuHandler.RegisterRoutes,
+		modelHandler.RegisterRoutes,
 	)
 
 	return &App{

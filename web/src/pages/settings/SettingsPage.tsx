@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Radio, Brain, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FeishuBotSection } from './FeishuBotSection'
+import { ModelConfigSection } from './ModelConfigSection'
 import { Card, CardContent } from '@/components/ui/card'
 
 type SectionId = 'channels' | 'models'
@@ -68,12 +69,7 @@ export default function SettingsPage() {
               </Card>
             </>
           ) : (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center space-y-2">
-                <Brain className="w-12 h-12 text-on-surface-variant/40 mx-auto" />
-                <p className="text-sm text-on-surface-variant">{t('modelSectionPlaceholder')}</p>
-              </div>
-            </div>
+            <ModelConfigSection />
           )}
         </div>
       </div>
