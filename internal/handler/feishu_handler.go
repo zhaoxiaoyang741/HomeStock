@@ -9,32 +9,46 @@ import (
 	httpresp "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/response"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel/feishu"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 )
 
-// FeishuHandler serves OAuth and status endpoints for the Feishu channel.
+// FeishuHandler serves OAuth, status and config endpoints for the Feishu channel.
 type FeishuHandler struct {
-	authSvc  *feishu.OAuthService
-	chMgr    *channel.Manager
-	feishuCh *feishu.FeishuChannel
-	frontend string
+	authSvc    *feishu.OAuthService
+	chMgr      *channel.Manager
+	feishuCh   *feishu.FeishuChannel
+	frontend   string
+	configPath string
+
+	// updateChan is called when the user updates feishu config from the UI.
+	// Set via SetChannelUpdateFn by the app layer.
+	updateChan func(config.FeishuChannelConfig) error
 }
 
 // NewFeishuHandler creates a FeishuHandler.
-func NewFeishuHandler(authSvc *feishu.OAuthService, chMgr *channel.Manager, feishuCh *feishu.FeishuChannel, frontendURL string) *FeishuHandler {
+func NewFeishuHandler(authSvc *feishu.OAuthService, chMgr *channel.Manager, feishuCh *feishu.FeishuChannel, frontendURL string, configPath string) *FeishuHandler {
 	return &FeishuHandler{
-		authSvc:  authSvc,
-		chMgr:    chMgr,
-		feishuCh: feishuCh,
-		frontend: frontendURL,
+		authSvc:    authSvc,
+		chMgr:      chMgr,
+		feishuCh:   feishuCh,
+		frontend:   frontendURL,
+		configPath: configPath,
 	}
 }
 
-// RegisterRoutes mounts Feishu OAuth endpoints under the API group.
+// SetChannelUpdateFn registers the callback for hot-reloading the channel
+// after a config update.
+func (h *FeishuHandler) SetChannelUpdateFn(fn func(config.FeishuChannelConfig) error) {
+	h.updateChan = fn
+}
+
+// RegisterRoutes mounts Feishu OAuth and config endpoints under the API group.
 func (h *FeishuHandler) RegisterRoutes(api *gin.RouterGroup) {
 	api.GET("/feishu/auth-url", h.AuthURL)
 	api.GET("/feishu/callback", h.Callback)
 	api.GET("/feishu/status", h.Status)
 	api.POST("/feishu/disconnect", h.Disconnect)
+	api.PATCH("/feishu/config", h.UpdateConfig)
 }
 
 // AuthURL generates a state nonce and returns the Feishu OAuth authorization URL.
@@ -83,7 +97,13 @@ func (h *FeishuHandler) Status(c *gin.Context) {
 		isConnected = h.feishuCh.IsRunning()
 	}
 
-	status, err := h.authSvc.GetStatus(c.Request.Context(), isConnected)
+	isEnabled := false
+	if h.feishuCh != nil {
+		_, exists := h.chMgr.GetChannel("feishu")
+		isEnabled = exists
+	}
+
+	status, err := h.authSvc.GetStatus(c.Request.Context(), isConnected, isEnabled)
 	if err != nil {
 		httpresp.Error(c, http.StatusInternalServerError, "get status failed")
 		return
@@ -106,4 +126,46 @@ func (h *FeishuHandler) Disconnect(c *gin.Context) {
 	}
 
 	httpresp.OK(c, gin.H{"message": "disconnected"})
+}
+
+// UpdateConfig handles runtime updates to the Feishu channel configuration.
+// Request: { enabled?: bool, app_id?: string, app_secret?: string }
+// Empty/omitted fields preserve existing values.
+func (h *FeishuHandler) UpdateConfig(c *gin.Context) {
+	var req struct {
+		Enabled   *bool   `json:"enabled,omitempty"`
+		AppID     *string `json:"app_id,omitempty"`
+		AppSecret *string `json:"app_secret,omitempty"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpresp.Error(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+
+	var savedCfg config.FeishuChannelConfig
+	if err := config.Save(h.configPath, func(cfg *config.Config) {
+		fc := &cfg.Channels.Feishu
+		if req.Enabled != nil {
+			fc.Enabled = *req.Enabled
+		}
+		if req.AppID != nil && *req.AppID != "" {
+			fc.AppID = *req.AppID
+		}
+		if req.AppSecret != nil && *req.AppSecret != "" {
+			fc.AppSecret = *req.AppSecret
+		}
+		savedCfg = *fc
+	}); err != nil {
+		httpresp.Error(c, http.StatusInternalServerError, "save config failed: "+err.Error())
+		return
+	}
+
+	if h.updateChan != nil {
+		if err := h.updateChan(savedCfg); err != nil {
+			httpresp.Error(c, http.StatusInternalServerError, "reconfigure channel failed: "+err.Error())
+			return
+		}
+	}
+
+	httpresp.OK(c, gin.H{"message": "config updated"})
 }

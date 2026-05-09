@@ -24,7 +24,8 @@ import (
 )
 
 type App struct {
-	server        *httpserver.Server
+	configPath string
+	server     *httpserver.Server
 	db            *gorm.DB
 	sqlDB         *sql.DB
 
@@ -38,7 +39,7 @@ type App struct {
 	outboundWg     sync.WaitGroup
 }
 
-func New(cfg *config.Config) (*App, error) {
+func New(cfg *config.Config, configPath string) (*App, error) {
 	db, err := database.OpenAndMigrate(cfg.Database)
 	if err != nil {
 		return nil, err
@@ -119,7 +120,30 @@ func New(cfg *config.Config) (*App, error) {
 		cfg.Channels.Feishu.FrontendURL,
 		uow.Repos().SystemSettings(),
 	)
-	feishuHandler := handler.NewFeishuHandler(oauthSvc, channelMgr, fc, cfg.Channels.Feishu.FrontendURL)
+	feishuHandler := handler.NewFeishuHandler(oauthSvc, channelMgr, fc, cfg.Channels.Feishu.FrontendURL, configPath)
+	feishuHandler.SetChannelUpdateFn(func(feishuCfg config.FeishuChannelConfig) error {
+		ctx := context.Background()
+
+		if err := fc.Reconfigure(ctx, feishuCfg.AppID, feishuCfg.AppSecret, feishuCfg.Enabled); err != nil {
+			return fmt.Errorf("reconfigure feishu channel: %w", err)
+		}
+
+		oauthSvc.UpdateCredentials(feishuCfg.AppID, feishuCfg.AppSecret)
+
+		if err := oauthSvc.ClearAuth(ctx); err != nil {
+			logger.WarnCF("feishu", "failed to clear stale oauth token", map[string]any{"error": err.Error()})
+		}
+
+		if feishuCfg.Enabled {
+			if _, exists := channelMgr.GetChannel("feishu"); !exists {
+				channelMgr.AddChannel(fc)
+			}
+		} else {
+			channelMgr.RemoveChannel("feishu")
+		}
+
+		return nil
+	})
 
 	// Seed the Feishu token cache from stored OAuth credentials (non-fatal on error).
 	if cfg.Channels.Feishu.Enabled {
@@ -156,6 +180,7 @@ func New(cfg *config.Config) (*App, error) {
 	)
 
 	return &App{
+		configPath: configPath,
 		server:     server,
 		db:         db,
 		sqlDB:      sqlDB,

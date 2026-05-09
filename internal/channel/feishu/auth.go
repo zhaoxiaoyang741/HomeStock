@@ -34,6 +34,7 @@ type StoredOAuthToken struct {
 type FeishuStatus struct {
 	Configured bool   `json:"configured"`
 	Connected  bool   `json:"connected"`
+	Enabled    bool   `json:"enabled"`
 	BotName    string `json:"bot_name,omitempty"`
 	AppID      string `json:"app_id"`
 }
@@ -49,6 +50,14 @@ type OAuthService struct {
 
 	// cached bot name, populated after successful OAuth
 	botName string
+}
+
+// UpdateCredentials updates the app credentials used by this OAuth service
+// at runtime. The cached bot name is cleared since it belonged to the old app.
+func (s *OAuthService) UpdateCredentials(appID, appSecret string) {
+	s.appID = appID
+	s.appSecret = appSecret
+	s.botName = ""
 }
 
 // NewOAuthService creates a new OAuthService.
@@ -121,10 +130,11 @@ func (s *OAuthService) HandleCallback(ctx context.Context, code, state string) e
 
 // GetStatus returns the current Feishu channel status without querying the DB.
 // The bot name is served from the in-memory cache set during HandleCallback.
-func (s *OAuthService) GetStatus(_ context.Context, isConnected bool) (*FeishuStatus, error) {
+func (s *OAuthService) GetStatus(_ context.Context, isConnected bool, isEnabled bool) (*FeishuStatus, error) {
 	status := &FeishuStatus{
 		Configured: s.appID != "" && s.appSecret != "",
 		Connected:  isConnected,
+		Enabled:    isEnabled,
 		AppID:      s.appID,
 	}
 	if s.botName != "" {

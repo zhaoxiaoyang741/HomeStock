@@ -2,6 +2,7 @@
   "title": "System Settings",
   "subtitle": "Manage Feishu bot connection and system configuration.",
   "navFeishu": "Feishu Bot",
+  "navChannel": "Channels",
   "feishuBotTitle": "Feishu Bot",
   "feishuBotDescription": "Connect your Feishu bot to manage inventory via Feishu messages.",
   "feishuConnected": "Connected",
@@ -15,5 +16,17 @@
   "feishuAuthFailed": "Failed to get authorization URL",
   "feishuDisconnectFailed": "Failed to disconnect",
   "feishuStatusFailed": "Failed to get status",
-  "feishuNotConfiguredHint": "Configure the Feishu App ID and App Secret in config file or environment variables."
+  "feishuNotConfiguredHint": "Configure the Feishu App ID and App Secret in config file or environment variables.",
+  "feishuConfigTitle": "Feishu Configuration",
+  "feishuConfigHint": "Modify the values below and click Save to apply. Leave App Secret empty to keep the current value.",
+  "feishuEnable": "Enable Feishu Bot",
+  "feishuEnableHint": "When enabled, the bot can receive and respond to messages.",
+  "feishuAppIdInput": "App ID",
+  "feishuAppSecretInput": "App Secret",
+  "feishuAppSecretHint": "The current App Secret is not displayed. Enter a new value to replace it, or leave empty to keep the existing one.",
+  "feishuPlaceholderKeep": "Leave empty to keep current",
+  "feishuSaving": "Saving...",
+  "feishuSaveSuccess": "Configuration saved successfully",
+  "feishuSaveFailed": "Failed to save configuration",
+  "feishuChangeSecret": "Change"
 }

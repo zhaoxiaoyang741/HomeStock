@@ -126,6 +126,13 @@ func (m *Manager) GetChannel(name string) (Channel, bool) {
 	return ch, ok
 }
 
+// RemoveChannel removes a channel from the manager by name. No-op if not found.
+func (m *Manager) RemoveChannel(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.channels, name)
+}
+
 // GetEnabledChannels returns the names of all managed channels.
 func (m *Manager) GetEnabledChannels() []string {
 	m.mu.RLock()

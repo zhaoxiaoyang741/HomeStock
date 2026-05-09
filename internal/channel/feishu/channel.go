@@ -350,6 +350,32 @@ func (c *FeishuChannel) invalidateTokenOnAuthError(code int) {
 	}
 }
 
+// Reconfigure updates the channel credentials at runtime and restarts if enabled.
+// The inbound handler set via SetInboundHandler is preserved.
+func (c *FeishuChannel) Reconfigure(ctx context.Context, appID, appSecret string, enabled bool) error {
+	if c.IsRunning() {
+		if err := c.Stop(ctx); err != nil {
+			return fmt.Errorf("reconfigure: stop: %w", err)
+		}
+	}
+
+	c.mu.Lock()
+	c.appID = appID
+	c.appSecret = appSecret
+	c.client = lark.NewClient(appID, appSecret, lark.WithTokenCache(c.tokenCache))
+	c.tokenCache.InvalidateAll()
+	c.botOpenID.Store("")
+	c.mu.Unlock()
+
+	if enabled {
+		if err := c.Start(ctx); err != nil {
+			return fmt.Errorf("reconfigure: start: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // GetTokenCache returns the internal token cache for seeding OAuth tokens.
 func (c *FeishuChannel) GetTokenCache() *tokenCache { return c.tokenCache }
 

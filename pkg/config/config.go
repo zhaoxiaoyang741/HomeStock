@@ -134,6 +134,43 @@ func defaultConfig() *Config {
 	}
 }
 
+// Save atomically updates config.json and the in-memory Config.
+// fn receives the Config loaded from file (without env overrides).
+// After fn returns, the modified config is written to disk atomically,
+// then env overrides are re-applied to the in-memory copy.
+func Save(path string, fn func(cfg *Config)) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	cfg := defaultConfig()
+	if err := loadFile(path, cfg); err != nil {
+		return fmt.Errorf("save: load file config: %w", err)
+	}
+
+	fn(cfg)
+
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("save: marshal: %w", err)
+	}
+
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		return fmt.Errorf("save: write temp: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("save: rename: %w", err)
+	}
+
+	// Re-apply env overrides and refresh in-memory config
+	if err := applyEnvOverrides(cfg); err != nil {
+		return fmt.Errorf("save: re-apply env overrides: %w", err)
+	}
+	current = cfg
+	return nil
+}
+
 func cloneConfig(cfg *Config) *Config {
 	if cfg == nil {
 		return nil

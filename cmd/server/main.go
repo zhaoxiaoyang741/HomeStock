@@ -25,7 +25,7 @@ func main() {
 	logger.SetLevel(logger.LogLevel(cfg.Log.Level))
 	logger.EnableFileLogging(cfg.Log.Path)
 
-	appInstance, err := app.New(cfg)
+	appInstance, err := app.New(cfg, defaultConfigPath)
 	if err != nil {
 		logger.FatalCF("server", "init app failed", map[string]any{"error": err.Error()})
 	}

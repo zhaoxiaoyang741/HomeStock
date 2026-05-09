@@ -2,6 +2,7 @@
   "title": "系统设置",
   "subtitle": "管理飞书机器人连接与系统配置。",
   "navFeishu": "飞书机器人",
+  "navChannel": "通道",
   "feishuBotTitle": "飞书机器人",
   "feishuBotDescription": "连接飞书机器人以通过飞书消息管理库存。",
   "feishuConnected": "已连接",
@@ -15,5 +16,17 @@
   "feishuAuthFailed": "获取授权链接失败",
   "feishuDisconnectFailed": "断开连接失败",
   "feishuStatusFailed": "获取状态失败",
-  "feishuNotConfiguredHint": "请先在配置文件或环境变量中设置飞书 App ID 和 App Secret。"
+  "feishuNotConfiguredHint": "请先在配置文件或环境变量中设置飞书 App ID 和 App Secret。",
+  "feishuConfigTitle": "飞书配置",
+  "feishuConfigHint": "直接修改配置值后点击保存，App Secret 留空表示保留现有值。",
+  "feishuEnable": "启用飞书机器人",
+  "feishuEnableHint": "启用后机器人可以接收和回复消息。",
+  "feishuAppIdInput": "App ID",
+  "feishuAppSecretInput": "App Secret",
+  "feishuAppSecretHint": "当前 App Secret 不会显示，输入新值可替换，留空表示保留现有值。",
+  "feishuPlaceholderKeep": "留空则保持当前值",
+  "feishuSaving": "保存中...",
+  "feishuSaveSuccess": "配置保存成功",
+  "feishuSaveFailed": "配置保存失败",
+  "feishuChangeSecret": "修改"
 }

@@ -1,12 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bot, PowerOff, RefreshCw, ExternalLink, Loader2 } from 'lucide-react'
+import { Bot, PowerOff, RefreshCw, ExternalLink, Loader2, Save, Pencil } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
-import { getFeishuAuthUrl, getFeishuStatus, disconnectFeishu } from '@/api/feishu'
+import { getFeishuAuthUrl, getFeishuStatus, disconnectFeishu, updateFeishuConfig } from '@/api/feishu'
 import type { FeishuStatus } from '@/types/feishu'
 
 export function FeishuBotSection() {
@@ -16,12 +19,26 @@ export function FeishuBotSection() {
   const [error, setError] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
+
+  // Config form state
+  const [enabled, setEnabled] = useState(false)
+  const [appId, setAppId] = useState('')
+  const [appSecret, setAppSecret] = useState('')
+  const [editingSecret, setEditingSecret] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState('')
+
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchStatus = useCallback(async () => {
     try {
       const s = await getFeishuStatus()
       setStatus(s)
+      setEnabled(s.enabled)
+      // Pre-populate app_id so the user can always see the current configured value
+      if (s.app_id) {
+        setAppId(s.app_id)
+      }
       setError('')
     } catch (err) {
       if (!loading) {
@@ -35,7 +52,6 @@ export function FeishuBotSection() {
   useEffect(() => {
     void fetchStatus()
 
-    // Poll every 10 seconds
     pollingRef.current = setInterval(() => {
       void fetchStatus()
     }, 10000)
@@ -70,6 +86,29 @@ export function FeishuBotSection() {
     }
   }, [fetchStatus])
 
+  async function handleSave() {
+    setSaving(true)
+    setError('')
+    setSaveSuccess('')
+    try {
+      await updateFeishuConfig({
+        enabled,
+        app_id: appId || undefined,
+        app_secret: appSecret || undefined,
+      })
+      setSaveSuccess(t('feishuSaveSuccess'))
+      setAppSecret('')
+      setEditingSecret(false)
+      // Refresh status to get updated state (fetchStatus will re-populate appId)
+      setLoading(true)
+      await fetchStatus()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('feishuSaveFailed'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleAuthorize() {
     setAuthLoading(true)
     setError('')
@@ -88,7 +127,8 @@ export function FeishuBotSection() {
     setError('')
     try {
       await disconnectFeishu()
-      setStatus((prev) => prev ? { ...prev, connected: false, bot_name: '' } : null)
+      setStatus((prev) => prev ? { ...prev, connected: false, enabled: false, bot_name: '' } : null)
+      setEnabled(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('feishuDisconnectFailed'))
     } finally {
@@ -137,16 +177,6 @@ export function FeishuBotSection() {
             </Badge>
           </div>
 
-          {/* App info */}
-          {isConfigured && (
-            <div className="rounded-lg bg-surface-container px-3 py-2 text-sm text-on-surface-variant space-y-1">
-              <div className="flex justify-between">
-                <span>{t('feishuAppId')}</span>
-                <span className="font-mono text-on-surface">{status?.app_id || '-'}</span>
-              </div>
-            </div>
-          )}
-
           {/* Error message */}
           {error && (
             <div className="rounded-lg bg-error-container px-3 py-2 text-sm text-error">
@@ -154,7 +184,14 @@ export function FeishuBotSection() {
             </div>
           )}
 
-          {/* Actions */}
+          {/* Success message */}
+          {saveSuccess && (
+            <div className="rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary">
+              {saveSuccess}
+            </div>
+          )}
+
+          {/* Authorize / Disconnect / Refresh actions */}
           <div className="flex items-center gap-3 flex-wrap">
             {!isConnected ? (
               <Button
@@ -193,6 +230,83 @@ export function FeishuBotSection() {
             >
               <RefreshCw className={cn('mr-2 h-4 w-4', loading ? 'animate-spin' : '')} />
               {t('common:refresh')}
+            </Button>
+          </div>
+
+          <Separator />
+
+          {/* Configuration form */}
+          <div className="space-y-4">
+            <div>
+              <h4 className="text-sm font-medium text-on-surface">{t('feishuConfigTitle')}</h4>
+              <p className="text-xs text-on-surface-variant mt-0.5">{t('feishuConfigHint')}</p>
+            </div>
+
+            {/* Enable toggle */}
+            <div className="flex items-center justify-between rounded-lg border border-outline-variant/20 bg-surface-container-low px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-on-surface">{t('feishuEnable')}</p>
+                <p className="text-xs text-on-surface-variant">{t('feishuEnableHint')}</p>
+              </div>
+              <Checkbox
+                checked={enabled}
+                onCheckedChange={(checked) => setEnabled(checked === true)}
+              />
+            </div>
+
+            {/* App ID */}
+            <div className="space-y-1.5">
+              <Label htmlFor="feishu-app-id">{t('feishuAppIdInput')}</Label>
+              <Input
+                id="feishu-app-id"
+                placeholder={t('feishuPlaceholderKeep')}
+                value={appId}
+                onChange={(e) => setAppId(e.target.value)}
+              />
+            </div>
+
+            {/* App Secret */}
+            <div className="space-y-1.5">
+              <Label htmlFor="feishu-app-secret">{t('feishuAppSecretInput')}</Label>
+              {editingSecret ? (
+                <>
+                  <Input
+                    id="feishu-app-secret"
+                    type="password"
+                    placeholder={isConfigured ? '········' : t('feishuPlaceholderKeep')}
+                    value={appSecret}
+                    onChange={(e) => setAppSecret(e.target.value)}
+                  />
+                  <p className="text-xs text-on-surface-variant">{t('feishuAppSecretHint')}</p>
+                </>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-on-surface-variant">••••••••</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEditingSecret(true)}
+                  >
+                    <Pencil className="w-3.5 h-3.5 mr-1" />
+                    {t('feishuChangeSecret')}
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Save button */}
+            <Button
+              size="sm"
+              onClick={() => void handleSave()}
+              disabled={saving || (enabled === status?.enabled && appId === status?.app_id && !appSecret)}
+            >
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              {saving ? t('feishuSaving') : t('common:save')}
             </Button>
           </div>
 
