@@ -2,7 +2,9 @@
   "title": "System Settings",
   "subtitle": "Manage Feishu bot connection and system configuration.",
   "navFeishu": "Feishu Bot",
-  "navChannel": "Channels",
+  "navChannels": "Channels",
+  "navModels": "Models",
+  "navWechat": "WeChat Bot",
   "feishuBotTitle": "Feishu Bot",
   "feishuBotDescription": "Connect your Feishu bot to manage inventory via Feishu messages.",
   "feishuConnected": "Connected",
@@ -31,5 +33,10 @@
   "feishuSaving": "Saving...",
   "feishuSaveSuccess": "Configuration saved successfully",
   "feishuSaveFailed": "Failed to save configuration",
-  "feishuChangeSecret": "Change"
+  "feishuChangeSecret": "Change",
+  "channelListHeader": "Channels",
+  "modelListHeader": "Models",
+  "channelPlaceholder": "WeChat Bot integration coming soon",
+  "modelSectionPlaceholder": "Model configuration coming soon",
+  "noChannelSelected": "Select a channel to configure"
 }

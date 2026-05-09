@@ -2,7 +2,9 @@
   "title": "系统设置",
   "subtitle": "管理飞书机器人连接与系统配置。",
   "navFeishu": "飞书机器人",
-  "navChannel": "通道",
+  "navChannels": "通道",
+  "navModels": "模型",
+  "navWechat": "微信机器人",
   "feishuBotTitle": "飞书机器人",
   "feishuBotDescription": "连接飞书机器人以通过飞书消息管理库存。",
   "feishuConnected": "已连接",
@@ -31,5 +33,10 @@
   "feishuSaving": "保存中...",
   "feishuSaveSuccess": "配置保存成功",
   "feishuSaveFailed": "配置保存失败",
-  "feishuChangeSecret": "修改"
+  "feishuChangeSecret": "修改",
+  "channelListHeader": "通道列表",
+  "modelListHeader": "模型列表",
+  "channelPlaceholder": "微信机器人集成即将推出",
+  "modelSectionPlaceholder": "模型配置即将推出",
+  "noChannelSelected": "请选择一个通道进行配置"
 }
