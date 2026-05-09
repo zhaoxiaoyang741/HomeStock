@@ -22,9 +22,18 @@
   },
   "model_list": [
     {
-      "model_name": "default",
-      "model": "openai/gpt-4o",
+      "model_name": "openai",
+      "model": "gpt-4o",
+      "provider": "openai",
+      "enabled": true,
       "api_key": "sk-your-key"
+    },
+    {
+      "model_name": "ollama",
+      "model": "qwen2.5:7b",
+      "provider": "ollama",
+      "enabled": false,
+      "api_base": "http://localhost:11434"
     }
   ]
 }

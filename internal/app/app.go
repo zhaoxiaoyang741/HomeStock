@@ -65,11 +65,15 @@ func New(cfg *config.Config) (*App, error) {
 	// Repositories exposed directly for handlers that don't need a service layer
 	notificationRepo := gormrepo.NewNotificationRepository(db)
 
-	// LLM Provider — use the first model from model_list
-	if len(cfg.ModelList) == 0 {
+	// LLM Provider — use the first enabled model from model_list
+	modelCfg := firstEnabledModel(cfg.ModelList)
+	if modelCfg == nil {
 		return nil, errors.New("app: no model configured in model_list")
 	}
-	llmProvider := llm.NewOpenAIProvider(cfg.ModelList[0])
+	llmProvider, err := llm.NewProvider(*modelCfg)
+	if err != nil {
+		return nil, fmt.Errorf("app: create llm provider: %w", err)
+	}
 
 	// MessageBus — decouples channels from the AgentLoop
 	bus := agent.NewMessageBus(0)
@@ -232,6 +236,21 @@ func (a *App) Close() error {
 		return nil
 	}
 	return a.sqlDB.Close()
+}
+
+// firstEnabledModel returns the first enabled model config, or falls back
+// to the first entry if none have enabled explicitly set.
+func firstEnabledModel(list []config.ModelConfig) *config.ModelConfig {
+	if len(list) == 0 {
+		return nil
+	}
+	for i := range list {
+		if list[i].Enabled {
+			return &list[i]
+		}
+	}
+	// Backward compatibility: if no entry has enabled:true, use the first one.
+	return &list[0]
 }
 
 // routeOutbound reads agent.OutboundMessage from the bus and sends them

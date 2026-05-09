@@ -67,6 +67,11 @@ type ModelConfig struct {
 	ModelName string `json:"model_name"`
 	// Model is the model identifier passed to the API, e.g. "openai/gpt-4o" or "gpt-4o".
 	Model string `json:"model"`
+	// Provider specifies the LLM provider type: "openai" (default) or "ollama".
+	Provider string `json:"provider,omitempty"`
+	// Enabled enables this model configuration. If false, the entry is skipped.
+	// Defaults to false for clean configs; the app falls back to the first entry if none enabled.
+	Enabled bool `json:"enabled,omitempty"`
 	// APIKey is the API key for the LLM provider.
 	APIKey string `json:"api_key"`
 	// APIBase is the base URL for the API, optional — defaults to the provider's default.
@@ -142,6 +147,7 @@ func defaultConfig() *Config {
 			{
 				ModelName: "default",
 				Model:     "openai/gpt-4o",
+				Provider:  "openai",
 				APIKey:    "",
 			},
 		},

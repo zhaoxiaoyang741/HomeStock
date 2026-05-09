@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
@@ -212,6 +213,11 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	if content == "" && mediaType == "text" {
 		content = "[empty message]"
 	}
+
+	fmt.Printf("[%s] 📩 %s (%s): %s\n",
+		time.Now().Format("15:04:05"),
+		senderName, chatID,
+		content)
 
 	logger.InfoCF("feishu", "message received", map[string]any{
 		"sender_id":    senderID,
