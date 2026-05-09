@@ -63,5 +63,6 @@
   "modelEnableLabel": "启用此模型",
   "modelEnableHint": "启用后可以在聊天中使用此模型",
   "modelSaving": "保存中...",
-  "modelEmpty": "暂无模型配置，请在 config.json 中配置 model_list"
+  "modelEmpty": "暂无模型配置，请在 config.json 中配置 model_list",
+  "lastReloadTime": "上次配置重载"
 }

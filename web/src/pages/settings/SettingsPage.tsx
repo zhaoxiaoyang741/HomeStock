@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Radio, Brain, MessageSquare } from 'lucide-react'
+import { Clock, Radio, Brain, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getModelList } from '@/api/models'
 import { FeishuBotSection } from './FeishuBotSection'
 import { ModelConfigSection } from './ModelConfigSection'
 import { Card, CardContent } from '@/components/ui/card'
@@ -16,6 +17,27 @@ const SECTION_ITEMS: { id: SectionId; labelKey: string; icon: typeof Radio }[] =
 export default function SettingsPage() {
   const { t } = useTranslation('settings')
   const [activeSection, setActiveSection] = useState<SectionId>('channels')
+  const [lastReloadTime, setLastReloadTime] = useState('')
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const fetchReloadTime = async () => {
+    try {
+      const data = await getModelList()
+      setLastReloadTime(data.last_reload_time)
+    } catch {
+      // ignore — child sections handle their own error display
+    }
+  }
+
+  useEffect(() => {
+    void fetchReloadTime()
+    pollingRef.current = setInterval(() => {
+      void fetchReloadTime()
+    }, 10000)
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current)
+    }
+  }, [])
 
   return (
     <div className="flex flex-col h-full gap-6">
@@ -50,6 +72,14 @@ export default function SettingsPage() {
 
         {/* Panel 2: Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Last reload time — top of every section */}
+          {lastReloadTime && (
+            <div className="flex items-center gap-2 text-xs text-on-surface-variant pb-2 border-b border-outline-variant/20">
+              <Clock className="w-3.5 h-3.5 shrink-0" />
+              <span>{t('lastReloadTime')}: {lastReloadTime}</span>
+            </div>
+          )}
+
           {activeSection === 'channels' ? (
             <>
               {/* Feishu Bot */}

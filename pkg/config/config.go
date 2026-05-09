@@ -24,6 +24,10 @@ type Config struct {
 type ServerConfig struct {
 	// Port is the HTTP listen port, for example "8080".
 	Port string `json:"port"`
+	// HotReload enables config file polling for runtime hot-reload.
+	// When true, changes to config.json are detected within ~2.5 s and
+	// applied to running services without a restart.
+	HotReload bool `json:"hot_reload,omitempty"`
 }
 
 type DatabaseConfig struct {
@@ -81,6 +85,10 @@ func Load(path string) (*Config, error) {
 
 	if err := applyEnvOverrides(cfg); err != nil {
 		return nil, err
+	}
+
+	if err := validateConfig(cfg); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
 	}
 
 	mu.Lock()
@@ -149,6 +157,10 @@ func Save(path string, fn func(cfg *Config)) error {
 
 	fn(cfg)
 
+	if err := validateConfig(cfg); err != nil {
+		return fmt.Errorf("save: validation failed: %w", err)
+	}
+
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("save: marshal: %w", err)
@@ -178,6 +190,25 @@ func cloneConfig(cfg *Config) *Config {
 
 	cloned := *cfg
 	return &cloned
+}
+
+// validateConfig checks that the config is internally consistent.
+func validateConfig(cfg *Config) error {
+	if len(cfg.ModelList) == 0 {
+		return errors.New("model_list must have at least one entry")
+	}
+	for i, m := range cfg.ModelList {
+		if m.ModelName == "" {
+			return fmt.Errorf("model_list[%d].model_name is required", i)
+		}
+		if m.Model == "" {
+			return fmt.Errorf("model_list[%d].model is required", i)
+		}
+		if m.Provider != "" && m.Provider != "openai" && m.Provider != "ollama" {
+			return fmt.Errorf("model_list[%d].provider must be 'openai' or 'ollama', got %q", i, m.Provider)
+		}
+	}
+	return nil
 }
 
 func loadFile(path string, cfg *Config) error {

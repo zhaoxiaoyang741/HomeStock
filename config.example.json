@@ -1,6 +1,7 @@
 {
   "server": {
-    "port": "8888"
+    "port": "8888",
+     "hot_reload": true 
   },
   "database": {
     "driver": "sqlite",

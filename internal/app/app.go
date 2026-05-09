@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
+
+	"github.com/gin-gonic/gin"
 
 	"gorm.io/gorm"
 
@@ -14,6 +17,7 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel/feishu"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/database"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/hotreload"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/httpserver"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/llm"
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
@@ -32,6 +36,8 @@ type App struct {
 	bus        *agent.MessageBus
 	agentLoop  *agent.AgentLoop
 	channelMgr *channel.Manager
+	orchestrator *hotreload.Orchestrator
+	hotReloadW   *hotreload.Watcher
 
 	// outbound router lifecycle
 	outboundCtx    context.Context
@@ -168,6 +174,17 @@ func New(cfg *config.Config, configPath string) (*App, error) {
 		return nil
 	})
 
+	// Hot-reload orchestrator — single entry point for all config changes
+	orch := hotreload.NewOrchestrator(configPath, agentLoop, fc, oauthSvc, modelHandler)
+	modelHandler.SetPostUpdateFn(func() {
+		if err := orch.Reload(); err != nil {
+			logger.ErrorCF("app", "hot-reload after model update failed", map[string]any{"error": err.Error()})
+		}
+	})
+	modelHandler.SetReloadTimeFn(func() string {
+		return orch.LastReloadTime().Format("2006-01-02 15:04:05")
+	})
+
 	// Tool registration
 	tool.RegisterInventoryTools(disp, &tool.InventoryTools{
 		InventorySvc: inventorySvc,
@@ -197,13 +214,14 @@ func New(cfg *config.Config, configPath string) (*App, error) {
 	)
 
 	return &App{
-		configPath: configPath,
-		server:     server,
-		db:         db,
-		sqlDB:      sqlDB,
-		bus:        bus,
-		agentLoop:  agentLoop,
-		channelMgr: channelMgr,
+		configPath:   configPath,
+		server:       server,
+		db:           db,
+		sqlDB:        sqlDB,
+		bus:          bus,
+		agentLoop:    agentLoop,
+		channelMgr:   channelMgr,
+		orchestrator: orch,
 	}, nil
 }
 
@@ -213,22 +231,43 @@ func (a *App) Start() error {
 	// 1. AgentLoop starts first — ready to consume inbound messages
 	a.agentLoop.Start(ctx)
 
-	// 2. Outbound router — delivers agent responses to the correct channel
+	// 2. Config file watcher (hot-reload), if enabled
+	cfg := config.Get()
+	if cfg.Server.HotReload {
+		a.hotReloadW = hotreload.NewWatcher(a.configPath, a.orchestrator.Reload)
+		a.hotReloadW.Start()
+		logger.InfoCF("app", "config hot-reload enabled (polling every 2s)", nil)
+	}
+
+	// 4. Outbound router — delivers agent responses to the correct channel
 	a.outboundCtx, a.outboundCancel = context.WithCancel(ctx)
 	a.outboundWg.Add(1)
 	go a.routeOutbound()
 
-	// 3. Start channel manager — begins receiving messages from channels
+	// 5. Start channel manager — begins receiving messages from channels
 	if err := a.channelMgr.StartAll(ctx); err != nil {
 		return fmt.Errorf("app: start channels: %w", err)
 	}
 
-	// 4. Start HTTP server (blocking)
+	// 6. Register ops endpoints
+	a.server.Engine().POST("/reload", func(c *gin.Context) {
+		if err := a.orchestrator.Reload(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "reload failed: " + err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "reload completed"})
+	})
+
+	// 7. Start HTTP server (blocking)
 	return a.server.Start()
 }
 
 func (a *App) Shutdown(ctx context.Context) error {
 	// Reverse order: channels → agent → HTTP
+
+	if a.hotReloadW != nil {
+		a.hotReloadW.Stop()
+	}
 
 	if err := a.channelMgr.StopAll(ctx); err != nil {
 		logger.ErrorCF("app", "channel manager stop error", map[string]any{"error": err.Error()})

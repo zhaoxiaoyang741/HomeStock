@@ -63,5 +63,6 @@
   "modelEnableLabel": "Enable this model",
   "modelEnableHint": "When enabled, this model can be used in chat",
   "modelSaving": "Saving...",
-  "modelEmpty": "No models configured. Add model_list entries in config.json"
+  "modelEmpty": "No models configured. Add model_list entries in config.json",
+  "lastReloadTime": "Last config reload"
 }

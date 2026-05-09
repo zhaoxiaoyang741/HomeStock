@@ -10,6 +10,7 @@ export interface ModelConfig {
 export interface ModelListData {
   models: ModelConfig[]
   active_model: string
+  last_reload_time: string
 }
 
 export interface UpdateModelPayload {

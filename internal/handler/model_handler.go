@@ -12,8 +12,9 @@ import (
 
 // modelListResponse is the response body for GET /models.
 type modelListResponse struct {
-	Models      []modelItemResponse `json:"models"`
-	ActiveModel string              `json:"active_model"`
+	Models         []modelItemResponse `json:"models"`
+	ActiveModel    string              `json:"active_model"`
+	LastReloadTime string              `json:"last_reload_time"`
 }
 
 // modelItemResponse is a single model entry in the list response.
@@ -31,6 +32,11 @@ type ModelHandler struct {
 	configPath string
 	activeName string
 	swapFn     func(name string, cfg config.ModelConfig) error
+	// postUpdateFn is called after a successful UpdateModel (PATCH) save,
+	// allowing the hot-reload orchestrator to detect changes and apply them.
+	postUpdateFn func()
+	// reloadTimeFn returns the last reload time as a formatted string.
+	reloadTimeFn func() string
 }
 
 // NewModelHandler creates a ModelHandler.
@@ -45,9 +51,20 @@ func (h *ModelHandler) SetSwapFn(fn func(string, config.ModelConfig) error) {
 	h.swapFn = fn
 }
 
+// SetPostUpdateFn registers a callback invoked after a successful PATCH save.
+// This lets the hot-reload orchestrator detect config changes and apply them.
+func (h *ModelHandler) SetPostUpdateFn(fn func()) {
+	h.postUpdateFn = fn
+}
+
 // SetActiveName records which model was swapped in at startup.
 func (h *ModelHandler) SetActiveName(name string) {
 	h.activeName = name
+}
+
+// SetReloadTimeFn registers a function that returns the last config reload time.
+func (h *ModelHandler) SetReloadTimeFn(fn func() string) {
+	h.reloadTimeFn = fn
 }
 
 // RegisterRoutes mounts model config endpoints under the API group.
@@ -73,9 +90,15 @@ func (h *ModelHandler) ListModels(c *gin.Context) {
 		})
 	}
 
+	reloadTime := ""
+	if h.reloadTimeFn != nil {
+		reloadTime = h.reloadTimeFn()
+	}
+
 	httpresp.OK(c, modelListResponse{
-		Models:      items,
-		ActiveModel: h.activeName,
+		Models:         items,
+		ActiveModel:    h.activeName,
+		LastReloadTime: reloadTime,
 	})
 }
 
@@ -132,6 +155,11 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 	if !found {
 		httpresp.Error(c, http.StatusNotFound, "model "+req.ModelName+" not found")
 		return
+	}
+
+	// Notify the hot-reload orchestrator after a successful save
+	if h.postUpdateFn != nil {
+		h.postUpdateFn()
 	}
 
 	httpresp.OK(c, gin.H{"message": "config updated"})
