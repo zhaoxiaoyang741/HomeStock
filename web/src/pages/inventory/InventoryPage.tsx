@@ -1,14 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Box,
-  Boxes,
-  ChevronRight,
-  Pencil,
+  Eye,
   PackagePlus,
   RefreshCw,
   Search,
-  SlidersHorizontal,
-  Warehouse,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -29,6 +24,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import { useDebounce } from '@/hooks/useDebounce'
@@ -37,13 +40,13 @@ import { materialApi } from '@/api/material'
 import { stockLotApi } from '@/api/stockLot'
 import type { Category } from '@/types/category'
 import type { InboundStockLotPayload, StockLot, UpdateStockLotPayload, AdjustStockLotPayload } from '@/types/stock'
-import type { ConsumeMaterialPayload, MaterialSummary, InventoryStatus } from '@/types/material'
+import type { MaterialSummary, InventoryStatus } from '@/types/material'
 import { getInventoryStatus } from '@/types/material'
 import InboundLotDialog from './InboundLotDialog'
-import ConsumeMaterialDialog from './ConsumeMaterialDialog'
 import EditLotDialog from './EditLotDialog'
 import AdjustLotDialog from './AdjustLotDialog'
 import ExpiringLotsDialog from './ExpiringLotsDialog'
+import LotDetailsDialog from './LotDetailsDialog'
 
 function formatLocations(locations: string[]): string {
   if (!locations ||  locations.length === 0) return '—'
@@ -67,9 +70,24 @@ export default function InventoryPage() {
 
   const [expiringOpen, setExpiringOpen] = useState(false)
   const [inboundOpen, setInboundOpen] = useState(false)
-  const [consumeOpen, setConsumeOpen] = useState(false)
   const [editingLot, setEditingLot] = useState<StockLot | null>(null)
   const [adjustingLot, setAdjustingLot] = useState<StockLot | null>(null)
+  const [lotDetailsOpen, setLotDetailsOpen] = useState(false)
+
+  const [page, setPage] = useState(1)
+  const pageSize = 10
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(materials.length / pageSize)),
+    [materials.length],
+  )
+  const paginatedMaterials = useMemo(
+    () => materials.slice((page - 1) * pageSize, page * pageSize),
+    [materials, page, pageSize],
+  )
+
+  useEffect(() => {
+    setPage(1)
+  }, [materials.length])
 
   const STATUS_MAP: Record<InventoryStatus, { label: string; variant: 'default' | 'outline' | 'destructive' }> = {
     normal: { label: t('statusNormal'), variant: 'default' },
@@ -144,19 +162,8 @@ export default function InventoryPage() {
     [lots, selectedMaterialId],
   )
 
-  const warningLots = useMemo(
-    () => lots.filter((lot) => lot.quantity_on_hand > 0 && getInventoryStatus(lot.expire_at) !== 'normal').length,
-    [lots],
-  )
-
   async function handleInbound(payload: InboundStockLotPayload) {
     await stockLotApi.inbound(payload)
-    await loadData()
-  }
-
-  async function handleConsume(payload: ConsumeMaterialPayload) {
-    if (!selectedMaterial) return
-    await materialApi.consume(selectedMaterial.id, payload)
     await loadData()
   }
 
@@ -218,10 +225,6 @@ export default function InventoryPage() {
           <Button variant="outline" size="icon" onClick={() => void loadData()} title={t('common:refresh')}>
             <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
           </Button>
-          <Button variant="outline" onClick={() => setConsumeOpen(true)} disabled={!selectedMaterial}>
-            <SlidersHorizontal className="w-4 h-4" />
-            {t('btnConsume')}
-          </Button>
           <Button onClick={() => setInboundOpen(true)}>
             <PackagePlus className="w-4 h-4" />
             {t('btnInbound')}
@@ -233,43 +236,9 @@ export default function InventoryPage() {
         <div className="rounded-lg bg-error-container px-4 py-3 text-sm text-error">{error}</div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-5 bg-surface-container-lowest rounded-xl border border-outline-variant/20 flex items-center gap-4 shadow-sm">
-          <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-            <Warehouse className="w-5 h-5 text-primary" />
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('statMaterials')}</p>
-            <p className="text-xl font-extrabold text-on-surface">{materials.length}</p>
-          </div>
-        </div>
-        <div className="p-5 bg-surface-container-lowest rounded-xl border border-outline-variant/20 flex items-center gap-4 shadow-sm">
-          <div className="w-11 h-11 rounded-full bg-secondary-container/20 flex items-center justify-center shrink-0">
-            <Boxes className="w-5 h-5 text-secondary" />
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('statLots')}</p>
-            <p className="text-xl font-extrabold text-on-surface">{lots.length}</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          className="p-5 bg-surface-container-lowest rounded-xl border border-outline-variant/20 flex items-center gap-4 shadow-sm text-left hover:bg-surface-container transition-colors cursor-pointer w-full"
-          onClick={() => setExpiringOpen(true)}
-        >
-          <div className="w-11 h-11 rounded-full bg-tertiary-container/20 flex items-center justify-center shrink-0">
-            <Box className="w-5 h-5 text-tertiary" />
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('statExpiring')}</p>
-            <p className={cn('text-xl font-extrabold', warningLots > 0 ? 'text-tertiary' : 'text-on-surface')}>
-              {warningLots}
-            </p>
-          </div>
-        </button>
-      </div>
-
-      <div className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest shadow-sm overflow-hidden">
+      <div className="flex-1 flex flex-col gap-4 min-h-0">
+        <div className="flex-1 rounded-xl border border-outline-variant/20 bg-surface-container-lowest shadow-sm overflow-hidden">
+          <div className="h-full overflow-auto">
         <Table>
           <TableHeader>
             <TableRow className="bg-surface-container-low/50 border-outline-variant/20 hover:bg-surface-container-low/50">
@@ -291,17 +260,12 @@ export default function InventoryPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              materials.map((material) => {
+              paginatedMaterials.map((material) => {
                 const status = getInventoryStatus(material.nearest_expire_at)
-                const selected = material.id === selectedMaterialId
                 return (
                   <TableRow
                     key={material.id}
-                    className={cn(
-                      'border-outline-variant/10 cursor-pointer hover:bg-surface transition-colors',
-                      selected && 'bg-primary/5',
-                    )}
-                    onClick={() => setSelectedMaterialId(material.id)}
+                    className="border-outline-variant/10 hover:bg-surface transition-colors"
                   >
                     <TableCell className="py-5">
                       <div className="font-bold text-on-surface">{material.name}</div>
@@ -319,16 +283,15 @@ export default function InventoryPage() {
                     </TableCell>
                     <TableCell className="py-5 text-right">
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(event) => {
-                          event.stopPropagation()
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
                           setSelectedMaterialId(material.id)
-                          setConsumeOpen(true)
+                          setLotDetailsOpen(true)
                         }}
-                        title={t('btnConsumeTitle')}
                       >
-                        <ChevronRight className="w-4 h-4" />
+                        <Eye className="w-4 h-4" />
+                        {t('btnViewDetails')}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -337,100 +300,38 @@ export default function InventoryPage() {
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
 
-      <div className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest shadow-sm overflow-hidden">
-        <div className="px-6 py-5 border-b border-outline-variant/20 flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold text-on-surface">{t('lotsTitle')}</h2>
-            <p className="text-sm text-on-surface-variant mt-0.5">
-              {selectedMaterial
-                ? t('lotsSubtitleSelected', {
-                    name: selectedMaterial.name,
-                    spec: selectedMaterial.spec ? ` / ${selectedMaterial.spec}` : '',
-                  })
-                : t('lotsSubtitleEmpty')}
-            </p>
-          </div>
-          {selectedMaterial && (
-            <div className="text-right">
-              <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('lotsSummaryLabel')}</p>
-              <p className="text-sm font-semibold text-on-surface">
-                {t('lotsSummaryValue', {
-                  quantity: selectedMaterial.total_quantity,
-                  unit: selectedMaterial.default_unit,
-                  count: selectedMaterial.lot_count,
-                })}
-              </p>
-            </div>
-          )}
+      <div className="flex justify-center">
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className={cn(page <= 1 && 'pointer-events-none opacity-50')}
+                >
+                  {t('paginationPrevious')}
+                </PaginationPrevious>
+              </PaginationItem>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((num) => (
+                <PaginationItem key={num}>
+                  <PaginationLink isActive={num === page} onClick={() => setPage(num)}>
+                    {num}
+                  </PaginationLink>
+                </PaginationItem>
+              ))}
+              <PaginationItem>
+                <PaginationNext
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className={cn(page >= totalPages && 'pointer-events-none opacity-50')}
+                >
+                  {t('paginationNext')}
+                </PaginationNext>
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
         </div>
-
-        <Table>
-          <TableHeader>
-            <TableRow className="border-outline-variant/20">
-              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('lotsColStock')}</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('lotsColLocation')}</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('lotsColPurchased')}</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('lotsColExpiry')}</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('lotsColNotes')}</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{t('lotsColStatus')}</TableHead>
-              <TableHead className="text-xs font-bold uppercase tracking-widest text-on-surface-variant text-right">{t('lotsColActions')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {!selectedMaterial ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-32 text-center text-on-surface-variant">
-                  {t('lotsSelectFirst')}
-                </TableCell>
-              </TableRow>
-            ) : selectedLots.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-32 text-center text-on-surface-variant">
-                  {t('lotsEmpty')}
-                </TableCell>
-              </TableRow>
-            ) : (
-              selectedLots.map((lot) => {
-                const status = getInventoryStatus(lot.expire_at)
-                return (
-                  <TableRow key={lot.id} className="border-outline-variant/10 hover:bg-surface">
-                    <TableCell className="py-5 font-medium">
-                      <div className="flex items-center gap-2">
-                        <span className={cn(lot.quantity_on_hand === 0 && 'text-on-surface-variant')}>{lot.quantity_on_hand} {lot.unit}</span>
-                        {lot.quantity_on_hand === 0 && (
-                          <Badge variant="outline" className="text-xs text-on-surface-variant border-outline-variant/50">{t('statusZero')}</Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-5 text-on-surface-variant">{lot.location || '—'}</TableCell>
-                    <TableCell className="py-5 text-on-surface-variant">
-                      {lot.purchased_at ? formatDate(lot.purchased_at, i18n.language) : '—'}
-                    </TableCell>
-                    <TableCell className="py-5 text-on-surface-variant">
-                      {lot.expire_at ? formatDate(lot.expire_at, i18n.language) : '—'}
-                    </TableCell>
-                    <TableCell className="py-5 text-on-surface-variant">{lot.notes || '—'}</TableCell>
-                    <TableCell className="py-5">
-                      <StatusBadge status={status} />
-                    </TableCell>
-                    <TableCell className="py-5 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => setEditingLot(lot)} title={t('btnEditLot')}>
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => setAdjustingLot(lot)}>
-                          {t('btnAdjustLot')}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
       </div>
 
       <ExpiringLotsDialog
@@ -447,12 +348,6 @@ export default function InventoryPage() {
         onClose={() => setInboundOpen(false)}
         onSubmit={handleInbound}
       />
-      <ConsumeMaterialDialog
-        open={consumeOpen}
-        material={selectedMaterial}
-        onClose={() => setConsumeOpen(false)}
-        onSubmit={handleConsume}
-      />
       <EditLotDialog
         open={editingLot !== null}
         lot={editingLot}
@@ -464,6 +359,14 @@ export default function InventoryPage() {
         lot={adjustingLot}
         onClose={() => setAdjustingLot(null)}
         onSubmit={handleAdjustLot}
+      />
+      <LotDetailsDialog
+        open={lotDetailsOpen}
+        materialName={selectedMaterial?.name ?? ''}
+        lots={selectedLots}
+        onClose={() => setLotDetailsOpen(false)}
+        onEditLot={setEditingLot}
+        onAdjustLot={setAdjustingLot}
       />
     </div>
   )
