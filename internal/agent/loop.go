@@ -97,6 +97,13 @@ func (l *AgentLoop) processMessage(msg InboundMessage) {
 		"sender":  msg.SenderName,
 	})
 
+	actor := service.Actor{
+		Channel:  msg.Channel,
+		UserName: msg.SenderName,
+		UserID:   msg.SenderID,
+		TenantID: "default",
+	}
+
 	userContent := msg.Text
 	if msg.MediaType != "" && msg.MediaType != "text" {
 		userContent = fmt.Sprintf("[%s消息暂不支持，请发送文字消息]", msg.MediaType)
@@ -108,7 +115,7 @@ func (l *AgentLoop) processMessage(msg InboundMessage) {
 	messages := l.buildConversation(msg.ChatID)
 	tools := l.dispatcher.Definitions()
 
-	response, err := l.chatWithTools(messages, tools, 0)
+	response, err := l.chatWithTools(messages, tools, 0, actor)
 	if err != nil {
 		logger.ErrorCF("agent", "chat failed", map[string]any{
 			"channel": msg.ChatID,
@@ -139,7 +146,7 @@ func (l *AgentLoop) buildConversation(chatID string) []llm.Message {
 }
 
 // chatWithTools sends messages to the LLM and handles tool call loops.
-func (l *AgentLoop) chatWithTools(messages []llm.Message, tools []llm.ToolDefinition, depth int) (string, error) {
+func (l *AgentLoop) chatWithTools(messages []llm.Message, tools []llm.ToolDefinition, depth int, actor service.Actor) (string, error) {
 	if depth > maxToolCallDepth {
 		return "抱歉，操作步骤过多，请简化您的请求。", nil
 	}
@@ -164,12 +171,6 @@ func (l *AgentLoop) chatWithTools(messages []llm.Message, tools []llm.ToolDefini
 	}
 
 	// Execute tool calls
-	actor := service.Actor{
-		Channel:  "",
-		UserName: "",
-		UserID:   "",
-		TenantID: "default",
-	}
 
 	for _, tc := range resp.ToolCalls {
 		var args map[string]any
@@ -212,7 +213,7 @@ func (l *AgentLoop) chatWithTools(messages []llm.Message, tools []llm.ToolDefini
 	}
 
 	// Continue loop so the LLM can produce a follow-up text response
-	return l.chatWithTools(messages, tools, depth+1)
+	return l.chatWithTools(messages, tools, depth+1, actor)
 }
 
 func (l *AgentLoop) reply(msg InboundMessage, text string) {

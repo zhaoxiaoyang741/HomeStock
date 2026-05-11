@@ -12,8 +12,8 @@
 
 ```
 用户入口
-  ├── 飞书（文字 / 语音 / 图片） → OpenClaw → LLM → 插件 → HTTP
-  └── 浏览器（Web UI）           → React  → HTTP
+  ├── 飞书（文字 / 语音 / 图片） → Agent 编排 → LLM → 工具调度 → HTTP
+  └── 浏览器（Web UI）           → React       → HTTP
                                     │
                                     ▼
                             Go REST API
@@ -34,7 +34,7 @@
 |------|------|
 | 后端 | Go、Gin、GORM、robfig/cron、zerolog |
 | 前端 | React 19、TypeScript、Vite 8、Tailwind CSS 4 |
-| AI Agent | OpenClaw + TypeScript 插件 |
+| AI Agent | Go AgentLoop + LLM Provider |
 | 大模型 | OpenAI（GPT-4o 等）/ Ollama（Qwen2.5 等），支持运行时切换 |
 | 渠道 | 飞书（OAuth 授权 / Webhook 推送）、可扩展 Channel 接口 |
 | 数据 | SQLite（嵌入式）/ PostgreSQL |
@@ -60,7 +60,7 @@
 
 ### AI 自然语言交互
 
-通过飞书 + OpenClaw + LLM，支持以下操作：
+通过飞书 + AgentLoop + LLM，支持以下操作：
 
 | 能力 | 说明 |
 |------|------|
@@ -136,10 +136,10 @@ make build
 
 ### 飞书接入
 
-完整对话（OpenClaw + 事件订阅）：
+完整对话（事件订阅 + Agent）：
 
 1. 飞书开放平台创建自建应用，开启"接收消息"事件
-2. 配置 `openclaw.config.yaml` 中的 `channels.feishu` 与 `llm` 字段
+2. 配置 `config.json` 中的 `channels.feishu` 与 `model_list` 字段
 3. 在 Web 设置页面完成 OAuth 授权
 
 仅提醒推送：
@@ -171,15 +171,7 @@ make build
 │   └── tool/                # LLM Tool 注册与分发
 ├── pkg/
 │   └── config/              # 配置管理（JSON + 环境变量覆盖）
-├── web/
-│   └── src/
-│       ├── api/             # API 调用封装
-│       ├── components/      # UI 组件（shadcdn 风格）
-│       ├── pages/           # 页面：dashboard / inventory / shopping / history / settings
-│       └── hooks/           # 自定义 Hooks
-└── openclaw-plugin/         # OpenClaw 插件（TypeScript）
-    ├── src/                 # Tool 实现
-    └── skills/              # Skill 描述
+└── web/
 ```
 
 ---

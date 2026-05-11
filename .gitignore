@@ -27,6 +27,4 @@ CLAUDE.md
 .claude
 .codex/
 .docs/
-.openclaw/
-openclaw-plugin/examples/
 config.json
