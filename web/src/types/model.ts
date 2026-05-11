@@ -1,7 +1,7 @@
 export interface ModelConfig {
   model_name: string
   model: string
-  provider: 'openai' | 'ollama'
+  provider: 'openai' | 'ollama' | 'deepseek'
   enabled: boolean
   api_key: string
   api_base: string

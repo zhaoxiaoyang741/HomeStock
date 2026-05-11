@@ -187,7 +187,7 @@ export function ModelConfigSection() {
                     <CardTitle className="text-lg font-bold tracking-tight">{mc.model_name}</CardTitle>
                     <CardDescription>
                       <Badge variant="outline" className="text-xs">
-                        {mc.provider === 'ollama' ? t('modelProviderOllama') : t('modelProviderOpenAI')}
+                        {mc.provider === 'ollama' ? t('modelProviderOllama') : mc.provider === 'deepseek' ? t('modelProviderDeepSeek') : t('modelProviderOpenAI')}
                       </Badge>
                     </CardDescription>
                   </div>

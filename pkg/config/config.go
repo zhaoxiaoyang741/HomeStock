@@ -1,4 +1,4 @@
-package config
+﻿package config
 
 import (
 	"encoding/json"
@@ -66,14 +66,14 @@ type ModelConfig struct {
 	ModelName string `json:"model_name"`
 	// Model is the model identifier passed to the API, e.g. "openai/gpt-4o" or "gpt-4o".
 	Model string `json:"model"`
-	// Provider specifies the LLM provider type: "openai" (default) or "ollama".
+	// Provider specifies the LLM provider type: "openai" (default), "ollama", or "deepseek".
 	Provider string `json:"provider,omitempty"`
 	// Enabled enables this model configuration. If false, the entry is skipped.
 	// Defaults to false for clean configs; the app falls back to the first entry if none enabled.
 	Enabled bool `json:"enabled,omitempty"`
 	// APIKey is the API key for the LLM provider.
 	APIKey string `json:"api_key"`
-	// APIBase is the base URL for the API, optional — defaults to the provider's default.
+	// APIBase is the base URL for the API, optional 鈥?defaults to the provider's default.
 	APIBase string `json:"api_base,omitempty"`
 }
 
@@ -220,8 +220,11 @@ func validateConfig(cfg *Config) error {
 		if m.Model == "" {
 			return fmt.Errorf("model_list[%d].model is required", i)
 		}
-		if m.Provider != "" && m.Provider != "openai" && m.Provider != "ollama" {
-			return fmt.Errorf("model_list[%d].provider must be 'openai' or 'ollama', got %q", i, m.Provider)
+		switch m.Provider {
+		case "", "openai", "ollama", "deepseek":
+			// valid
+		default:
+			return fmt.Errorf("model_list[%d].provider must be 'openai', 'ollama', or 'deepseek', got %q", i, m.Provider)
 		}
 	}
 	return nil

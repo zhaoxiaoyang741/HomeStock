@@ -26,11 +26,12 @@ type openAIReq struct {
 
 // openAIMsg is a single message in the OpenAI chat format.
 type openAIMsg struct {
-	Role         string     `json:"role"`
-	Content      string     `json:"content,omitempty"`
-	ToolCalls    []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID   string     `json:"tool_call_id,omitempty"`
-	Name         string     `json:"name,omitempty"`
+	Role             string     `json:"role"`
+	Content          string     `json:"content,omitempty"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
+	Name             string     `json:"name,omitempty"`
 }
 
 // openAIResp maps the relevant parts of the OpenAI chat/completions response.
@@ -143,9 +144,10 @@ func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []T
 	choice := apiResp.Choices[0]
 
 	result := &LLMResponse{
-		Content:      choice.Message.Content,
-		ToolCalls:    choice.Message.ToolCalls,
-		FinishReason: choice.FinishReason,
+		Content:          choice.Message.Content,
+		ReasoningContent: choice.Message.ReasoningContent,
+		ToolCalls:        choice.Message.ToolCalls,
+		FinishReason:     choice.FinishReason,
 	}
 
 	if apiResp.Usage != nil {
@@ -164,11 +166,12 @@ func marshalMessages(msgs []Message) []openAIMsg {
 	out := make([]openAIMsg, 0, len(msgs))
 	for _, m := range msgs {
 		om := openAIMsg{
-			Role:       m.Role,
-			Content:    m.Content,
-			ToolCalls:  m.ToolCalls,
-			ToolCallID: m.ToolCallID,
-			Name:       m.Name,
+			Role:             m.Role,
+			Content:          m.Content,
+			ReasoningContent: m.ReasoningContent,
+			ToolCalls:        m.ToolCalls,
+			ToolCallID:       m.ToolCallID,
+			Name:             m.Name,
 		}
 		// OpenAI requires content to be present for user messages.
 		// For assistant messages with tool_calls, content can be empty.

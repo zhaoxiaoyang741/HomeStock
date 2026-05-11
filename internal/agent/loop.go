@@ -160,9 +160,10 @@ func (l *AgentLoop) chatWithTools(messages []llm.Message, tools []llm.ToolDefini
 
 	// Store assistant response (may contain tool_calls) into messages for the next iteration
 	messages = append(messages, llm.Message{
-		Role:      "assistant",
-		Content:   resp.Content,
-		ToolCalls: resp.ToolCalls,
+		Role:              "assistant",
+		Content:           resp.Content,
+		ReasoningContent:  resp.ReasoningContent,
+		ToolCalls:         resp.ToolCalls,
 	})
 
 	// Text response — done

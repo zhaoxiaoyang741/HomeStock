@@ -5,7 +5,7 @@
   },
   "database": {
     "driver": "sqlite",
-    "dsn": "/data/inventory.db"
+    "dsn": "./data/inventory.db"
   },
   "channels": {
     "feishu": {
@@ -28,6 +28,13 @@
       "provider": "ollama",
       "enabled": false,
       "api_base": "http://localhost:11434"
+    },
+    {
+      "model_name": "deepseek",
+      "model": "deepseek-chat",
+      "provider": "deepseek",
+      "enabled": false,
+      "api_key": "sk-your-deepseek-key"
     }
   ]
 }
