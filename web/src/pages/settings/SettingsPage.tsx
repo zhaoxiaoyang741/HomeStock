@@ -25,7 +25,7 @@ export default function SettingsPage() {
       const data = await getModelList()
       setLastReloadTime(data.last_reload_time)
     } catch {
-      // ignore — child sections handle their own error display
+      // Child sections show their own error state.
     }
   }
 
@@ -34,73 +34,69 @@ export default function SettingsPage() {
     pollingRef.current = setInterval(() => {
       void fetchReloadTime()
     }, 10000)
+
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current)
     }
   }, [])
 
   return (
-    <div className="flex flex-col h-full gap-6">
-      {/* Page header */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+    <div className="flex h-full min-h-0 flex-col gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-on-surface">{t('settings:title')}</h1>
-          <p className="text-sm text-on-surface-variant mt-0.5">{t('settings:subtitle')}</p>
+          <p className="mt-0.5 text-sm text-on-surface-variant">{t('settings:subtitle')}</p>
         </div>
       </div>
 
-      {/* Two-panel layout */}
-      <div className="flex flex-1 min-h-0 rounded-xl border border-outline-variant/20 bg-surface-container-lowest shadow-sm overflow-hidden">
-        {/* Panel 1: Section nav */}
-        <nav className="shrink-0 border-r border-outline-variant/20 flex flex-col py-2 w-40">
+      <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-outline-variant/20 bg-surface-container-lowest shadow-sm">
+        <nav className="flex w-40 shrink-0 flex-col border-r border-outline-variant/20 py-2">
           {SECTION_ITEMS.map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveSection(item.id)}
               className={cn(
-                'flex items-center gap-3 w-full px-4 py-3 text-sm transition-colors',
+                'flex w-full items-center gap-3 px-4 py-3 text-sm transition-colors',
                 'text-on-surface-variant hover:bg-surface-container',
                 activeSection === item.id &&
-                  'bg-surface-container text-on-surface font-medium border-l-2 border-primary'
+                  'border-l-2 border-primary bg-surface-container font-medium text-on-surface',
               )}
             >
-              <item.icon className="w-4 h-4 shrink-0" />
+              <item.icon className="h-4 w-4 shrink-0" />
               <span>{t(`settings:${item.labelKey}`)}</span>
             </button>
           ))}
         </nav>
 
-        {/* Panel 2: Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Last reload time — top of every section */}
+        <div className="flex min-h-0 flex-1 flex-col p-6">
           {lastReloadTime && (
-            <div className="flex items-center gap-2 text-xs text-on-surface-variant pb-2 border-b border-outline-variant/20">
-              <Clock className="w-3.5 h-3.5 shrink-0" />
+            <div className="flex shrink-0 items-center gap-2 border-b border-outline-variant/20 pb-2 text-xs text-on-surface-variant">
+              <Clock className="h-3.5 w-3.5 shrink-0" />
               <span>{t('lastReloadTime')}: {lastReloadTime}</span>
             </div>
           )}
 
-          {activeSection === 'channels' ? (
-            <>
-              {/* Feishu Bot */}
-              <FeishuBotSection />
+          <div className="min-h-0 flex-1 overflow-y-auto pt-6">
+            {activeSection === 'channels' ? (
+              <div className="space-y-6">
+                <FeishuBotSection />
 
-              {/* WeChat Bot placeholder */}
-              <Card className="rounded-xl border-outline-variant/20 bg-surface-container-lowest shadow-sm">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-3">
-                    <MessageSquare className="w-5 h-5 text-on-surface-variant/40" />
-                    <div>
-                      <p className="text-sm font-medium text-on-surface">{t('navWechat')}</p>
-                      <p className="text-xs text-on-surface-variant mt-0.5">{t('channelPlaceholder')}</p>
+                <Card className="rounded-xl border-outline-variant/20 bg-surface-container-lowest shadow-sm">
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-3">
+                      <MessageSquare className="h-5 w-5 text-on-surface-variant/40" />
+                      <div>
+                        <p className="text-sm font-medium text-on-surface">{t('navWechat')}</p>
+                        <p className="mt-0.5 text-xs text-on-surface-variant">{t('channelPlaceholder')}</p>
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </>
-          ) : (
-            <ModelConfigSection />
-          )}
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <ModelConfigSection />
+            )}
+          </div>
         </div>
       </div>
     </div>

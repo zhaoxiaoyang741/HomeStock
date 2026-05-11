@@ -8,14 +8,14 @@ export default function AppLayout() {
   const collapsed = useAppStore((s) => s.collapsed)
 
   return (
-    <div className="flex min-h-screen bg-background flex-1">
+    <div className="flex h-screen overflow-hidden bg-background flex-1">
       <Sidebar />
       <div className={cn(
-        'flex-1 flex flex-col transition-[margin-left] duration-300 ease-in-out',
+        'flex-1 flex min-h-0 flex-col transition-[margin-left] duration-300 ease-in-out',
         collapsed ? 'ml-16' : 'ml-50'
       )}>
         <Header />
-        <main className="flex-1 mt-16 p-6 overflow-auto">
+        <main className="flex-1 min-h-0 mt-16 overflow-hidden p-6">
           <Outlet />
         </main>
       </div>
