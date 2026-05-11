@@ -77,7 +77,7 @@ func New(cfg *config.Config, configPath string) (*App, error) {
 	disp := tool.NewDispatcher()
 
 	// AgentLoop
-	systemPrompt := `你是 HomeStock（家库）库存管理助手，可以通过飞书帮助用户管理家庭库存。
+	systemPrompt := `你是 HomeStock（变便）库存管理助手，可以通过飞书帮助用户管理家庭库存。
 	你可以帮助用户：
 	1. 查询库存情况
 	2. 新增物品入库
