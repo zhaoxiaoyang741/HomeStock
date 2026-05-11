@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import {
   Package,
   ShoppingCart,
@@ -11,10 +11,18 @@ import {
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/appStore'
+import { useAuthStore } from '@/store/authStore'
 
 export default function Sidebar() {
   const collapsed = useAppStore((s) => s.collapsed)
   const { t } = useTranslation('nav')
+  const logout = useAuthStore((s) => s.logout)
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login')
+  }
 
   const NAV_ITEMS = [
     { path: '/',          icon: BarChart2,     label: t('home') },
@@ -71,6 +79,7 @@ export default function Sidebar() {
       {/* Footer */}
       <div className="px-2 py-4 border-t border-outline-variant shrink-0">
         <button
+          onClick={handleLogout}
           className={cn(
             'flex items-center cursor-pointer gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors',
             collapsed ? 'justify-center' : ''

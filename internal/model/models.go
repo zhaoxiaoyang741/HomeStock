@@ -9,5 +9,6 @@ func AutoMigrateModels() []any {
 		&StockMovement{},
 		&AuditLog{},
 		&SystemSetting{},
+		&User{},
 	}
 }

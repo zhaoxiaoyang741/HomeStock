@@ -11,12 +11,14 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/appStore'
+import { useAuthStore } from '@/store/authStore'
 import { useTheme } from '@/hooks/useTheme'
 
 export default function Header() {
   const { collapsed, toggleCollapsed } = useAppStore()
   const { resolvedTheme, setTheme } = useTheme()
   const { t, i18n } = useTranslation('header')
+  const user = useAuthStore((s) => s.user)
 
   function handleLanguageChange(lang: string) {
     void i18n.changeLanguage(lang)
@@ -86,7 +88,9 @@ export default function Header() {
         </button>
         <Avatar className="w-8 h-8 ml-1 cursor-pointer">
           <AvatarImage src="" alt={t('userAvatar')} />
-          <AvatarFallback className="bg-primary text-on-primary text-xs">{t('userFallback')}</AvatarFallback>
+          <AvatarFallback className="bg-primary text-on-primary text-xs">
+            {user?.display_name?.charAt(0) ?? t('userFallback')}
+          </AvatarFallback>
         </Avatar>
       </div>
     </header>

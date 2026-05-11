@@ -1,11 +1,27 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL as string
 
+// Token provider — injected by the auth store to avoid circular dependencies.
+let getToken: () => string | null = () => null
+
+export function setTokenProvider(fn: () => string | null) {
+  getToken = fn
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getToken()
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { ...headers, ...init?.headers as Record<string, string> | undefined },
     ...init,
   })
   if (!res.ok) {
+    if (res.status === 401) {
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'))
+    }
     const err = await res.json().catch(() => ({ message: res.statusText }))
     throw new Error(err.message ?? err.error ?? res.statusText)
   }

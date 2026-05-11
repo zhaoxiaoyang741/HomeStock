@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/agent"
+	httpreq "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/request"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel/feishu"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/database"
@@ -30,12 +31,12 @@ import (
 type App struct {
 	configPath string
 	server     *httpserver.Server
-	db            *gorm.DB
-	sqlDB         *sql.DB
+	db         *gorm.DB
+	sqlDB      *sql.DB
 
-	bus        *agent.MessageBus
-	agentLoop  *agent.AgentLoop
-	channelMgr *channel.Manager
+	bus          *agent.MessageBus
+	agentLoop    *agent.AgentLoop
+	channelMgr   *channel.Manager
 	orchestrator *hotreload.Orchestrator
 	hotReloadW   *hotreload.Watcher
 
@@ -196,21 +197,39 @@ func New(cfg *config.Config, configPath string) (*App, error) {
 	defs = append(defs, tool.HealthToolDefinition())
 	disp.SetDefinitions(defs)
 
+	// Auth service
+	authSvc := service.NewAuthService(db, cfg.Auth.JWTSecret, cfg.Auth.TokenDurationMinutes)
+	if cfg.Auth.JWTSecret == "" {
+		cfg.Auth.JWTSecret = authSvc.GetSecretHex()
+		logger.InfoCF("app", "auto-generated JWT secret (set HOMESTOCK_AUTH_JWT_SECRET to persist across restarts)", map[string]any{
+			"secret_hex": cfg.Auth.JWTSecret,
+		})
+	}
+
 	// Handlers
+	authHandler := handler.NewAuthHandler(authSvc)
 	categoryHandler := handler.NewCategoryHandler(service.NewCategoryService(uow))
 	materialHandler := handler.NewMaterialHandler(materialSvc, inventorySvc)
 	stockLotHandler := handler.NewStockLotHandler(inventorySvc)
 	stockMovementHandler := handler.NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
 	auditLogHandler := handler.NewAuditLogHandler(service.NewAuditService(uow))
 
+	authMw := httpreq.JWTAuthMiddleware(authSvc)
 	server := httpserver.New(cfg.Server,
-		categoryHandler.RegisterRoutes,
-		materialHandler.RegisterRoutes,
-		stockLotHandler.RegisterRoutes,
-		stockMovementHandler.RegisterRoutes,
-		auditLogHandler.RegisterRoutes,
-		feishuHandler.RegisterRoutes,
-		modelHandler.RegisterRoutes,
+		[]httpserver.RegisterRoutesFunc{
+			authHandler.RegisterRoutes,
+		},
+		[]httpserver.RegisterRoutesFunc{
+			categoryHandler.RegisterRoutes,
+			materialHandler.RegisterRoutes,
+			stockLotHandler.RegisterRoutes,
+			stockMovementHandler.RegisterRoutes,
+			auditLogHandler.RegisterRoutes,
+			feishuHandler.RegisterRoutes,
+			modelHandler.RegisterRoutes,
+			authHandler.RegisterProtectedRoutes,
+		},
+		httpserver.AuthMiddleware(authMw),
 	)
 
 	return &App{

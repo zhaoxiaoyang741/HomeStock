@@ -17,8 +17,20 @@ type Config struct {
 	Channels ChannelsConfig `json:"channels"`
 	// ModelList is the list of LLM model configurations for multi-model support.
 	ModelList []ModelConfig `json:"model_list"`
+	// Auth controls user authentication settings.
+	Auth AuthConfig `json:"auth"`
 
 	Log LogConfig `json:"log"`
+}
+
+// AuthConfig configures JWT-based user authentication.
+type AuthConfig struct {
+	// JWTSecret is the HMAC signing key for JWT tokens.
+	// If empty (the default), a random key is generated at startup.
+	// Once set, changing it invalidates all existing tokens.
+	JWTSecret string `json:"jwt_secret,omitempty"`
+	// TokenDurationMinutes controls JWT token lifetime. Default: 1440 (24 h).
+	TokenDurationMinutes int `json:"token_duration_minutes,omitempty"`
 }
 
 type ServerConfig struct {
@@ -134,6 +146,10 @@ func defaultConfig() *Config {
 				Provider:  "openai",
 				APIKey:    "",
 			},
+		},
+		Auth: AuthConfig{
+			JWTSecret:            "",
+			TokenDurationMinutes: 1440, // 24 h
 		},
 		Log: LogConfig{
 			Level: 0, // INFO
@@ -261,6 +277,10 @@ func applyEnvOverrides(cfg *Config) error {
 
 	if value, ok := os.LookupEnv("HOMESTOCK_CHANNELS_FEISHU_FRONTEND_URL"); ok {
 		cfg.Channels.Feishu.FrontendURL = value
+	}
+
+	if value, ok := os.LookupEnv("HOMESTOCK_AUTH_JWT_SECRET"); ok {
+		cfg.Auth.JWTSecret = value
 	}
 
 	return nil

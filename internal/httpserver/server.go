@@ -14,6 +14,10 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 )
 
+// AuthMiddleware is a Gin handler that validates JWT tokens and sets the Actor
+// in context. A nil value means no auth is enforced (development fallback).
+type AuthMiddleware gin.HandlerFunc
+
 // RegisterRoutesFunc mounts application routes under /api/v1.
 type RegisterRoutesFunc func(api *gin.RouterGroup)
 
@@ -25,16 +29,31 @@ type Server struct {
 }
 
 // New constructs a Gin-backed HTTP server with base middleware and routes.
-func New(cfg appconfig.ServerConfig, registrars ...RegisterRoutesFunc) *Server {
+// Public routes are mounted under /api/v1 without authentication.
+// Protected routes are mounted on a sub-group that requires a valid JWT.
+// Pass a nil authMiddleware to skip JWT enforcement (development fallback).
+func New(cfg appconfig.ServerConfig, public []RegisterRoutesFunc, protected []RegisterRoutesFunc, authMiddleware AuthMiddleware) *Server {
 	engine := gin.New()
 	engine.Use(gin.Recovery(), corsMiddleware(), requestLogger(), request.Middleware())
 
 	api := engine.Group("/api/v1")
 	api.GET("/health", healthHandler)
 
-	for _, register := range registrars {
+	for _, register := range public {
 		if register != nil {
 			register(api)
+		}
+	}
+
+	if len(protected) > 0 {
+		protectedGroup := api.Group("")
+		if authMiddleware != nil {
+			protectedGroup.Use(gin.HandlerFunc(authMiddleware))
+		}
+		for _, register := range protected {
+			if register != nil {
+				register(protectedGroup)
+			}
 		}
 	}
 
@@ -95,7 +114,7 @@ func requestLogger() gin.HandlerFunc {
 		if len(c.Errors) > 0 {
 			fields["errors"] = c.Errors.String()
 		}
-		logger.InfoCF("http", "request completed", fields)
+		// logger.InfoCF("http", "request completed", fields)
 	}
 }
 
@@ -103,7 +122,7 @@ func corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, X-Tenant-ID, X-User-Name, X-User-ID, X-Channel")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Tenant-ID, X-User-Name, X-User-ID, X-Channel")
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)
 			return

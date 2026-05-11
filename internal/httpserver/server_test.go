@@ -13,7 +13,7 @@ import (
 func TestNew_registersHealthEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	srv := New(appconfig.ServerConfig{Port: "9090"})
+	srv := New(appconfig.ServerConfig{Port: "9090"}, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	rec := httptest.NewRecorder()
@@ -36,11 +36,12 @@ func TestNew_registersHealthEndpoint(t *testing.T) {
 func TestNew_mountsCustomRoutesUnderAPIV1(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	srv := New(appconfig.ServerConfig{}, func(api *gin.RouterGroup) {
+	route := func(api *gin.RouterGroup) {
 		api.GET("/materials", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"materials": []string{"rice"}})
 		})
-	})
+	}
+	srv := New(appconfig.ServerConfig{}, []RegisterRoutesFunc{route}, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/materials", nil)
 	rec := httptest.NewRecorder()

@@ -206,7 +206,12 @@ func newTestServer(t *testing.T) (*httpserver.Server, func()) {
 	materialHandler := NewMaterialHandler(materialSvc, inventorySvc)
 	stockLotHandler := NewStockLotHandler(inventorySvc)
 	stockMovementHandler := NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
-	server := httpserver.New(appconfig.ServerConfig{}, categoryHandler.RegisterRoutes, materialHandler.RegisterRoutes, stockLotHandler.RegisterRoutes, stockMovementHandler.RegisterRoutes)
+	server := httpserver.New(appconfig.ServerConfig{}, nil, []httpserver.RegisterRoutesFunc{
+		categoryHandler.RegisterRoutes,
+		materialHandler.RegisterRoutes,
+		stockLotHandler.RegisterRoutes,
+		stockMovementHandler.RegisterRoutes,
+	}, nil)
 
 	return server, func() { _ = sqlDB.Close() }
 }
