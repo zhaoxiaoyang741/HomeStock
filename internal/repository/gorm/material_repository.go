@@ -64,6 +64,15 @@ func (r *MaterialRepository) List(filter repository.MaterialFilter) ([]repositor
 		if err != nil { return nil, err }
 		summaries = append(summaries, summary)
 	}
+	if !filter.ShowZeroStock {
+		filtered := make([]repository.MaterialSummary, 0, len(summaries))
+		for _, s := range summaries {
+			if s.TotalQuantity > 0 {
+				filtered = append(filtered, s)
+			}
+		}
+		summaries = filtered
+	}
 	return summaries, nil
 }
 
@@ -113,4 +122,5 @@ func (r *MaterialRepository) validateCategoryID(tenantID, categoryID string) err
 	if count == 0 { return repository.ErrInvalidCategoryID }
 	return nil
 }
+
 

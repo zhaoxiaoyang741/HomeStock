@@ -61,6 +61,7 @@ func (h *StockLotHandler) List(c *gin.Context) {
 		Status:       strings.TrimSpace(c.Query("status")),
 		Keyword:      strings.TrimSpace(c.Query("keyword")),
 		ExpiringSoon: strings.EqualFold(strings.TrimSpace(c.Query("expiring_soon")), "true"),
+		ShowZeroStock: strings.EqualFold(strings.TrimSpace(c.Query("show_zero_stock")), "true"),
 	})
 	if err != nil {
 		handleStockLotRepositoryError(c, err, "list stock lots failed")

@@ -50,9 +50,10 @@ type SystemSettingRepo interface {
 }
 
 type MaterialFilter struct {
-	TenantID   string
-	CategoryID string
-	Keyword    string
+	TenantID      string
+	CategoryID    string
+	Keyword       string
+	ShowZeroStock bool
 }
 
 type MaterialSummary struct {
@@ -84,7 +85,8 @@ type StockLotFilter struct {
 	Status           string
 	Keyword          string
 	ExpiringSoon     bool
-	ExpiringSoonDays int // 0 means default (7 days)
+	ExpiringSoonDays int    // 0 means default (7 days)
+	ShowZeroStock    bool
 }
 
 type StockMovementFilter struct {

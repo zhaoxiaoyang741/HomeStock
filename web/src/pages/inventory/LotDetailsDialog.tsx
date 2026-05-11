@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react'
 import { Pencil } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -32,6 +33,12 @@ interface Props {
 
 export default function LotDetailsDialog({ open, materialName, lots, onClose, onEditLot, onAdjustLot }: Props) {
   const { t, i18n } = useTranslation('inventory')
+  const [showZeroStock, setShowZeroStock] = useState(false)
+
+  const displayLots = useMemo(
+    () => (showZeroStock ? lots : lots.filter((lot) => lot.quantity_on_hand > 0)),
+    [lots, showZeroStock],
+  )
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -39,6 +46,18 @@ export default function LotDetailsDialog({ open, materialName, lots, onClose, on
         <DialogHeader>
           <DialogTitle>{t('lotDetails_title', { name: materialName })}</DialogTitle>
         </DialogHeader>
+
+        {lots.some((lot) => lot.quantity_on_hand === 0) && (
+          <label className="flex items-center gap-1.5 text-sm text-on-surface-variant cursor-pointer select-none px-1">
+            <input
+              type="checkbox"
+              checked={showZeroStock}
+              onChange={(e) => setShowZeroStock(e.target.checked)}
+              className="w-4 h-4 rounded border-outline-variant accent-primary"
+            />
+            {t('lotShowZeroStock')}
+          </label>
+        )}
 
         <div className="overflow-auto max-h-[65vh]">
           <Table>
@@ -54,14 +73,14 @@ export default function LotDetailsDialog({ open, materialName, lots, onClose, on
               </TableRow>
             </TableHeader>
             <TableBody>
-              {lots.length === 0 ? (
+              {displayLots.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="h-32 text-center text-on-surface-variant">
                     {t('lotsEmpty')}
                   </TableCell>
                 </TableRow>
               ) : (
-                lots.map((lot) => {
+                displayLots.map((lot) => {
                   const status = getInventoryStatus(lot.expire_at)
                   return (
                     <TableRow key={lot.id} className="border-outline-variant/10 hover:bg-surface">

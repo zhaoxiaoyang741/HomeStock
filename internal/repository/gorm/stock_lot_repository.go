@@ -44,6 +44,7 @@ func (r *StockLotRepository) List(f repository.StockLotFilter) ([]model.StockLot
 	if f.CategoryID != "" { q = q.Where("materials.category_id = ?", strings.TrimSpace(f.CategoryID)) }
 	if f.Location != "" { q = q.Where("stock_lots.location = ?", strings.TrimSpace(f.Location)) }
 	if f.Status != "" { q = q.Where("stock_lots.status = ?", strings.TrimSpace(f.Status)) }
+		if !f.ShowZeroStock { q = q.Where("stock_lots.quantity_on_hand > 0") }
 	if kw := strings.TrimSpace(f.Keyword); kw != "" { q = q.Where("LOWER(materials.name) LIKE ? OR LOWER(materials.spec) LIKE ?", "%"+strings.ToLower(kw)+"%", "%"+strings.ToLower(kw)+"%") }
 	if f.ExpiringSoon {
 		days := f.ExpiringSoonDays
@@ -65,3 +66,4 @@ func (r *StockLotRepository) ListConsumableByMaterial(materialID, tenantID strin
 }
 
 func (r *StockLotRepository) scopedLots(tenantID string) *gorm.DB { return r.db.Model(&model.StockLot{}).Where("stock_lots.tenant_id = ?", normalizeTenantID(tenantID)) }
+

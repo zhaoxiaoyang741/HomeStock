@@ -10,10 +10,11 @@ import type {
 import type { Page, Result } from '@/types/api'
 
 export const materialApi = {
-  list: async (params?: { category_id?: string; keyword?: string }): Promise<MaterialListResponse> => {
+  list: async (params?: { category_id?: string; keyword?: string; show_zero_stock?: boolean }): Promise<MaterialListResponse> => {
     const qs = new URLSearchParams()
     if (params?.category_id) qs.set('category_id', params.category_id)
     if (params?.keyword) qs.set('keyword', params.keyword)
+    if (params?.show_zero_stock) qs.set('show_zero_stock', 'true')
     const query = qs.toString()
     const res = await api.get<Result<Page<MaterialDetail>>>(`/v1/materials${query ? `?${query}` : ''}`)
     return { materials: res.data.items, total: res.data.total }

@@ -93,11 +93,13 @@ func (it *InventoryTools) QueryInventory(ctx context.Context, actor service.Acto
 	keyword, _ := args["keyword"].(string)
 	categoryID, _ := args["category_id"].(string)
 	location, _ := args["location"].(string)
+	showZeroStock, _ := args["show_zero_stock"].(bool)
 
 	filter := repository.StockLotFilter{
-		TenantID: actor.TenantID,
-		Keyword:  keyword,
-		Location: location,
+		TenantID:      actor.TenantID,
+		Keyword:       keyword,
+		Location:      location,
+		ShowZeroStock: showZeroStock,
 	}
 	if categoryID != "" {
 		filter.CategoryID = categoryID
@@ -230,13 +232,14 @@ func InventoryToolDefinitions() []llm.ToolDefinition {
 			Type: "function",
 			Function: llm.ToolFunctionDefinition{
 				Name:        "query_inventory",
-				Description: "查询库存。可按关键字、分类、位置筛选，返回库存批次列表。",
+				Description: "查询库存。可按关键字、分类、位置筛选，返回库存批次列表。默认不返回零库存批次。",
 				Parameters: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"keyword":     map[string]any{"type": "string", "description": "搜索关键字（物品名称）"},
-						"category_id": map[string]any{"type": "string", "description": "按分类筛选"},
-						"location":    map[string]any{"type": "string", "description": "按存放位置筛选"},
+						"keyword":         map[string]any{"type": "string", "description": "搜索关键字（物品名称）"},
+						"category_id":     map[string]any{"type": "string", "description": "按分类筛选"},
+						"location":        map[string]any{"type": "string", "description": "按存放位置筛选"},
+						"show_zero_stock": map[string]any{"type": "boolean", "description": "是否同时显示零库存批次，默认false"},
 					},
 				},
 			},

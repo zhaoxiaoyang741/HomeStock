@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Eye,
   PackagePlus,
@@ -73,6 +73,7 @@ export default function InventoryPage() {
   const [editingLot, setEditingLot] = useState<StockLot | null>(null)
   const [adjustingLot, setAdjustingLot] = useState<StockLot | null>(null)
   const [lotDetailsOpen, setLotDetailsOpen] = useState(false)
+  const [showZeroStock, setShowZeroStock] = useState(false)
 
   const [page, setPage] = useState(1)
   const pageSize = 10
@@ -115,11 +116,13 @@ export default function InventoryPage() {
         materialApi.list({
           category_id: categoryFilter !== '__all__' ? categoryFilter : undefined,
           keyword: debouncedSearch || undefined,
+          show_zero_stock: showZeroStock || undefined,
         }),
         stockLotApi.list({
           category_id: categoryFilter !== '__all__' ? categoryFilter : undefined,
           keyword: debouncedSearch || undefined,
           location: locationFilter !== '__all__' ? locationFilter : undefined,
+          show_zero_stock: showZeroStock || undefined,
         }),
         categoryApi.list(),
       ])
@@ -141,7 +144,7 @@ export default function InventoryPage() {
     } finally {
       setLoading(false)
     }
-  }, [categoryFilter, locationFilter, debouncedSearch, t])
+  }, [categoryFilter, locationFilter, debouncedSearch, showZeroStock, t])
 
   useEffect(() => {
     void loadData()
@@ -222,6 +225,15 @@ export default function InventoryPage() {
               ))}
             </SelectContent>
           </Select>
+          <label className="flex items-center gap-1.5 text-sm text-on-surface-variant cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showZeroStock}
+              onChange={(e) => setShowZeroStock(e.target.checked)}
+              className="w-4 h-4 rounded border-outline-variant accent-primary"
+            />
+            {t('showZeroStock')}
+          </label>
           <Button variant="outline" size="icon" onClick={() => void loadData()} title={t('common:refresh')}>
             <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
           </Button>
@@ -265,17 +277,17 @@ export default function InventoryPage() {
                 return (
                   <TableRow
                     key={material.id}
-                    className="border-outline-variant/10 hover:bg-surface transition-colors"
+                    className={cn('border-outline-variant/10 hover:bg-surface transition-colors', material.total_quantity === 0 && 'opacity-50')}
                   >
                     <TableCell className="py-5">
                       <div className="font-bold text-on-surface">{material.name}</div>
                       <div className="text-xs text-on-surface-variant">{material.spec || t('common:noSpec')}</div>
                     </TableCell>
-                    <TableCell className="py-5 text-on-surface-variant">{material.category?.name ?? '—'}</TableCell>
-                    <TableCell className="py-5 font-medium">{material.total_quantity} {material.default_unit}</TableCell>
+                    <TableCell className="py-5 text-on-surface-variant">{material.category?.name ?? '-'}</TableCell>
+                    <TableCell className="py-5 font-medium"><div className="flex items-center gap-2">{material.total_quantity} {material.default_unit}{material.total_quantity === 0 && <Badge variant="outline" className="text-xs text-on-surface-variant border-outline-variant/50">{t('statusZero')}</Badge>}</div></TableCell>
                     <TableCell className="py-5 text-on-surface-variant">{material.lot_count}</TableCell>
                     <TableCell className="py-5 text-on-surface-variant">
-                      {material.nearest_expire_at ? formatDate(material.nearest_expire_at, i18n.language) : '—'}
+                      {material.nearest_expire_at ? formatDate(material.nearest_expire_at, i18n.language) : '-'}
                     </TableCell>
                     <TableCell className="py-5 text-on-surface-variant">{formatLocations(material.locations)}</TableCell>
                     <TableCell className="py-5">
@@ -371,3 +383,4 @@ export default function InventoryPage() {
     </div>
   )
 }
+

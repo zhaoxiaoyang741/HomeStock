@@ -16,6 +16,7 @@ export const stockLotApi = {
     status?: string
     keyword?: string
     expiring_soon?: boolean
+    show_zero_stock?: boolean
   }): Promise<StockLotListResponse> => {
     const qs = new URLSearchParams()
     if (params?.material_id) qs.set('material_id', params.material_id)
@@ -24,6 +25,7 @@ export const stockLotApi = {
     if (params?.status) qs.set('status', params.status)
     if (params?.keyword) qs.set('keyword', params.keyword)
     if (params?.expiring_soon) qs.set('expiring_soon', 'true')
+    if (params?.show_zero_stock) qs.set('show_zero_stock', 'true')
     const query = qs.toString()
     const res = await api.get<Result<Page<StockLot>>>(`/v1/stock-lots${query ? `?${query}` : ''}`)
     return { lots: res.data.items, total: res.data.total }

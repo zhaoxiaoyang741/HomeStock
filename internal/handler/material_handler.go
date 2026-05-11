@@ -53,6 +53,7 @@ func (h *MaterialHandler) List(c *gin.Context) {
 		TenantID:   httpreq.TenantID(c),
 		CategoryID: strings.TrimSpace(c.Query("category_id")),
 		Keyword:    strings.TrimSpace(c.Query("keyword")),
+		ShowZeroStock: strings.EqualFold(strings.TrimSpace(c.Query("show_zero_stock")), "true"),
 	})
 	if err != nil { handleMaterialRepositoryError(c, err, "list materials failed"); return }
 	httpresp.List(c, summaries, len(summaries), 0, 0)
