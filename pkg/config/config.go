@@ -205,13 +205,23 @@ func cloneConfig(cfg *Config) *Config {
 	}
 
 	cloned := *cfg
+	if cfg.ModelList != nil {
+		cloned.ModelList = make([]ModelConfig, len(cfg.ModelList))
+		copy(cloned.ModelList, cfg.ModelList)
+	}
 	return &cloned
 }
 
 // validateConfig checks that the config is internally consistent.
 func validateConfig(cfg *Config) error {
 	if len(cfg.ModelList) == 0 {
-		return errors.New("model_list must have at least one entry")
+		cfg.ModelList = []ModelConfig{
+			{
+				ModelName: "default",
+				Model:     "gpt-4o",
+				Provider:  "openai",
+			},
+		}
 	}
 	for i, m := range cfg.ModelList {
 		if m.ModelName == "" {
@@ -220,11 +230,8 @@ func validateConfig(cfg *Config) error {
 		if m.Model == "" {
 			return fmt.Errorf("model_list[%d].model is required", i)
 		}
-		switch m.Provider {
-		case "", "openai", "ollama", "deepseek":
-			// valid
-		default:
-			return fmt.Errorf("model_list[%d].provider must be 'openai', 'ollama', or 'deepseek', got %q", i, m.Provider)
+		if m.Provider == "" {
+			cfg.ModelList[i].Provider = "openai"
 		}
 	}
 	return nil
@@ -262,24 +269,6 @@ func applyEnvOverrides(cfg *Config) error {
 
 	if value, ok := os.LookupEnv("HOMESTOCK_DATABASE_DSN"); ok {
 		cfg.Database.DSN = value
-	}
-
-	if value, ok := os.LookupEnv("HOMESTOCK_CHANNELS_FEISHU_APP_ID"); ok {
-		cfg.Channels.Feishu.AppID = value
-		cfg.Channels.Feishu.Enabled = true
-	}
-
-	if value, ok := os.LookupEnv("HOMESTOCK_CHANNELS_FEISHU_APP_SECRET"); ok {
-		cfg.Channels.Feishu.AppSecret = value
-		cfg.Channels.Feishu.Enabled = true
-	}
-
-	if value, ok := os.LookupEnv("HOMESTOCK_CHANNELS_FEISHU_REDIRECT_URI"); ok {
-		cfg.Channels.Feishu.RedirectURI = value
-	}
-
-	if value, ok := os.LookupEnv("HOMESTOCK_CHANNELS_FEISHU_FRONTEND_URL"); ok {
-		cfg.Channels.Feishu.FrontendURL = value
 	}
 
 	if value, ok := os.LookupEnv("HOMESTOCK_AUTH_JWT_SECRET"); ok {

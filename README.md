@@ -178,7 +178,7 @@ make build
 
 ## 配置
 
-配置通过 `config.json` 管理，支持环境变量覆盖。
+配置通过 `config.json` 管理，部分运行时参数支持环境变量覆盖。
 
 | 配置项 | 环境变量 | 说明 |
 |--------|----------|------|
@@ -186,9 +186,13 @@ make build
 | `server.hot_reload` | — | 启用配置热重载 |
 | `database.driver` | `HOMESTOCK_DATABASE_DRIVER` | `sqlite` / `postgres` |
 | `database.dsn` | `HOMESTOCK_DATABASE_DSN` | 数据源名称 |
-| `channels.feishu.app_id` | `HOMESTOCK_CHANNELS_FEISHU_APP_ID` | 飞书 App ID |
-| `channels.feishu.app_secret` | `HOMESTOCK_CHANNELS_FEISHU_APP_SECRET` | 飞书 App Secret |
-| `model_list` | — | LLM 模型列表，每个含 provider / model / api_key |
+| `auth.jwt_secret` | `HOMESTOCK_AUTH_JWT_SECRET` | JWT 签名密钥 |
+| `model_list` | — | LLM 模型列表（通过 `config.json` 配置） |
+| `channels.feishu` | — | 飞书集成（通过 `config.json` 配置） |
+| `log` | — | 日志级别和路径（通过 `config.json` 配置） |
+
+> `config.json` 是配置的唯一真实来源，环境变量仅在运行时覆盖少量参数。
+> 完整配置项参见 `config.example.json`。
 
 ---
 

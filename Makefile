@@ -18,7 +18,7 @@ HOST_OUTPUT := $(BIN_DIR)/$(APP_NAME)$(HOST_EXE_EXT)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help check-go check-pnpm prepare-bin prepare-web-embed-dir web-install web-build web-sync build-web test build build-windows-amd64 build-linux-amd64 build-linux-arm64 build-linux-armv7 build-all clean
+.PHONY: help check-go check-pnpm prepare-bin prepare-web-embed-dir web-install web-build web-sync build-web test build build-fast build-windows-amd64 build-linux-amd64 build-linux-arm64 build-linux-armv7 build-all dev dev-server dev-web docker-build docker-up docker-down clean
 
 help: ## Show available targets. Web targets skip until web/package.json or web/dist exists.
 ifeq ($(OS),Windows_NT)
@@ -98,6 +98,30 @@ build: ## Build the server for the current host platform after web build and tes
 	@$(MAKE) --no-print-directory prepare-bin
 	@"$(GO)" build -o "$(HOST_OUTPUT)" "$(CMD_SERVER)"
 
+build-fast: ## Build the server binary only, skip web build and tests (quick iteration).
+	@$(MAKE) --no-print-directory check-go
+	@$(MAKE) --no-print-directory prepare-bin
+	@"$(GO)" build -o "$(HOST_OUTPUT)" "$(CMD_SERVER)"
+
+dev-server: ## Start the Go backend (hot-reload via config.json).
+	@$(MAKE) --no-print-directory check-go
+	@"$(GO)" run "$(CMD_SERVER)"
+
+dev-web: ## Start the Vite dev server for frontend development.
+	@cd "$(WEB_DIR)" && "$(PNPM)" dev
+
+dev: ## Start both Go backend and Vite dev server in new terminal windows.
+ifeq ($(OS),Windows_NT)
+	@start "homestock-backend" go run "$(CMD_SERVER)"
+	@start "homestock-frontend" /D "$(CURDIR)\$(WEB_DIR)" "$(PNPM)" dev
+else
+	@echo "Starting Go backend..."
+	@$(MAKE) --no-print-directory dev-server &
+	@sleep 2
+	@echo "Starting Vite dev server..."
+	@cd "$(WEB_DIR)" && "$(PNPM)" dev
+endif
+
 build-windows-amd64: ## Cross-compile the server for Windows amd64 (includes frontend).
 	@$(MAKE) --no-print-directory check-go
 	@$(MAKE) --no-print-directory build-web
@@ -146,6 +170,15 @@ build-all: ## Build the server for Windows amd64, Linux amd64, Linux arm64, and 
 	@$(MAKE) --no-print-directory build-linux-amd64
 	@$(MAKE) --no-print-directory build-linux-arm64
 	@$(MAKE) --no-print-directory build-linux-armv7
+
+docker-build: ## Build Docker images for go-backend and nginx.
+	docker compose -f deploy/docker/docker-compose.yml build
+
+docker-up: ## Start all Docker services in the background.
+	docker compose -f deploy/docker/docker-compose.yml up -d
+
+docker-down: ## Stop and remove all Docker services.
+	docker compose -f deploy/docker/docker-compose.yml down
 
 clean: ## Remove build outputs and generated embedded web assets while preserving .gitkeep.
 ifeq ($(OS),Windows_NT)
