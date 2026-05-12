@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { Warehouse } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,7 +31,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface p-4">
+    <div className="min-h-screen flex items-center justify-center bg-surface p-4 w-full">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
@@ -80,8 +80,7 @@ export default function LoginPage() {
               {loading ? t('loggingIn') : t('login')}
             </Button>
             <p className="text-sm text-on-surface-variant">
-              {t('noAccount')}{' '}
-              <Link to="/register" className="text-primary hover:underline">{t('registerLink')}</Link>
+              {t('noAccount')}
             </p>
           </CardFooter>
         </form>

@@ -5,7 +5,6 @@ import { useAuthStore } from '@/store/authStore'
 import AppLayout from '@/components/layout/AppLayout'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import LoginPage from '@/pages/auth/LoginPage'
-import RegisterPage from '@/pages/auth/RegisterPage'
 import InventoryPage from '@/pages/inventory/InventoryPage'
 import ShoppingPage from '@/pages/shopping/ShoppingPage'
 import HistoryPage from '@/pages/history/HistoryPage'
@@ -25,7 +24,6 @@ export default function App() {
       <Routes>
         {/* Public auth pages */}
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
 
         {/* Protected pages */}
         <Route element={<ProtectedRoute />}>

@@ -2,7 +2,12 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
 
+	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 )
@@ -18,6 +23,11 @@ func New(cfg *config.Config, configPath string) (*App, error) {
 
 	// 2. Services
 	uow, materialSvc, inventorySvc, authSvc := initServices(db, cfg.Auth)
+
+	// Auto-create admin user if not exists (first startup)
+	if err := initAdminUser(authSvc); err != nil {
+		return nil, err
+	}
 
 	// Auto-generate JWT secret if none configured
 	if cfg.Auth.JWTSecret == "" {
@@ -72,4 +82,33 @@ func New(cfg *config.Config, configPath string) (*App, error) {
 		channelMgr: channelMgr,
 		orchestrator: orch,
 	}, nil
+}
+
+// initAdminUser creates a default admin user on first startup if none exists.
+// The generated password is logged so the user can retrieve it.
+func initAdminUser(authSvc *service.AuthService) error {
+	ctx := context.Background()
+
+	// Generate a random 24-char hex password
+	key := make([]byte, 12)
+	if _, err := rand.Read(key); err != nil {
+		return fmt.Errorf("generate admin password: %w", err)
+	}
+	password := hex.EncodeToString(key)
+
+	_, err := authSvc.Register(ctx, "admin", password, "Admin")
+	if err != nil {
+		if errors.Is(err, service.ErrUserExists) {
+			return nil // Admin already exists, skip
+		}
+		return fmt.Errorf("create admin user: %w", err)
+	}
+
+	logger.InfoCF("app", "========================================", nil)
+	logger.InfoCF("app", "  Admin user created on first startup!", nil)
+	logger.InfoCF("app", "  Username: admin", nil)
+	logger.InfoCF("app", fmt.Sprintf("  Password: %s", password), nil)
+	logger.InfoCF("app", "  Please change the password after login.", nil)
+	logger.InfoCF("app", "========================================", nil)
+	return nil
 }

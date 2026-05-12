@@ -34,12 +34,11 @@ interface AuthState {
   isAuthenticated: boolean
   isInitialized: boolean
   login: (username: string, password: string) => Promise<void>
-  register: (username: string, password: string, displayName?: string) => Promise<void>
   logout: () => void
   initialize: () => Promise<void>
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuthStore = create<AuthState>((set) => ({
   token: null,
   user: null,
   isAuthenticated: false,
@@ -50,12 +49,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { token, user } = res.data
     saveToken(token)
     set({ token, user, isAuthenticated: true })
-  },
-
-  register: async (username, password, displayName) => {
-    await authApi.register({ username, password, display_name: displayName })
-    // Auto-login after successful registration
-    await get().login(username, password)
   },
 
   logout: () => {
