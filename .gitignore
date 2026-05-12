@@ -28,3 +28,9 @@ CLAUDE.md
 .codex/
 .docs/
 config.json
+
+# Build output
+bin/
+
+# Docker deployment config (user-specific)
+deploy/docker/config.json

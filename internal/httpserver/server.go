@@ -4,15 +4,32 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/api/http/request"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/webui"
 	appconfig "github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 )
+
+// spaFS wraps an fs.FS for SPA single-page routing.
+// If a file does not exist, it serves index.html instead of returning 404.
+type spaFS struct {
+	fs fs.FS
+}
+
+func (s *spaFS) Open(name string) (fs.File, error) {
+	f, err := s.fs.Open(name)
+	if err != nil {
+		return s.fs.Open("index.html")
+	}
+	return f, nil
+}
 
 // AuthMiddleware is a Gin handler that validates JWT tokens and sets the Actor
 // in context. A nil value means no auth is enforced (development fallback).
@@ -56,6 +73,17 @@ func New(cfg appconfig.ServerConfig, public []RegisterRoutesFunc, protected []Re
 			}
 		}
 	}
+
+	// SPA static file serving for embedded frontend.
+	// NoRoute only fires when no API route matches.
+	engine.NoRoute(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/api") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		staticFS := webui.DistFS()
+		http.FileServer(http.FS(&spaFS{fs: staticFS})).ServeHTTP(c.Writer, c.Request)
+	})
 
 	addr := normalizeAddr(cfg.Port)
 

@@ -13,17 +13,26 @@ import (
 	appconfig "github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 )
 
-// Open initializes a SQLite connection from config.
+// Open initializes a database connection from config.
+// Supported drivers: "sqlite" (default), "postgres".
 func Open(cfg appconfig.DatabaseConfig) (*gorm.DB, error) {
 	driver := strings.TrimSpace(cfg.Driver)
 	if driver == "" {
 		driver = "sqlite"
 	}
 
-	if driver != "sqlite" {
+	switch driver {
+	case "sqlite":
+		return openSQLite(cfg)
+	case "postgres":
+		return openPostgres(cfg)
+	default:
 		return nil, fmt.Errorf("unsupported database driver %q", cfg.Driver)
 	}
+}
 
+// openSQLite initializes a SQLite connection.
+func openSQLite(cfg appconfig.DatabaseConfig) (*gorm.DB, error) {
 	dsn := strings.TrimSpace(cfg.DSN)
 	if dsn == "" {
 		return nil, fmt.Errorf("sqlite dsn is required")

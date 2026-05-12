@@ -1,0 +1,26 @@
+{
+  "server": {
+    "port": "8888",
+    "hot_reload": false
+  },
+  "database": {
+    "driver": "postgres",
+    "dsn": "host=postgres user=homestock password=changeme dbname=homestock port=5432 sslmode=disable"
+  },
+  "model_list": [
+    {
+      "model_name": "default",
+      "model": "deepseek/deepseek-chat",
+      "provider": "deepseek",
+      "enabled": true,
+      "api_key": "sk-your-key"
+    }
+  ],
+  "auth": {
+    "token_duration_minutes": 1440
+  },
+  "log": {
+    "level": 0,
+    "path": "/var/log/homestock/info.log"
+  }
+}

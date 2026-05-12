@@ -1,0 +1,56 @@
+# HomeStock Docker Compose
+#
+# Usage:
+#   docker compose --env-file .env up -d
+#
+# Environment variables (set in .env or shell):
+#   POSTGRES_PASSWORD  - Password for homestock database user
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: homestock-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: homestock
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-homestock}
+      POSTGRES_DB: homestock
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U homestock"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  go-backend:
+    build:
+      context: ../../
+      dockerfile: deploy/docker/go/Dockerfile
+    container_name: homestock-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HOMESTOCK_DATABASE_DRIVER: postgres
+      HOMESTOCK_DATABASE_DSN: "host=postgres user=homestock password=${POSTGRES_PASSWORD:-homestock} dbname=homestock port=5432 sslmode=disable"
+      HOMESTOCK_SERVER_PORT: "8888"
+    volumes:
+      - ./config.json:/etc/homestock/config.json:ro
+
+  nginx:
+    build:
+      context: ../../
+      dockerfile: deploy/docker/nginx/Dockerfile
+    container_name: homestock-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - go-backend
+
+volumes:
+  pgdata:

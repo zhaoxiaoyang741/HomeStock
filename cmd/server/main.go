@@ -1,10 +1,12 @@
-﻿package main
+package main
 
 import (
 	"context"
 	"errors"
+	"flag"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -13,10 +15,24 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 )
 
-const defaultConfigPath = "config.json"
-
 func main() {
-	cfg, err := config.Load(defaultConfigPath)
+	configPath := flag.String("config", "", "Path to config.json")
+	flag.Parse()
+
+	cfgPath := *configPath
+	if cfgPath == "" {
+		cfgPath = os.Getenv("HOMESTOCK_CONFIG_PATH")
+	}
+	if cfgPath == "" {
+		cfgPath = "config.json"
+	}
+
+	absConfigPath, err := filepath.Abs(cfgPath)
+	if err != nil {
+		logger.FatalCF("server", "resolve config path failed", map[string]any{"error": err.Error()})
+	}
+
+	cfg, err := config.Load(absConfigPath)
 	if err != nil {
 		logger.FatalCF("server", "load config failed", map[string]any{"error": err.Error()})
 	}
@@ -25,7 +41,7 @@ func main() {
 	logger.SetLevel(logger.LogLevel(cfg.Log.Level))
 	logger.EnableFileLogging(cfg.Log.Path)
 
-	appInstance, err := app.New(cfg, defaultConfigPath)
+	appInstance, err := app.New(cfg, absConfigPath)
 	if err != nil {
 		logger.FatalCF("server", "init app failed", map[string]any{"error": err.Error()})
 	}

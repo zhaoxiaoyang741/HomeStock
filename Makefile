@@ -18,7 +18,7 @@ HOST_OUTPUT := $(BIN_DIR)/$(APP_NAME)$(HOST_EXE_EXT)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help check-go check-pnpm prepare-bin prepare-web-embed-dir web-install web-build web-sync test build build-windows-amd64 build-linux-amd64 build-linux-arm64 build-linux-armv7 build-all clean
+.PHONY: help check-go check-pnpm prepare-bin prepare-web-embed-dir web-install web-build web-sync build-web test build build-windows-amd64 build-linux-amd64 build-linux-arm64 build-linux-armv7 build-all clean
 
 help: ## Show available targets. Web targets skip until web/package.json or web/dist exists.
 ifeq ($(OS),Windows_NT)
@@ -82,20 +82,25 @@ else
 	@cp -R "$(WEB_DIST_DIR)"/. "$(WEB_EMBED_DIR)/"
 endif
 
+# Shared frontend build step used by all build targets
+build-web:
+	@$(MAKE) --no-print-directory web-build
+	@$(MAKE) --no-print-directory web-sync
+
 test: ## Run the Go test suite.
 	@$(MAKE) --no-print-directory check-go
 	@"$(GO)" test ./...
 
-build: ## Build the server for the current host platform after optional web steps and tests.
+build: ## Build the server for the current host platform after web build and tests.
 	@$(MAKE) --no-print-directory check-go
-	@$(MAKE) --no-print-directory web-build
-	@$(MAKE) --no-print-directory web-sync
+	@$(MAKE) --no-print-directory build-web
 	@$(MAKE) --no-print-directory test
 	@$(MAKE) --no-print-directory prepare-bin
 	@"$(GO)" build -o "$(HOST_OUTPUT)" "$(CMD_SERVER)"
 
-build-windows-amd64: ## Cross-compile the server for Windows amd64.
+build-windows-amd64: ## Cross-compile the server for Windows amd64 (includes frontend).
 	@$(MAKE) --no-print-directory check-go
+	@$(MAKE) --no-print-directory build-web
 	@$(MAKE) --no-print-directory prepare-bin
 ifeq ($(OS),Windows_NT)
 	@powershell -NoProfile -Command "$$env:CGO_ENABLED='0'; $$env:GOOS='windows'; $$env:GOARCH='amd64'; & '$(GO)' build -o '$(BIN_DIR)/$(APP_NAME)-windows-amd64.exe' '$(CMD_SERVER)'"
@@ -103,8 +108,9 @@ else
 	@CGO_ENABLED=0 GOOS=windows GOARCH=amd64 "$(GO)" build -o "$(BIN_DIR)/$(APP_NAME)-windows-amd64.exe" "$(CMD_SERVER)"
 endif
 
-build-linux-amd64: ## Cross-compile the server for Linux amd64.
+build-linux-amd64: ## Cross-compile the server for Linux amd64 (includes frontend).
 	@$(MAKE) --no-print-directory check-go
+	@$(MAKE) --no-print-directory build-web
 	@$(MAKE) --no-print-directory prepare-bin
 ifeq ($(OS),Windows_NT)
 	@powershell -NoProfile -Command "$$env:CGO_ENABLED='0'; $$env:GOOS='linux'; $$env:GOARCH='amd64'; & '$(GO)' build -o '$(BIN_DIR)/$(APP_NAME)-linux-amd64' '$(CMD_SERVER)'"
@@ -112,8 +118,9 @@ else
 	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "$(GO)" build -o "$(BIN_DIR)/$(APP_NAME)-linux-amd64" "$(CMD_SERVER)"
 endif
 
-build-linux-arm64: ## Cross-compile the server for Linux arm64.
+build-linux-arm64: ## Cross-compile the server for Linux arm64 (includes frontend).
 	@$(MAKE) --no-print-directory check-go
+	@$(MAKE) --no-print-directory build-web
 	@$(MAKE) --no-print-directory prepare-bin
 ifeq ($(OS),Windows_NT)
 	@powershell -NoProfile -Command "$$env:CGO_ENABLED='0'; $$env:GOOS='linux'; $$env:GOARCH='arm64'; & '$(GO)' build -o '$(BIN_DIR)/$(APP_NAME)-linux-arm64' '$(CMD_SERVER)'"
@@ -121,8 +128,9 @@ else
 	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 "$(GO)" build -o "$(BIN_DIR)/$(APP_NAME)-linux-arm64" "$(CMD_SERVER)"
 endif
 
-build-linux-armv7: ## Cross-compile the server for Linux armv7.
+build-linux-armv7: ## Cross-compile the server for Linux armv7 (includes frontend).
 	@$(MAKE) --no-print-directory check-go
+	@$(MAKE) --no-print-directory build-web
 	@$(MAKE) --no-print-directory prepare-bin
 ifeq ($(OS),Windows_NT)
 	@powershell -NoProfile -Command "$$env:CGO_ENABLED='0'; $$env:GOOS='linux'; $$env:GOARCH='arm'; $$env:GOARM='7'; & '$(GO)' build -o '$(BIN_DIR)/$(APP_NAME)-linux-armv7' '$(CMD_SERVER)'"
@@ -132,8 +140,7 @@ endif
 
 build-all: ## Build the server for Windows amd64, Linux amd64, Linux arm64, and Linux armv7.
 	@$(MAKE) --no-print-directory check-go
-	@$(MAKE) --no-print-directory web-build
-	@$(MAKE) --no-print-directory web-sync
+	@$(MAKE) --no-print-directory build-web
 	@$(MAKE) --no-print-directory test
 	@$(MAKE) --no-print-directory build-windows-amd64
 	@$(MAKE) --no-print-directory build-linux-amd64

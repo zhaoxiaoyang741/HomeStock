@@ -56,8 +56,8 @@ func TestOpenAndMigrateSQLite(t *testing.T) {
 
 func TestOpenRejectsUnsupportedDriver(t *testing.T) {
 	_, err := Open(appconfig.DatabaseConfig{
-		Driver: "postgres",
-		DSN:    "postgres://db",
+		Driver: "mysql",
+		DSN:    "mysql://db",
 	})
 	if err == nil {
 		t.Fatal("expected error for unsupported driver")

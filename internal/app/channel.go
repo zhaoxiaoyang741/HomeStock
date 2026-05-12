@@ -58,6 +58,7 @@ func initChannels(
 		uow.Repos().SystemSettings(),
 	)
 
+	feishuCh = fc
 	feishuH = handler.NewFeishuHandler(oauthSvc, channelMgr, fc, cfg.Feishu.FrontendURL, configPath)
 
 	// Channel update callback: reconfigures Feishu channel when settings change
