@@ -16,14 +16,26 @@
   └── 浏览器（Web UI）           → React       → HTTP
                                     │
                                     ▼
-                            Go REST API
+                            Go REST API (internal/handler → service → repository)
                             ├── 物料 / 批次 CRUD
                             ├── 保质期扫描 & 推送
                             ├── 飞书 Webhook 通知
                             └── 配置热重载
                                     │
                                     ▼
-                          SQLite / PostgreSQL
+                          SQLite / PostgreSQL (pkg/database)
+```
+
+**分层结构：**
+
+```
+cmd/server/internal/     ← 应用编排容器
+    │
+internal/                ← 核心业务（handler / service / repository / model）
+    │
+├── integration/         ← 外部集成（agent / tool / feishu / hotreload）
+    │
+pkg/                     ← 可复用基础设施（llm / channel / bus / server / database）
 ```
 
 ---
@@ -32,12 +44,13 @@
 
 | 模块 | 技术 |
 |------|------|
-| 后端 | Go、Gin、GORM、robfig/cron、zerolog |
+| 后端 | Go、Gin、GORM、zerolog |
 | 前端 | React 19、TypeScript、Vite 8、Tailwind CSS 4 |
-| AI Agent | Go AgentLoop + LLM Provider |
-| 大模型 | OpenAI（GPT-4o 等）/ Ollama（Qwen2.5 等），支持运行时切换 |
-| 渠道 | 飞书（OAuth 授权 / Webhook 推送）、可扩展 Channel 接口 |
-| 数据 | SQLite（嵌入式）/ PostgreSQL |
+| AI Agent | Go AgentLoop + LLM Provider（`internal/integration/agent`） |
+| 大模型 | OpenAI / DeepSeek / Ollama（`pkg/llm`），支持运行时切换 |
+| 渠道 | 飞书（OAuth 授权 / Webhook 推送），可扩展 Channel 接口（`pkg/channel`） |
+| 消息总线 | 内存消息总线（`pkg/bus`），解耦 agent 与 channel |
+| 数据 | SQLite（嵌入式）/ PostgreSQL（`pkg/database`） |
 | 交付 | 交叉编译单二进制、Docker Compose、Nginx 静态托管 |
 
 ---
@@ -122,6 +135,17 @@ pnpm dev
 
 前端默认运行于 `http://localhost:5173`，后端 API 位于 `http://localhost:8888`。
 
+### 开发命令
+
+```bash
+make dev-server          # 启动后端
+make dev-web             # 启动前端 Vite 开发服务器
+make dev                 # 同时启动前后端（Windows 下各开一个终端窗口）
+make test                # 运行所有 Go 测试
+make build               # 完整构建（前端 → 测试 → 编译）
+make build-fast          # 仅编译后端二进制
+```
+
 ### 生产构建
 
 ```bash
@@ -152,26 +176,44 @@ make build
 ## 项目结构
 
 ```
-├── cmd/
-│   ├── server/              # 后端入口
-│   └── homestock/           # CLI 工具
-├── internal/
-│   ├── agent/               # AgentLoop + MessageBus
-│   ├── app/                 # 应用组装/启动/关闭
-│   ├── channel/             # 消息渠道接口 + Manager
-│   │   └── feishu/          # 飞书渠道 + OAuth
-│   ├── database/            # 数据库连接与迁移
-│   ├── handler/             # HTTP 处理器
-│   ├── hotreload/           # 配置热重载 Orchestrator
-│   ├── httpserver/          # Gin 服务器封装
-│   ├── llm/                 # LLM Provider（OpenAI / Ollama）
-│   ├── model/               # GORM 数据模型
-│   ├── repository/          # 数据访问层
-│   ├── service/             # 业务逻辑层
-│   └── tool/                # LLM Tool 注册与分发
-├── pkg/
-│   └── config/              # 配置管理（JSON + 环境变量覆盖）
-└── web/
+cmd/
+├── server/              # HTTP 服务入口
+│   ├── main.go
+│   └── internal/
+│       └── server.go    # 应用编排容器（组装 → 启动 → 关闭）
+└── homestock/           # CLI 工具
+
+internal/                 # 项目私有代码 — 核心业务
+├── handler/              # HTTP handlers（按功能域命名）
+│   ├── inventory_api.go
+│   ├── inventory_stock.go
+│   ├── inventory_categories.go
+│   ├── auth_api.go
+│   ├── audit_api.go
+│   ├── feishu_api.go
+│   └── model_api.go
+├── service/              # 业务逻辑层
+├── repository/           # 数据访问层接口 + GORM 实现
+├── model/                # GORM 数据模型
+├── api/http/             # HTTP 请求上下文、中间件、响应格式
+├── integration/          # 深度耦合的外部集成
+│   ├── agent/            # LLM AgentLoop
+│   ├── tool/             # LLM Tool 注册与分发
+│   ├── channel/feishu/   # 飞书消息通道 + OAuth
+│   └── hotreload/        # 配置热重载
+└── cli/                  # CLI 命令
+
+pkg/                      # 可复用基础设施
+├── llm/                  # LLM Provider（OpenAI / DeepSeek / Ollama）
+├── channel/              # 消息通道接口 + Manager
+├── bus/                  # 消息总线（agent 内部通信）
+├── server/               # HTTP 服务框架（Gin 封装）
+├── database/             # 数据库连接与迁移（SQLite / PostgreSQL）
+├── webui/                # 前端静态资源（Go embed）
+├── config/               # 配置管理
+└── logger/               # 日志
+
+web/                      # React 前端
 ```
 
 ---
