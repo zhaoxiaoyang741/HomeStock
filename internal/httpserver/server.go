@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/api/http/request"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/webui"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/webui"
 	appconfig "github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 )
