@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/zhaoxiaoyang741/HomeStock/internal/app"
+	"github.com/zhaoxiaoyang741/HomeStock/cmd/server/internal"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 )
@@ -41,7 +41,7 @@ func main() {
 	logger.SetLevel(logger.LogLevel(cfg.Log.Level))
 	logger.EnableFileLogging(cfg.Log.Path)
 
-	appInstance, err := app.New(cfg, absConfigPath)
+	srv, err := internal.New(cfg, absConfigPath)
 	if err != nil {
 		logger.FatalCF("server", "init app failed", map[string]any{"error": err.Error()})
 	}
@@ -53,12 +53,12 @@ func main() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := appInstance.Shutdown(shutdownCtx); err != nil {
+		if err := srv.Shutdown(shutdownCtx); err != nil {
 			logger.ErrorCF("server", "shutdown failed", map[string]any{"error": err.Error()})
 		}
 	}()
 
-	if err := appInstance.Start(); err != nil && !errors.Is(err, context.Canceled) {
+	if err := srv.Start(); err != nil && !errors.Is(err, context.Canceled) {
 		logger.FatalCF("server", "server stopped with error", map[string]any{"error": err.Error()})
 	}
 }

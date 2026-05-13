@@ -1,0 +1,486 @@
+package internal
+
+import (
+	"context"
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"net/http"
+	"sync"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+
+	httpreq "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/request"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/agent"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/feishu"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/hotreload"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/tool"
+	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/database"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/server"
+)
+
+// Server is the application container, owning all subsystems.
+type Server struct {
+	configPath string
+	server     *server.Server
+	db         *gorm.DB
+	sqlDB      *sql.DB
+
+	// Agent system
+	bus       *bus.MessageBus
+	agentLoop *agent.AgentLoop
+
+	// Channel system
+	channelMgr *channel.Manager
+
+	// Hot-reload
+	orchestrator *hotreload.Orchestrator
+	hotReloadW   *hotreload.Watcher
+
+	// Outbound router lifecycle
+	outboundCtx    context.Context
+	outboundCancel context.CancelFunc
+	outboundWg     sync.WaitGroup
+}
+
+// New is the composition root. It initializes all subsystems in dependency order.
+func New(cfg *config.Config, configPath string) (*Server, error) {
+	// 1. Database
+	db, sqlDB, err := initDatabase(cfg.Database)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Services
+	uow, materialSvc, inventorySvc, authSvc := initServices(db, cfg.Auth)
+
+	// Auto-create admin user if not exists (first startup)
+	if err := initAdminUser(authSvc); err != nil {
+		return nil, err
+	}
+
+	// Auto-generate JWT secret if none configured
+	if cfg.Auth.JWTSecret == "" {
+		cfg.Auth.JWTSecret = authSvc.GetSecretHex()
+		logger.InfoCF("app", "auto-generated JWT secret (set HOMESTOCK_AUTH_JWT_SECRET to persist across restarts)", map[string]any{
+			"secret_hex": cfg.Auth.JWTSecret,
+		})
+	}
+
+	// 3. Agent system (LLM, message bus, tools)
+	modelCfg, _, msgBus, disp, agentLoop, err := initAgent(cfg.ModelList, materialSvc, inventorySvc, cfg.Server.Port)
+	if err != nil {
+		return nil, err
+	}
+
+	// 4. Channels (Feishu, OAuth)
+	channelMgr, feishuHandler, fc, oauthSvc := initChannels(cfg.Channels, msgBus, uow, configPath)
+
+	// 5. Model handler
+	modelHandler := initModelHandler(configPath, modelCfg, agentLoop)
+
+	// 6. Hot-reload orchestrator
+	orch := initHotReload(configPath, agentLoop, fc, oauthSvc, modelHandler)
+
+	// 7. Wire remaining model handler callbacks (depend on orch)
+	modelHandler.SetPostUpdateFn(func() {
+		if err := orch.Reload(); err != nil {
+			logger.ErrorCF("app", "hot-reload after model update failed", map[string]any{"error": err.Error()})
+		}
+	})
+	modelHandler.SetReloadTimeFn(func() string {
+		return orch.LastReloadTime().Format("2006-01-02 15:04:05")
+	})
+
+	// 8. Seed Feishu token cache from stored OAuth credentials
+	if cfg.Channels.Feishu.Enabled {
+		if err := oauthSvc.SeedTokenCache(context.Background(), fc.GetTokenCache()); err != nil {
+			logger.WarnCF("app", "feishu token cache seed failed", map[string]any{"error": err.Error()})
+		}
+	}
+
+	// 9. HTTP server
+	srv := initServer(cfg.Server, db, uow, authSvc, orch, materialSvc, inventorySvc, feishuHandler, modelHandler)
+
+	// Register tool definitions on dispatcher
+	tool.RegisterInventoryTools(disp, &tool.InventoryTools{
+		InventorySvc: inventorySvc,
+		MaterialSvc:  materialSvc,
+	})
+	tool.RegisterHealthTool(disp, fmt.Sprintf("http://localhost:%s", cfg.Server.Port))
+	defs := tool.InventoryToolDefinitions()
+	defs = append(defs, tool.HealthToolDefinition())
+	disp.SetDefinitions(defs)
+
+	return &Server{
+		configPath:   configPath,
+		server:       srv,
+		db:           db,
+		sqlDB:        sqlDB,
+		bus:          msgBus,
+		agentLoop:    agentLoop,
+		channelMgr:   channelMgr,
+		orchestrator: orch,
+	}, nil
+}
+
+// Start begins all subsystems: agent loop, hot-reload watcher, outbound router,
+// channel manager, and the HTTP server (blocking).
+func (s *Server) Start() error {
+	ctx := context.Background()
+	s.agentLoop.Start(ctx)
+
+	cfg := config.Get()
+	if cfg.Server.HotReload {
+		s.hotReloadW = hotreload.NewWatcher(s.configPath, s.orchestrator.Reload)
+		s.hotReloadW.Start()
+		logger.InfoCF("app", "config hot-reload enabled (polling every 2s)", nil)
+	}
+
+	s.outboundCtx, s.outboundCancel = context.WithCancel(ctx)
+	s.outboundWg.Add(1)
+	go s.routeOutbound()
+
+	if err := s.channelMgr.StartAll(ctx); err != nil {
+		return fmt.Errorf("app: start channels: %w", err)
+	}
+
+	return s.server.Start()
+}
+
+// Shutdown gracefully stops all subsystems in reverse dependency order.
+// Order: HTTP → hot-reload → outbound/drain bus → agent → channels → DB
+func (s *Server) Shutdown(ctx context.Context) error {
+	// 1. Stop HTTP first — no new requests
+	if err := s.server.Shutdown(ctx); err != nil {
+		logger.ErrorCF("app", "http server shutdown error", map[string]any{"error": err.Error()})
+	}
+
+	// 2. Stop hot-reload watcher (if any)
+	if s.hotReloadW != nil {
+		s.hotReloadW.Stop()
+	}
+
+	// 3. Cancel outbound router (drains bus)
+	if s.outboundCancel != nil {
+		s.outboundCancel()
+	}
+	s.outboundWg.Wait()
+	s.bus.Close()
+
+	// 4. Stop agent loop
+	s.agentLoop.Stop()
+
+	// 5. Stop channels
+	if err := s.channelMgr.StopAll(ctx); err != nil {
+		logger.ErrorCF("app", "channel manager stop error", map[string]any{"error": err.Error()})
+	}
+
+	// 6. Close DB
+	return s.sqlDB.Close()
+}
+
+// routeOutbound reads agent outbound messages from the bus and routes them
+// to the appropriate channel via ChannelManager.
+func (s *Server) routeOutbound() {
+	defer s.outboundWg.Done()
+	for {
+		select {
+		case msg, ok := <-s.bus.OutboundChan():
+			if !ok {
+				return
+			}
+			ch, exists := s.channelMgr.GetChannel(msg.Channel)
+			if !exists {
+				logger.WarnCF("app", "no channel for outbound message", map[string]any{
+					"channel": msg.Channel,
+					"chat_id": msg.ChatID,
+				})
+				continue
+			}
+			if err := ch.Send(s.outboundCtx, channel.OutboundMessage{
+				Channel: msg.Channel,
+				ChatID:  msg.ChatID,
+				Text:    msg.Text,
+			}); err != nil {
+				logger.ErrorCF("app", "channel send failed", map[string]any{
+					"channel": msg.Channel,
+					"chat_id": msg.ChatID,
+					"error":   err.Error(),
+				})
+			}
+		case <-s.outboundCtx.Done():
+			return
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Initialization helpers
+// ---------------------------------------------------------------------------
+
+func initDatabase(cfg config.DatabaseConfig) (*gorm.DB, *sql.DB, error) {
+	db, err := database.OpenAndMigrate(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, nil, err
+	}
+	return db, sqlDB, nil
+}
+
+func initServices(db *gorm.DB, authCfg config.AuthConfig) (
+	uow *gormrepo.UnitOfWork,
+	materialSvc *service.MaterialService,
+	inventorySvc *service.InventoryService,
+	authSvc *service.AuthService,
+) {
+	uow = gormrepo.NewUnitOfWork(db)
+	materialSvc = service.NewMaterialService(uow)
+	inventorySvc = service.NewInventoryService(uow)
+	authSvc = service.NewAuthService(db, authCfg.JWTSecret, authCfg.TokenDurationMinutes)
+	return
+}
+
+func initAdminUser(authSvc *service.AuthService) error {
+	ctx := context.Background()
+
+	key := make([]byte, 12)
+	if _, err := rand.Read(key); err != nil {
+		return fmt.Errorf("generate admin password: %w", err)
+	}
+	password := hex.EncodeToString(key)
+
+	_, err := authSvc.Register(ctx, "admin", password, "Admin")
+	if err != nil {
+		if errors.Is(err, service.ErrUserExists) {
+			return nil
+		}
+		return fmt.Errorf("create admin user: %w", err)
+	}
+
+	logger.InfoCF("app", "========================================", nil)
+	logger.InfoCF("app", "  Admin user created on first startup!", nil)
+	logger.InfoCF("app", "  Username: admin", nil)
+	logger.InfoCF("app", fmt.Sprintf("  Password: %s", password), nil)
+	logger.InfoCF("app", "  Please change the password after login.", nil)
+	logger.InfoCF("app", "========================================", nil)
+	return nil
+}
+
+const systemPrompt = `你是 HomeStock（变便）库存管理助手，可以通过飞书帮助用户管理家庭库存。
+你可以帮助用户：
+1. 查询库存情况
+2. 新增物品入库
+3. 消耗出库
+4. 更新批次信息
+
+每次操作前先确认用户意图，操作完成后反馈结果。
+回复简洁友好。`
+
+func initAgent(
+	modelList []config.ModelConfig,
+	materialSvc *service.MaterialService,
+	inventorySvc *service.InventoryService,
+	port string,
+) (
+	modelCfg *config.ModelConfig,
+	llmProvider llm.LLMProvider,
+	msgBus *bus.MessageBus,
+	disp *tool.Dispatcher,
+	agentLoop *agent.AgentLoop,
+	err error,
+) {
+	modelCfg = firstEnabledModel(modelList)
+	if modelCfg == nil {
+		return nil, nil, nil, nil, nil, errors.New("app: no model configured in model_list")
+	}
+
+	llmProvider, err = llm.NewProvider(*modelCfg)
+	if err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("app: create llm provider: %w", err)
+	}
+
+	msgBus = bus.NewMessageBus(0)
+	disp = tool.NewDispatcher()
+
+	agentLoop = agent.NewAgentLoop(msgBus, llmProvider, disp, systemPrompt)
+
+	return
+}
+
+func firstEnabledModel(models []config.ModelConfig) *config.ModelConfig {
+	for i := range models {
+		if models[i].Enabled {
+			return &models[i]
+		}
+	}
+	return nil
+}
+
+func initChannels(
+	cfg config.ChannelsConfig,
+	msgBus *bus.MessageBus,
+	uow *gormrepo.UnitOfWork,
+	configPath string,
+) (
+	channelMgr *channel.Manager,
+	feishuH *handler.FeishuHandler,
+	feishuCh *feishu.FeishuChannel,
+	oauthSvc *feishu.OAuthService,
+) {
+	channelMgr = channel.NewManager()
+
+	// Inbound handler: routes channel messages into the agent MessageBus
+	inboundHandler := func(ctx context.Context, msg channel.InboundMessage) {
+		if err := msgBus.PublishInbound(ctx, bus.InboundMessage{
+			Channel:    msg.Channel,
+			ChatID:     msg.ChatID,
+			SenderID:   msg.SenderID,
+			SenderName: msg.SenderName,
+			Text:       msg.Text,
+			MediaType:  msg.MediaType,
+			FileKey:    msg.FileKey,
+		}); err != nil {
+			logger.ErrorCF("app", "publish inbound failed", map[string]any{
+				"channel": msg.Channel,
+				"error":   err.Error(),
+			})
+		}
+	}
+
+	fc := feishu.NewFeishuChannel(cfg.Feishu.AppID, cfg.Feishu.AppSecret)
+	fc.SetInboundHandler(inboundHandler)
+	if cfg.Feishu.Enabled {
+		channelMgr.AddChannel(fc)
+		logger.InfoCF("app", "Feishu channel enabled", nil)
+	}
+
+	oauthSvc = feishu.NewOAuthService(
+		cfg.Feishu.AppID,
+		cfg.Feishu.AppSecret,
+		cfg.Feishu.RedirectURI,
+		cfg.Feishu.FrontendURL,
+		uow.Repos().SystemSettings(),
+	)
+
+	feishuCh = fc
+	feishuH = handler.NewFeishuHandler(oauthSvc, channelMgr, fc, cfg.Feishu.FrontendURL, configPath)
+
+	// Channel update callback: reconfigures Feishu channel when settings change
+	feishuH.SetChannelUpdateFn(func(feishuCfg config.FeishuChannelConfig) error {
+		ctx := context.Background()
+
+		if err := fc.Reconfigure(ctx, feishuCfg.AppID, feishuCfg.AppSecret, feishuCfg.Enabled); err != nil {
+			return err
+		}
+
+		oauthSvc.UpdateCredentials(feishuCfg.AppID, feishuCfg.AppSecret)
+
+		if err := oauthSvc.ClearAuth(ctx); err != nil {
+			logger.WarnCF("feishu", "failed to clear stale oauth token", map[string]any{"error": err.Error()})
+		}
+
+		if feishuCfg.Enabled {
+			if _, exists := channelMgr.GetChannel("feishu"); !exists {
+				channelMgr.AddChannel(fc)
+			}
+		} else {
+			channelMgr.RemoveChannel("feishu")
+		}
+
+		return nil
+	})
+
+	return
+}
+
+func initModelHandler(configPath string, modelCfg *config.ModelConfig, agentLoop *agent.AgentLoop) *handler.ModelHandler {
+	modelHandler := handler.NewModelHandler(configPath)
+	if modelCfg != nil {
+		modelHandler.SetActiveName(modelCfg.ModelName)
+	}
+	modelHandler.SetSwapFn(func(name string, cfg config.ModelConfig) error {
+		provider, err := llm.NewProvider(cfg)
+		if err != nil {
+			return fmt.Errorf("create provider for model %q: %w", name, err)
+		}
+		agentLoop.SwapProvider(provider)
+		return nil
+	})
+	return modelHandler
+}
+
+func initHotReload(
+	configPath string,
+	agentLoop *agent.AgentLoop,
+	feishuCh *feishu.FeishuChannel,
+	oauthSvc *feishu.OAuthService,
+	modelHnd *handler.ModelHandler,
+) *hotreload.Orchestrator {
+	return hotreload.NewOrchestrator(configPath, agentLoop, feishuCh, oauthSvc, modelHnd)
+}
+
+func initServer(
+	cfg config.ServerConfig,
+	db *gorm.DB,
+	uow *gormrepo.UnitOfWork,
+	authSvc *service.AuthService,
+	orch *hotreload.Orchestrator,
+	materialSvc *service.MaterialService,
+	inventorySvc *service.InventoryService,
+	feishuHandler *handler.FeishuHandler,
+	modelHandler *handler.ModelHandler,
+) *server.Server {
+	authHandler := handler.NewAuthHandler(authSvc)
+	categoryService := service.NewCategoryService(uow)
+	categoryHandler := handler.NewCategoryHandler(categoryService)
+	materialHandler := handler.NewMaterialHandler(materialSvc, inventorySvc)
+	stockLotHandler := handler.NewStockLotHandler(inventorySvc)
+	stockMovementHandler := handler.NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
+	auditService := service.NewAuditService(uow)
+	auditLogHandler := handler.NewAuditLogHandler(auditService)
+
+	authMw := httpreq.JWTAuthMiddleware(authSvc)
+
+	srv := server.New(cfg,
+		[]server.RegisterRoutesFunc{
+			authHandler.RegisterRoutes,
+		},
+		[]server.RegisterRoutesFunc{
+			categoryHandler.RegisterRoutes,
+			materialHandler.RegisterRoutes,
+			stockLotHandler.RegisterRoutes,
+			stockMovementHandler.RegisterRoutes,
+			auditLogHandler.RegisterRoutes,
+			feishuHandler.RegisterRoutes,
+			modelHandler.RegisterRoutes,
+			authHandler.RegisterProtectedRoutes,
+		},
+		server.AuthMiddleware(authMw),
+	)
+
+	// Register ops endpoint for manual config reload
+	srv.Engine().POST("/reload", func(c *gin.Context) {
+		if err := orch.Reload(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "reload failed: " + err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "reload completed"})
+	})
+
+	return srv
+}
