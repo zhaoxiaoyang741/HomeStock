@@ -6,9 +6,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/tool"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 )
 
 // mockProvider implements llm.LLMProvider for testing.
@@ -38,7 +39,7 @@ func (m *mockProvider) Chat(_ context.Context, msgs []llm.Message, _ []llm.ToolD
 func (m *mockProvider) GetDefaultModel() string { return "mock-model" }
 
 func TestAgentLoop_TextResponse(t *testing.T) {
-	bus := NewMessageBus(8)
+	mb := bus.NewMessageBus(8)
 	provider := &mockProvider{}
 	disp := tool.NewDispatcher()
 
@@ -48,13 +49,13 @@ func TestAgentLoop_TextResponse(t *testing.T) {
 		Usage:        llm.UsageInfo{PromptTokens: 10, CompletionTokens: 5},
 	})
 
-	loop := NewAgentLoop(bus, provider, disp, "你是 HomeStock 助手。")
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	loop.Start(ctx)
 
 	// Send an inbound message
-	bus.PublishInbound(ctx, InboundMessage{
+	mb.PublishInbound(ctx, bus.InboundMessage{
 		Channel:    "feishu",
 		ChatID:     "chat_1",
 		SenderID:   "user_1",
@@ -63,7 +64,7 @@ func TestAgentLoop_TextResponse(t *testing.T) {
 	})
 
 	// Read the outbound
-	out := <-bus.OutboundChan()
+	out := <-mb.OutboundChan()
 	if out.ChatID != "chat_1" {
 		t.Fatalf("expected chat_1, got %q", out.ChatID)
 	}
@@ -73,7 +74,7 @@ func TestAgentLoop_TextResponse(t *testing.T) {
 }
 
 func TestAgentLoop_ToolCallThenText(t *testing.T) {
-	bus := NewMessageBus(8)
+	mb := bus.NewMessageBus(8)
 	provider := &mockProvider{}
 	disp := tool.NewDispatcher()
 
@@ -105,12 +106,12 @@ func TestAgentLoop_ToolCallThenText(t *testing.T) {
 		Usage:        llm.UsageInfo{PromptTokens: 30, CompletionTokens: 5},
 	})
 
-	loop := NewAgentLoop(bus, provider, disp, "你是 HomeStock 助手。")
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	loop.Start(ctx)
 
-	bus.PublishInbound(ctx, InboundMessage{
+	mb.PublishInbound(ctx, bus.InboundMessage{
 		Channel:    "feishu",
 		ChatID:     "chat_2",
 		SenderID:   "user_1",
@@ -118,7 +119,7 @@ func TestAgentLoop_ToolCallThenText(t *testing.T) {
 		Text:       "查询牛奶库存",
 	})
 
-	out := <-bus.OutboundChan()
+	out := <-mb.OutboundChan()
 	if out.ChatID != "chat_2" {
 		t.Fatalf("expected chat_2, got %q", out.ChatID)
 	}
@@ -128,7 +129,7 @@ func TestAgentLoop_ToolCallThenText(t *testing.T) {
 }
 
 func TestAgentLoop_HistoryPreserved(t *testing.T) {
-	bus := NewMessageBus(8)
+	mb := bus.NewMessageBus(8)
 	provider := &mockProvider{}
 	disp := tool.NewDispatcher()
 
@@ -142,25 +143,25 @@ func TestAgentLoop_HistoryPreserved(t *testing.T) {
 		FinishReason: "stop",
 	})
 
-	loop := NewAgentLoop(bus, provider, disp, "你是 HomeStock 助手。")
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	loop.Start(ctx)
 
 	// First message
-	bus.PublishInbound(ctx, InboundMessage{
+	mb.PublishInbound(ctx, bus.InboundMessage{
 		Channel: "feishu", ChatID: "chat_3", SenderID: "u1", Text: "消息1",
 	})
-	out1 := <-bus.OutboundChan()
+	out1 := <-mb.OutboundChan()
 	if out1.Text != "回复1" {
 		t.Fatalf("expected '回复1', got %q", out1.Text)
 	}
 
 	// Second message
-	bus.PublishInbound(ctx, InboundMessage{
+	mb.PublishInbound(ctx, bus.InboundMessage{
 		Channel: "feishu", ChatID: "chat_3", SenderID: "u1", Text: "消息2",
 	})
-	out2 := <-bus.OutboundChan()
+	out2 := <-mb.OutboundChan()
 	if out2.Text != "回复2" {
 		t.Fatalf("expected '回复2', got %q", out2.Text)
 	}
@@ -183,7 +184,7 @@ func TestAgentLoop_HistoryPreserved(t *testing.T) {
 }
 
 func TestAgentLoop_MediaNotSupported(t *testing.T) {
-	bus := NewMessageBus(8)
+	mb := bus.NewMessageBus(8)
 	provider := &mockProvider{}
 	disp := tool.NewDispatcher()
 
@@ -192,17 +193,17 @@ func TestAgentLoop_MediaNotSupported(t *testing.T) {
 		FinishReason: "stop",
 	})
 
-	loop := NewAgentLoop(bus, provider, disp, "你是 HomeStock 助手。")
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	loop.Start(ctx)
 
-	bus.PublishInbound(ctx, InboundMessage{
+	mb.PublishInbound(ctx, bus.InboundMessage{
 		Channel: "feishu", ChatID: "chat_4", SenderID: "u1",
 		Text: "语音内容", MediaType: "voice", FileKey: "file_1",
 	})
 
-	out := <-bus.OutboundChan()
+	out := <-mb.OutboundChan()
 	// The LLM gets a "[voice消息暂不支持，请发送文字消息]" message
 	if out.Text != "暂不支持语音消息。" {
 		t.Fatalf("unexpected: %q", out.Text)
@@ -210,7 +211,7 @@ func TestAgentLoop_MediaNotSupported(t *testing.T) {
 }
 
 func TestAgentLoop_ToolExecutionFailure(t *testing.T) {
-	bus := NewMessageBus(8)
+	mb := bus.NewMessageBus(8)
 	provider := &mockProvider{}
 	disp := tool.NewDispatcher()
 
@@ -248,28 +249,28 @@ func TestAgentLoop_ToolExecutionFailure(t *testing.T) {
 		FinishReason: "stop",
 	})
 
-	loop := NewAgentLoop(bus, provider, disp, "你是 HomeStock 助手。")
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	loop.Start(ctx)
 
-	bus.PublishInbound(ctx, InboundMessage{
+	mb.PublishInbound(ctx, bus.InboundMessage{
 		Channel: "feishu", ChatID: "chat_5", SenderID: "u1", Text: "测试",
 	})
 
-	out := <-bus.OutboundChan()
+	out := <-mb.OutboundChan()
 	if out.Text != "抱歉，我没有找到这个工具。" {
 		t.Fatalf("unexpected: %q", out.Text)
 	}
 }
 
 func TestAgentLoop_LLMError(t *testing.T) {
-	bus := NewMessageBus(8)
+	mb := bus.NewMessageBus(8)
 	provider := &mockProvider{}
 	// Don't add any responses — Chat will panic, but the loop catches it
 	disp := tool.NewDispatcher()
 
-	loop := NewAgentLoop(bus, provider, disp, "你是 HomeStock 助手。")
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	loop.Start(ctx)
@@ -283,11 +284,11 @@ func TestAgentLoop_LLMError(t *testing.T) {
 		FinishReason: "stop",
 	})
 
-	bus.PublishInbound(ctx, InboundMessage{
+	mb.PublishInbound(ctx, bus.InboundMessage{
 		Channel: "feishu", ChatID: "chat_6", SenderID: "u1", Text: "hello",
 	})
 
-	out := <-bus.OutboundChan()
+	out := <-mb.OutboundChan()
 	if out.Text != "正常回复" {
 		t.Fatalf("expected normal reply, got %q", out.Text)
 	}
@@ -295,7 +296,7 @@ func TestAgentLoop_LLMError(t *testing.T) {
 
 // TestAgentLoop_MaxDepth tests that the tool call depth limit works.
 func TestAgentLoop_MaxDepth(t *testing.T) {
-	bus := NewMessageBus(8)
+	mb := bus.NewMessageBus(8)
 	provider := &mockProvider{}
 	disp := tool.NewDispatcher()
 
@@ -320,27 +321,27 @@ func TestAgentLoop_MaxDepth(t *testing.T) {
 		})
 	}
 
-	loop := NewAgentLoop(bus, provider, disp, "你是 HomeStock 助手。")
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	loop.Start(ctx)
 
-	bus.PublishInbound(ctx, InboundMessage{
+	mb.PublishInbound(ctx, bus.InboundMessage{
 		Channel: "feishu", ChatID: "chat_7", SenderID: "u1", Text: "do chain",
 	})
 
-	out := <-bus.OutboundChan()
+	out := <-mb.OutboundChan()
 	if out.Text != "抱歉，操作步骤过多，请简化您的请求。" {
 		t.Fatalf("expected depth limit message, got %q", out.Text)
 	}
 }
 
 func TestMessageBus_PublishInboundBlocked(t *testing.T) {
-	bus := NewMessageBus(1) // small buffer — 1 slot
+	mb := bus.NewMessageBus(1) // small buffer — 1 slot
 	ctx := context.Background()
 
 	// Fill the buffer
-	err := bus.PublishInbound(ctx, InboundMessage{Text: "first"})
+	err := mb.PublishInbound(ctx, bus.InboundMessage{Text: "first"})
 	if err != nil {
 		t.Fatalf("first send should succeed: %v", err)
 	}
@@ -350,30 +351,30 @@ func TestMessageBus_PublishInboundBlocked(t *testing.T) {
 	ctx2, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err = bus.PublishInbound(ctx2, InboundMessage{Text: "second"})
+	err = mb.PublishInbound(ctx2, bus.InboundMessage{Text: "second"})
 	if err == nil {
 		t.Fatal("expected error on full buffer with cancelled context")
 	}
 }
 
 func TestMessageBus_Close(t *testing.T) {
-	bus := NewMessageBus(8)
-	bus.Close()
+	mb := bus.NewMessageBus(8)
+	mb.Close()
 
 	ctx := context.Background()
-	err := bus.PublishInbound(ctx, InboundMessage{Text: "test"})
+	err := mb.PublishInbound(ctx, bus.InboundMessage{Text: "test"})
 	if err == nil {
 		t.Fatal("expected error after close")
 	}
 
 	// Also verify outbound returns error after close
-	err = bus.PublishOutbound(ctx, OutboundMessage{Text: "test"})
+	err = mb.PublishOutbound(ctx, bus.OutboundMessage{Text: "test"})
 	if err == nil {
 		t.Fatal("expected error after close on outbound")
 	}
 
 	// Double close should not panic
-	bus.Close()
+	mb.Close()
 }
 
 func TestJSONUnmarshalArgs(t *testing.T) {

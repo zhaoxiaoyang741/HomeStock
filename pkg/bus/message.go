@@ -1,4 +1,4 @@
-package agent
+package bus
 
 // InboundMessage represents a message received from a messaging channel.
 // Aligned with channel.InboundMessage to keep the agent package decoupled.

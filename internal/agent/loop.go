@@ -7,9 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/tool"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 )
 
@@ -20,10 +21,10 @@ const (
 
 // AgentLoop is the core message processing orchestrator.
 //
-// It consumes InboundMessage from the MessageBus, constructs conversations,
-// calls the LLM, executes tool calls, and publishes OutboundMessage responses.
+// It consumes bus.InboundMessage from the bus.MessageBus, constructs conversations,
+// calls the LLM, executes tool calls, and publishes bus.OutboundMessage responses.
 type AgentLoop struct {
-	bus        *MessageBus
+	bus        *bus.MessageBus
 	provider   llm.LLMProvider
 	providerMu sync.RWMutex
 	dispatcher *tool.Dispatcher
@@ -40,7 +41,7 @@ type AgentLoop struct {
 }
 
 // NewAgentLoop creates an AgentLoop.
-func NewAgentLoop(bus *MessageBus, provider llm.LLMProvider, dispatcher *tool.Dispatcher, systemPrompt string) *AgentLoop {
+func NewAgentLoop(bus *bus.MessageBus, provider llm.LLMProvider, dispatcher *tool.Dispatcher, systemPrompt string) *AgentLoop {
 	return &AgentLoop{
 		bus:          bus,
 		provider:     provider,
@@ -90,7 +91,7 @@ func (l *AgentLoop) run() {
 	}
 }
 
-func (l *AgentLoop) processMessage(msg InboundMessage) {
+func (l *AgentLoop) processMessage(msg bus.InboundMessage) {
 	logger.InfoCF("agent", "processing message", map[string]any{
 		"channel": msg.Channel,
 		"chat_id": msg.ChatID,
@@ -217,11 +218,11 @@ func (l *AgentLoop) chatWithTools(messages []llm.Message, tools []llm.ToolDefini
 	return l.chatWithTools(messages, tools, depth+1, actor)
 }
 
-func (l *AgentLoop) reply(msg InboundMessage, text string) {
+func (l *AgentLoop) reply(msg bus.InboundMessage, text string) {
 	if text == "" {
 		return
 	}
-	out := OutboundMessage{
+	out := bus.OutboundMessage{
 		Channel: msg.Channel,
 		ChatID:  msg.ChatID,
 		Text:    text,

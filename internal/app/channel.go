@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/zhaoxiaoyang741/HomeStock/internal/agent"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel/feishu"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
@@ -14,7 +14,7 @@ import (
 
 func initChannels(
 	cfg config.ChannelsConfig,
-	bus *agent.MessageBus,
+	msgBus *bus.MessageBus,
 	uow *gormrepo.UnitOfWork,
 	configPath string,
 ) (
@@ -27,7 +27,7 @@ func initChannels(
 
 	// Inbound handler: routes channel messages into the agent MessageBus
 	inboundHandler := func(ctx context.Context, msg channel.InboundMessage) {
-		if err := bus.PublishInbound(ctx, agent.InboundMessage{
+		if err := msgBus.PublishInbound(ctx, bus.InboundMessage{
 			Channel:    msg.Channel,
 			ChatID:     msg.ChatID,
 			SenderID:   msg.SenderID,

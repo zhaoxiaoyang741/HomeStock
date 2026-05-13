@@ -5,10 +5,11 @@ import (
 	"fmt"
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/agent"
-	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/tool"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 )
 
 const systemPrompt = `你是 HomeStock（变便）库存管理助手，可以通过飞书帮助用户管理家庭库存。
@@ -29,7 +30,7 @@ func initAgent(
 ) (
 	modelCfg *config.ModelConfig,
 	llmProvider llm.LLMProvider,
-	bus *agent.MessageBus,
+	msgBus *bus.MessageBus,
 	disp *tool.Dispatcher,
 	agentLoop *agent.AgentLoop,
 	err error,
@@ -44,10 +45,10 @@ func initAgent(
 		return nil, nil, nil, nil, nil, fmt.Errorf("app: create llm provider: %w", err)
 	}
 
-	bus = agent.NewMessageBus(0)
+	msgBus = bus.NewMessageBus(0)
 	disp = tool.NewDispatcher()
 
-	agentLoop = agent.NewAgentLoop(bus, llmProvider, disp, systemPrompt)
+	agentLoop = agent.NewAgentLoop(msgBus, llmProvider, disp, systemPrompt)
 
 	// Tool registration
 	tool.RegisterInventoryTools(disp, &tool.InventoryTools{

@@ -11,6 +11,7 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/agent"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/hotreload"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/server"
@@ -24,7 +25,7 @@ type App struct {
 	sqlDB      *sql.DB
 
 	// Agent system
-	bus       *agent.MessageBus
+	bus       *bus.MessageBus
 	agentLoop *agent.AgentLoop
 
 	// Channel system
