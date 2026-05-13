@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zhaoxiaoyang741/HomeStock/internal/llm"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/tool"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"

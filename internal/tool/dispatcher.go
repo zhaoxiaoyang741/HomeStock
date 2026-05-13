@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/zhaoxiaoyang741/HomeStock/internal/llm"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 )
 

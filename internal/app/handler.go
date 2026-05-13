@@ -12,7 +12,7 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel/feishu"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/hotreload"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/llm"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/server"
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"

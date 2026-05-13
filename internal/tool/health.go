@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/zhaoxiaoyang741/HomeStock/internal/llm"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 )
 
