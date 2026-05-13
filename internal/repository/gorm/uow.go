@@ -5,7 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/zhaoxiaoyang741/HomeStock/internal/database"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/database"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
 )
 

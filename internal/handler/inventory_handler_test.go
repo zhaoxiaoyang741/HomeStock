@@ -11,7 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/zhaoxiaoyang741/HomeStock/internal/database"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/database"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/httpserver"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
