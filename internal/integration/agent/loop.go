@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/tool"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/tool"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"

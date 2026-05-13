@@ -8,8 +8,8 @@ import (
 	"gorm.io/gorm"
 
 	httpreq "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/request"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/agent"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/channel/feishu"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/agent"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/feishu"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/hotreload"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"

@@ -8,7 +8,7 @@ import (
 
 	httpresp "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/response"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/channel/feishu"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/feishu"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 )

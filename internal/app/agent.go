@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/zhaoxiaoyang741/HomeStock/internal/agent"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/agent"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/tool"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/tool"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"

@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/zhaoxiaoyang741/HomeStock/internal/agent"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/channel/feishu"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/agent"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/feishu"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"

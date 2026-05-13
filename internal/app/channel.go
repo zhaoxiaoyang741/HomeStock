@@ -5,7 +5,7 @@ import (
 
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/channel/feishu"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/feishu"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
