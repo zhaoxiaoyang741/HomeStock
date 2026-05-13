@@ -2,6 +2,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	httpreq "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/request"
 	httpresp "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/response"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/model"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
@@ -58,4 +60,39 @@ func (h *AuditLogHandler) List(c *gin.Context) {
 	if err != nil { httpresp.Error(c, http.StatusInternalServerError, "list audit logs failed"); return }
 
 	httpresp.OK(c, httpresp.Page[model.AuditLog]{Items: result.Logs, Total: int(result.Total), Page: result.Page, PageSize: result.PageSize})
+}
+
+// Audit helper types and functions
+
+type changesPayload struct {
+	Before any `json:"before,omitempty"`
+	After  any `json:"after,omitempty"`
+}
+
+func marshalChanges(before, after any) string {
+	b, err := json.Marshal(changesPayload{Before: before, After: after})
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func actorFromRequest(c *gin.Context) httpreq.Actor { return httpreq.From(c) }
+
+func recordAuditLog(
+	repo repository.AuditLogRepo,
+	actor httpreq.Actor,
+	action, entityType, entityID, entityName, changes string,
+) {
+	_ = repo.Create(&model.AuditLog{
+		TenantID:      actor.TenantID,
+		UserName:      actor.UserName,
+		UserID:        actor.UserID,
+		Channel:       actor.Channel,
+		Action:        action,
+		EntityType:    entityType,
+		EntityID:      entityID,
+		EntityName:    entityName,
+		ChangesDetail: changes,
+	})
 }

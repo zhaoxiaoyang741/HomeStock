@@ -1,4 +1,4 @@
-﻿package handler
+package handler
 
 import (
 	"net/http"
@@ -54,13 +54,13 @@ type adjustStockLotRequest struct {
 
 func (h *StockLotHandler) List(c *gin.Context) {
 	lots, err := h.inventory.ListLots(c.Request.Context(), repository.StockLotFilter{
-		TenantID:     httpreq.TenantID(c),
-		MaterialID:   strings.TrimSpace(c.Query("material_id")),
-		CategoryID:   strings.TrimSpace(c.Query("category_id")),
-		Location:     strings.TrimSpace(c.Query("location")),
-		Status:       strings.TrimSpace(c.Query("status")),
-		Keyword:      strings.TrimSpace(c.Query("keyword")),
-		ExpiringSoon: strings.EqualFold(strings.TrimSpace(c.Query("expiring_soon")), "true"),
+		TenantID:      httpreq.TenantID(c),
+		MaterialID:    strings.TrimSpace(c.Query("material_id")),
+		CategoryID:    strings.TrimSpace(c.Query("category_id")),
+		Location:      strings.TrimSpace(c.Query("location")),
+		Status:        strings.TrimSpace(c.Query("status")),
+		Keyword:       strings.TrimSpace(c.Query("keyword")),
+		ExpiringSoon:  strings.EqualFold(strings.TrimSpace(c.Query("expiring_soon")), "true"),
 		ShowZeroStock: strings.EqualFold(strings.TrimSpace(c.Query("show_zero_stock")), "true"),
 	})
 	if err != nil {
@@ -165,7 +165,6 @@ func (h *StockLotHandler) Adjust(c *gin.Context) {
 	httpresp.OK(c, updated)
 }
 
-// keep helpers for error/status mapping and time parsing
 func handleStockLotRepositoryError(c *gin.Context, err error, fallbackMessage string) {
 	switch {
 	case repository.IsNotFound(err):
@@ -201,4 +200,46 @@ func parseNullableRFC3339(raw string) (*time.Time, error) {
 		return nil, err
 	}
 	return &t, nil
+}
+
+// StockMovementHandler handles stock movement history queries.
+type StockMovementHandler struct {
+	repo repository.StockMovementRepo
+}
+
+func NewStockMovementHandler(repo repository.StockMovementRepo) *StockMovementHandler {
+	return &StockMovementHandler{repo: repo}
+}
+
+func (h *StockMovementHandler) RegisterRoutes(api *gin.RouterGroup) {
+	api.GET("/stock-movements", h.List)
+}
+
+func (h *StockMovementHandler) List(c *gin.Context) {
+	filter := repository.StockMovementFilter{
+		TenantID:     tenantIDFromRequest(c),
+		MaterialID:   strings.TrimSpace(c.Query("material_id")),
+		LotID:        strings.TrimSpace(c.Query("lot_id")),
+		MovementType: strings.TrimSpace(c.Query("movement_type")),
+	}
+	if startStr := strings.TrimSpace(c.Query("start_date")); startStr != "" {
+		if t, err := time.Parse("2006-01-02", startStr); err == nil {
+			filter.StartDate = t
+		} else if t, err := time.Parse(time.RFC3339, startStr); err == nil {
+			filter.StartDate = t
+		}
+	}
+	if endStr := strings.TrimSpace(c.Query("end_date")); endStr != "" {
+		if t, err := time.Parse("2006-01-02", endStr); err == nil {
+			filter.EndDate = t.Add(24*time.Hour - time.Second)
+		} else if t, err := time.Parse(time.RFC3339, endStr); err == nil {
+			filter.EndDate = t
+		}
+	}
+	movements, err := h.repo.List(filter)
+	if err != nil {
+		httpresp.Error(c, http.StatusInternalServerError, "list stock movements failed")
+		return
+	}
+	httpresp.List(c, movements, len(movements), 0, 0)
 }
