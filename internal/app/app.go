@@ -10,7 +10,7 @@ import (
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/agent"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/hotreload"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/hotreload"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
