@@ -11,15 +11,15 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/agent"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/hotreload"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/httpserver"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/server"
 )
 
 // App is the top-level application container, owning all subsystems.
 type App struct {
 	configPath string
-	server     *httpserver.Server
+	server     *server.Server
 	db         *gorm.DB
 	sqlDB      *sql.DB
 

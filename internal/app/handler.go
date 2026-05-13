@@ -12,8 +12,8 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel/feishu"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/hotreload"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/httpserver"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/llm"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/server"
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
@@ -58,7 +58,7 @@ func initServer(
 	inventorySvc *service.InventoryService,
 	feishuHandler *handler.FeishuHandler,
 	modelHandler *handler.ModelHandler,
-) *httpserver.Server {
+) *server.Server {
 	authHandler := handler.NewAuthHandler(authSvc)
 	categoryService := service.NewCategoryService(uow)
 	categoryHandler := handler.NewCategoryHandler(categoryService)
@@ -70,11 +70,11 @@ func initServer(
 
 	authMw := httpreq.JWTAuthMiddleware(authSvc)
 
-	server := httpserver.New(cfg,
-		[]httpserver.RegisterRoutesFunc{
+	srv := server.New(cfg,
+		[]server.RegisterRoutesFunc{
 			authHandler.RegisterRoutes,
 		},
-		[]httpserver.RegisterRoutesFunc{
+		[]server.RegisterRoutesFunc{
 			categoryHandler.RegisterRoutes,
 			materialHandler.RegisterRoutes,
 			stockLotHandler.RegisterRoutes,
@@ -84,11 +84,11 @@ func initServer(
 			modelHandler.RegisterRoutes,
 			authHandler.RegisterProtectedRoutes,
 		},
-		httpserver.AuthMiddleware(authMw),
+		server.AuthMiddleware(authMw),
 	)
 
 	// Register ops endpoint for manual config reload
-	server.Engine().POST("/reload", func(c *gin.Context) {
+	srv.Engine().POST("/reload", func(c *gin.Context) {
 		if err := orch.Reload(); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "reload failed: " + err.Error()})
 			return
@@ -96,5 +96,5 @@ func initServer(
 		c.JSON(http.StatusOK, gin.H{"message": "reload completed"})
 	})
 
-	return server
+	return srv
 }

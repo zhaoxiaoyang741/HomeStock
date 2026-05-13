@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/database"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/httpserver"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/server"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
@@ -187,7 +187,7 @@ func TestCategoryHandler_TenantIsolationAndDuplicateNames(t *testing.T) {
 	}
 }
 
-func newTestServer(t *testing.T) (*httpserver.Server, func()) {
+func newTestServer(t *testing.T) (*server.Server, func()) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -206,19 +206,19 @@ func newTestServer(t *testing.T) (*httpserver.Server, func()) {
 	materialHandler := NewMaterialHandler(materialSvc, inventorySvc)
 	stockLotHandler := NewStockLotHandler(inventorySvc)
 	stockMovementHandler := NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
-	server := httpserver.New(appconfig.ServerConfig{}, nil, []httpserver.RegisterRoutesFunc{
+	srv := server.New(appconfig.ServerConfig{}, nil, []server.RegisterRoutesFunc{
 		categoryHandler.RegisterRoutes,
 		materialHandler.RegisterRoutes,
 		stockLotHandler.RegisterRoutes,
 		stockMovementHandler.RegisterRoutes,
 	}, nil)
 
-	return server, func() { _ = sqlDB.Close() }
+	return srv, func() { _ = sqlDB.Close() }
 }
 
 func performJSONRequest(
 	t *testing.T,
-	server *httpserver.Server,
+	server *server.Server,
 	method string,
 	path string,
 	tenantID string,
