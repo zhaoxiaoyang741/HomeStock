@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/agent"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/channel"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/hotreload"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"

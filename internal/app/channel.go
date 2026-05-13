@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"github.com/zhaoxiaoyang741/HomeStock/internal/channel"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel/feishu"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"

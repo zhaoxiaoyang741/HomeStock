@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	httpresp "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/response"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/channel"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/channel/feishu"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
