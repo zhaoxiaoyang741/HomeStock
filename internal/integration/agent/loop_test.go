@@ -133,7 +133,6 @@ func TestAgentLoop_HistoryPreserved(t *testing.T) {
 	provider := &mockProvider{}
 	disp := tool.NewDispatcher()
 
-	// Both responses are text
 	provider.addResponse(&llm.LLMResponse{
 		Content:      "回复1",
 		FinishReason: "stop",
@@ -267,7 +266,6 @@ func TestAgentLoop_ToolExecutionFailure(t *testing.T) {
 func TestAgentLoop_LLMError(t *testing.T) {
 	mb := bus.NewMessageBus(8)
 	provider := &mockProvider{}
-	// Don't add any responses — Chat will panic, but the loop catches it
 	disp := tool.NewDispatcher()
 
 	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
@@ -275,10 +273,6 @@ func TestAgentLoop_LLMError(t *testing.T) {
 	defer cancel()
 	loop.Start(ctx)
 
-	// We need the provider to return an error, but mockProvider panics on no response.
-	// Instead, let's test with a provider that has a response that works fine.
-	// The error path in chatWithTools handles provider.Chat returning error,
-	// but our mock doesn't return errors — it panics. So let's test with a closed context.
 	provider.addResponse(&llm.LLMResponse{
 		Content:      "正常回复",
 		FinishReason: "stop",

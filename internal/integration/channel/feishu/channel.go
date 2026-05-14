@@ -212,7 +212,11 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	if isGroup {
 		isMentioned := c.isBotMentioned(message)
 		if !isMentioned {
-			return nil
+			// Phase 1a: keyword-based wake-up — process inventory-related
+			// messages even without @mention to reduce input friction.
+			if !hasInventoryKeyword(content) {
+				return nil
+			}
 		}
 		if len(message.Mentions) > 0 {
 			content = stripMentionPlaceholders(content, message.Mentions)

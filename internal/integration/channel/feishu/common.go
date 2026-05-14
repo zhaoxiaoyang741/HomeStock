@@ -122,6 +122,23 @@ func extractFeishuSenderID(sender *larkim.EventSender) string {
 	return ""
 }
 
+// inventoryKeywords are Chinese keywords that suggest a message is about
+// inventory operations. Used for group chat wake-up without @mention.
+var inventoryKeywords = []string{
+	"买了", "入库", "出库", "消耗", "库存", "查",
+	"过期", "还有", "少了", "加了", "减了", "新增",
+}
+
+// hasInventoryKeyword checks if text contains any inventory-related keyword.
+func hasInventoryKeyword(text string) bool {
+	for _, kw := range inventoryKeywords {
+		if strings.Contains(text, kw) {
+			return true
+		}
+	}
+	return false
+}
+
 // stripMentionPlaceholders removes @_user_N placeholders from text content.
 func stripMentionPlaceholders(content string, mentions []*larkim.MentionEvent) string {
 	if len(mentions) == 0 {
