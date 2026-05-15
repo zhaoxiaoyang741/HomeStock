@@ -49,7 +49,7 @@ func TestAgentLoop_TextResponse(t *testing.T) {
 		Usage:        llm.UsageInfo{PromptTokens: 10, CompletionTokens: 5},
 	})
 
-	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。", nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	loop.Start(ctx)
@@ -106,7 +106,7 @@ func TestAgentLoop_ToolCallThenText(t *testing.T) {
 		Usage:        llm.UsageInfo{PromptTokens: 30, CompletionTokens: 5},
 	})
 
-	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。", nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	loop.Start(ctx)
@@ -142,7 +142,7 @@ func TestAgentLoop_HistoryPreserved(t *testing.T) {
 		FinishReason: "stop",
 	})
 
-	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。", nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	loop.Start(ctx)
@@ -192,7 +192,7 @@ func TestAgentLoop_MediaNotSupported(t *testing.T) {
 		FinishReason: "stop",
 	})
 
-	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。", nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	loop.Start(ctx)
@@ -248,7 +248,7 @@ func TestAgentLoop_ToolExecutionFailure(t *testing.T) {
 		FinishReason: "stop",
 	})
 
-	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。", nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	loop.Start(ctx)
@@ -268,7 +268,7 @@ func TestAgentLoop_LLMError(t *testing.T) {
 	provider := &mockProvider{}
 	disp := tool.NewDispatcher()
 
-	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。", nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	loop.Start(ctx)
@@ -315,7 +315,7 @@ func TestAgentLoop_MaxDepth(t *testing.T) {
 		})
 	}
 
-	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。")
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。", nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	loop.Start(ctx)
@@ -410,5 +410,173 @@ func TestToolDispatcher_Definitions(t *testing.T) {
 	}
 	if got[0].Function.Name != "test_tool" {
 		t.Fatalf("expected 'test_tool', got %q", got[0].Function.Name)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Dialog state machine integration tests
+// ---------------------------------------------------------------------------
+
+func TestDialogState_IdleToExecute(t *testing.T) {
+	mb := bus.NewMessageBus(8)
+	provider := &mockProvider{}
+	disp := tool.NewDispatcher()
+
+	disp.Register("inbound_stock", func(_ context.Context, _ service.Actor, args map[string]any) (string, error) {
+		return "入库成功", nil
+	})
+
+	// NLU response: execute with valid quantity
+	provider.addResponse(&llm.LLMResponse{
+		Content:      `{"intent":"execute","actions":[{"type":"inbound","items":[{"name":"牛奶","quantity":2,"unit":"瓶"}]}],"raw_text":"买2瓶牛奶"}`,
+		FinishReason: "stop",
+	})
+
+	nluEngine := NewNluEngine(nil)
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。", nluEngine)
+	loop.nameResolver = func(_ context.Context, name, tenantID string) ([]ResolveResult, error) {
+		return []ResolveResult{
+			{MaterialID: "mat_milk", Name: "牛奶", Score: 1.0, IsExactMatch: true},
+		}, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	loop.Start(ctx)
+
+	mb.PublishInbound(ctx, bus.InboundMessage{
+		Channel: "feishu", ChatID: "chat_ds_1", SenderID: "u1", SenderName: "Test", Text: "买2瓶牛奶",
+	})
+
+	out := <-mb.OutboundChan()
+	if out.Text != "入库成功" {
+		t.Fatalf("expected tool result, got %q", out.Text)
+	}
+}
+
+func TestDialogState_IdleToClarifyToExecute(t *testing.T) {
+	mb := bus.NewMessageBus(8)
+	provider := &mockProvider{}
+	disp := tool.NewDispatcher()
+
+	disp.Register("inbound_stock", func(_ context.Context, _ service.Actor, args map[string]any) (string, error) {
+		return "入库成功", nil
+	})
+
+	// Response 0: NLU with missing quantity
+	provider.addResponse(&llm.LLMResponse{
+		Content:      `{"intent":"execute","actions":[{"type":"inbound","items":[{"name":"牛奶","quantity":null,"unit":""}]}],"raw_text":"买牛奶"}`,
+		FinishReason: "stop",
+	})
+	// Response 1: NLU with filled quantity
+	provider.addResponse(&llm.LLMResponse{
+		Content:      `{"intent":"clarify","actions":[{"type":"clarify","items":[{"name":"","quantity":3,"unit":"瓶"}]}],"raw_text":"3瓶"}`,
+		FinishReason: "stop",
+	})
+
+	nluEngine := NewNluEngine(nil)
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。", nluEngine)
+	loop.nameResolver = func(_ context.Context, name, tenantID string) ([]ResolveResult, error) {
+		return []ResolveResult{
+			{MaterialID: "mat_milk", Name: "牛奶", Score: 1.0, IsExactMatch: true},
+		}, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	loop.Start(ctx)
+
+	// First message: missing quantity
+	mb.PublishInbound(ctx, bus.InboundMessage{
+		Channel: "feishu", ChatID: "chat_ds_2", SenderID: "u1", SenderName: "Test", Text: "买牛奶",
+	})
+
+	out1 := <-mb.OutboundChan()
+	expectedQ := "「牛奶」的数量是多少？"
+	if out1.Text != expectedQ {
+		t.Fatalf("expected %q, got %q", expectedQ, out1.Text)
+	}
+
+	// Second message: provide quantity
+	mb.PublishInbound(ctx, bus.InboundMessage{
+		Channel: "feishu", ChatID: "chat_ds_2", SenderID: "u1", SenderName: "Test", Text: "3瓶",
+	})
+
+	out2 := <-mb.OutboundChan()
+	if out2.Text != "入库成功" {
+		t.Fatalf("expected tool result, got %q", out2.Text)
+	}
+}
+
+func TestDialogState_IdleToConfirmToExecute(t *testing.T) {
+	mb := bus.NewMessageBus(8)
+	provider := &mockProvider{}
+	disp := tool.NewDispatcher()
+
+	disp.Register("inbound_stock", func(_ context.Context, _ service.Actor, args map[string]any) (string, error) {
+		return "入库成功", nil
+	})
+
+	// NLU response: execute with valid quantity, no name resolution yet
+	provider.addResponse(&llm.LLMResponse{
+		Content:      `{"intent":"execute","actions":[{"type":"inbound","items":[{"name":"牛奶","quantity":2,"unit":"瓶"}]}],"raw_text":"买牛奶"}`,
+		FinishReason: "stop",
+	})
+
+	nluEngine := NewNluEngine(nil)
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。", nluEngine)
+	// Ambiguous name resolver: 2 candidates with same score
+	loop.nameResolver = func(_ context.Context, name, tenantID string) ([]ResolveResult, error) {
+		return []ResolveResult{
+			{MaterialID: "mat_milk_a", Name: "牛奶（伊利）", Score: 0.8},
+			{MaterialID: "mat_milk_b", Name: "牛奶（蒙牛）", Score: 0.8},
+		}, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	loop.Start(ctx)
+
+	// First message: triggers name ambiguity
+	mb.PublishInbound(ctx, bus.InboundMessage{
+		Channel: "feishu", ChatID: "chat_ds_3", SenderID: "u1", SenderName: "Test", Text: "买牛奶",
+	})
+
+	out1 := <-mb.OutboundChan()
+	if out1.Text != "找到多个「牛奶」：\n  A. 牛奶（伊利） — 单位: \n  B. 牛奶（蒙牛） — 单位: \n请回复选项字母（如 A、B、C），或输入更精确的名称。" {
+		t.Fatalf("expected confirm message, got %q", out1.Text)
+	}
+
+	// Second message: user picks A
+	mb.PublishInbound(ctx, bus.InboundMessage{
+		Channel: "feishu", ChatID: "chat_ds_3", SenderID: "u1", SenderName: "Test", Text: "A",
+	})
+
+	out2 := <-mb.OutboundChan()
+	if out2.Text != "入库成功" {
+		t.Fatalf("expected tool result, got %q", out2.Text)
+	}
+}
+
+func TestDialogState_UndoBypass(t *testing.T) {
+	mb := bus.NewMessageBus(8)
+	provider := &mockProvider{}
+	disp := tool.NewDispatcher()
+
+	nluEngine := NewNluEngine(nil)
+	loop := NewAgentLoop(mb, provider, disp, "你是 HomeStock 助手。", nluEngine)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	loop.Start(ctx)
+
+	// Undo with no operations — should bypass NLU/state and reply directly
+	mb.PublishInbound(ctx, bus.InboundMessage{
+		Channel: "feishu", ChatID: "chat_undo", SenderID: "u1", SenderName: "Test", Text: "撤回",
+	})
+
+	out := <-mb.OutboundChan()
+	if out.Text != "没有可撤回的操作。" {
+		t.Fatalf("expected 'no undo' message, got %q", out.Text)
 	}
 }

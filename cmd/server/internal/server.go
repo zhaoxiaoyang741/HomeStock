@@ -328,7 +328,8 @@ func initAgent(
 	msgBus = bus.NewMessageBus(0)
 	disp = tool.NewDispatcher()
 
-	agentLoop = agent.NewAgentLoop(msgBus, llmProvider, disp, systemPrompt)
+	nluEngine := agent.NewNluEngine(materialSvc)
+	agentLoop = agent.NewAgentLoop(msgBus, llmProvider, disp, systemPrompt, nluEngine)
 
 	return
 }
@@ -479,6 +480,7 @@ func initServer(
 			auditLogHandler.RegisterRoutes,
 			feishuHandler.RegisterRoutes,
 			modelHandler.RegisterRoutes,
+			handler.NewBatchHandler(inventorySvc, materialSvc).RegisterRoutes,
 			authHandler.RegisterProtectedRoutes,
 		},
 		server.AuthMiddleware(authMw),

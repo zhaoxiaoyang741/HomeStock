@@ -206,11 +206,13 @@ func newTestServer(t *testing.T) (*server.Server, func()) {
 	materialHandler := NewMaterialHandler(materialSvc, inventorySvc)
 	stockLotHandler := NewStockLotHandler(inventorySvc)
 	stockMovementHandler := NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
+	batchHandler := NewBatchHandler(inventorySvc, materialSvc)
 	srv := server.New(appconfig.ServerConfig{}, nil, []server.RegisterRoutesFunc{
 		categoryHandler.RegisterRoutes,
 		materialHandler.RegisterRoutes,
 		stockLotHandler.RegisterRoutes,
 		stockMovementHandler.RegisterRoutes,
+		batchHandler.RegisterRoutes,
 	}, nil)
 
 	return srv, func() { _ = sqlDB.Close() }
