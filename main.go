@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "", "Path to config.json")
+	configPath := flag.String("config", "", "配置文件的路径")
 	flag.Parse()
 
 	cfgPath := *configPath
@@ -29,21 +29,20 @@ func main() {
 
 	absConfigPath, err := filepath.Abs(cfgPath)
 	if err != nil {
-		logger.FatalCF("server", "resolve config path failed", map[string]any{"error": err.Error()})
+		logger.FatalCF("app", "解析配置文件路径失败", map[string]any{"error": err.Error()})
 	}
 
 	cfg, err := config.Load(absConfigPath)
 	if err != nil {
-		logger.FatalCF("server", "load config failed", map[string]any{"error": err.Error()})
+		logger.FatalCF("app", "加载配置失败", map[string]any{"error": err.Error()})
 	}
 
-	// init log config
 	logger.SetLevel(logger.LogLevel(cfg.Log.Level))
 	logger.EnableFileLogging(cfg.Log.Path)
 
 	srv, err := app.New(cfg, absConfigPath)
 	if err != nil {
-		logger.FatalCF("server", "init app failed", map[string]any{"error": err.Error()})
+		logger.FatalCF("app", "初始化应用失败", map[string]any{"error": err.Error()})
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -54,11 +53,11 @@ func main() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			logger.ErrorCF("server", "shutdown failed", map[string]any{"error": err.Error()})
+			logger.ErrorCF("app", "关闭服务失败", map[string]any{"error": err.Error()})
 		}
 	}()
 
 	if err := srv.Start(); err != nil && !errors.Is(err, context.Canceled) {
-		logger.FatalCF("server", "server stopped with error", map[string]any{"error": err.Error()})
+		logger.FatalCF("app", "服务异常停止", map[string]any{"error": err.Error()})
 	}
 }
