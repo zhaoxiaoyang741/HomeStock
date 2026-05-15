@@ -19,6 +19,7 @@ import (
 const (
 	defaultMaxHistory = 10
 	maxToolCallDepth  = 10
+	nluTimeout        = 30 * time.Second
 )
 
 // OperationRecord records a successfully executed tool call for undo support.
@@ -411,8 +412,11 @@ func (l *AgentLoop) nluCall(ctx context.Context, text, recentContext string, act
 		{Role: "user", Content: text},
 	}
 
+	nluCtx, cancel := context.WithTimeout(ctx, nluTimeout)
+	defer cancel()
+
 	l.providerMu.RLock()
-	resp, err := l.provider.Chat(ctx, messages, nil, "")
+	resp, err := l.provider.Chat(nluCtx, messages, nil, "")
 	l.providerMu.RUnlock()
 	if err != nil {
 		logger.ErrorCF("agent", "NLU call failed", map[string]any{"error": err.Error()})
