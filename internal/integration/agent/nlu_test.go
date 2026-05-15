@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
 )
 
 func TestSanitizeInput_Normal(t *testing.T) {
@@ -99,13 +101,13 @@ func TestPrefetchCatalog_CallsMaterialSvc(t *testing.T) {
 }
 
 func TestComputeMatchScore_Exact(t *testing.T) {
-	if score := computeMatchScore("牛奶", "牛奶", ""); score != 1.0 {
+	if score := repository.ComputeMatchScore("牛奶", "牛奶", ""); score != 1.0 {
 		t.Fatalf("expected 1.0, got %f", score)
 	}
 }
 
 func TestComputeMatchScore_Contains(t *testing.T) {
-	score := computeMatchScore("牛奶", "蒙牛纯牛奶", "250ml")
+	score := repository.ComputeMatchScore("牛奶", "蒙牛纯牛奶", "250ml")
 	if score < 0.82 || score > 0.84 {
 		t.Fatalf("expected ~0.827, got %f", score)
 	}
@@ -113,7 +115,7 @@ func TestComputeMatchScore_Contains(t *testing.T) {
 
 func TestComputeMatchScore_NameIsSubstr(t *testing.T) {
 	// User typed more specifically than the DB name
-	score := computeMatchScore("蒙牛纯牛奶", "牛奶", "")
+	score := repository.ComputeMatchScore("蒙牛纯牛奶", "牛奶", "")
 	if score != 0.85 {
 		t.Fatalf("expected 0.85, got %f", score)
 	}
@@ -121,14 +123,14 @@ func TestComputeMatchScore_NameIsSubstr(t *testing.T) {
 
 func TestComputeMatchScore_CharOverlap(t *testing.T) {
 	// Chinese character overlap (fuzzy)
-	score := computeMatchScore("牛拿", "牛奶", "")
+	score := repository.ComputeMatchScore("牛拿", "牛奶", "")
 	if score <= 0 {
 		t.Fatalf("expected positive fuzzy score, got %f", score)
 	}
 }
 
 func TestComputeMatchScore_NoMatch(t *testing.T) {
-	if score := computeMatchScore("xyz", "牛奶", ""); score != 0.0 {
+	if score := repository.ComputeMatchScore("xyz", "牛奶", ""); score != 0.0 {
 		t.Fatalf("expected 0.0, got %f", score)
 	}
 }

@@ -171,7 +171,7 @@ func (h *BatchHandler) ResolveMaterial(c *gin.Context) {
 
 	results := make([]resolveMaterialResult, 0, len(summaries))
 	for _, s := range summaries {
-		score := batchMatchScore(req.Name, s.Name, s.Spec)
+		score := repository.ComputeMatchScore(req.Name, s.Name, s.Spec)
 		results = append(results, resolveMaterialResult{
 			MaterialID:   s.ID,
 			Name:         s.Name,
@@ -185,20 +185,3 @@ func (h *BatchHandler) ResolveMaterial(c *gin.Context) {
 	httpresp.OK(c, results)
 }
 
-// batchMatchScore returns a similarity score [0, 1] for material name matching.
-func batchMatchScore(input, dbName, dbSpec string) float64 {
-	in := strings.TrimSpace(strings.ToLower(input))
-	name := strings.TrimSpace(strings.ToLower(dbName))
-	spec := strings.TrimSpace(strings.ToLower(dbSpec))
-	full := name
-	if spec != "" {
-		full = name + " " + spec
-	}
-	if in == full || in == name {
-		return 1.0
-	}
-	if strings.Contains(full, in) || strings.Contains(in, full) {
-		return 0.8
-	}
-	return 0.0
-}
