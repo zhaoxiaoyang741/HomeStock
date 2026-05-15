@@ -51,6 +51,11 @@ type DatabaseConfig struct {
 
 type ChannelsConfig struct {
 	Feishu FeishuChannelConfig `json:"feishu"`
+	Wechat WechatChannelConfig `json:"wechat"`
+}
+
+type WechatChannelConfig struct {
+	Enabled bool `json:"enabled"`
 }
 
 type FeishuChannelConfig struct {
@@ -137,6 +142,9 @@ func defaultConfig() *Config {
 				AppSecret:   "",
 				RedirectURI: "http://localhost:8888/api/v1/feishu/callback",
 				FrontendURL: "http://localhost:5173",
+			},
+			Wechat: WechatChannelConfig{
+				Enabled: false,
 			},
 		},
 		ModelList: []ModelConfig{

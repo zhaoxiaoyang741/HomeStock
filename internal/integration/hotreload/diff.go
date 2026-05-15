@@ -8,6 +8,7 @@ import (
 type ConfigDiff struct {
 	ModelChanged    bool
 	FeishuChanged   bool
+	WechatChanged   bool
 	LogChanged      bool
 	PortChanged     bool
 	DatabaseChanged bool
@@ -34,6 +35,9 @@ func CalcDiff(old, new *config.Config) ConfigDiff {
 	diff.FeishuChanged = old.Channels.Feishu.Enabled != new.Channels.Feishu.Enabled ||
 		old.Channels.Feishu.AppID != new.Channels.Feishu.AppID ||
 		old.Channels.Feishu.AppSecret != new.Channels.Feishu.AppSecret
+
+	// WeChat channel
+	diff.WechatChanged = old.Channels.Wechat.Enabled != new.Channels.Wechat.Enabled
 
 	// Logger
 	diff.LogChanged = old.Log.Level != new.Log.Level ||

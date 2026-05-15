@@ -7,7 +7,9 @@ import (
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/agent"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/feishu"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/wechat"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
@@ -24,6 +26,8 @@ type Orchestrator struct {
 	feishuCh   *feishu.FeishuChannel
 	oauthSvc   *feishu.OAuthService
 	modelHnd   *handler.ModelHandler
+	wechatCh   *wechat.WechatChannel
+	channelMgr *channel.Manager
 
 	lastCfg        atomic.Value // stores *config.Config — the last successfully applied config
 	reloading      atomic.Bool  // prevents concurrent reloads
@@ -37,6 +41,8 @@ func NewOrchestrator(
 	feishuCh *feishu.FeishuChannel,
 	oauthSvc *feishu.OAuthService,
 	modelHnd *handler.ModelHandler,
+	wechatCh *wechat.WechatChannel,
+	channelMgr *channel.Manager,
 ) *Orchestrator {
 	o := &Orchestrator{
 		configPath: configPath,
@@ -44,6 +50,8 @@ func NewOrchestrator(
 		feishuCh:   feishuCh,
 		oauthSvc:   oauthSvc,
 		modelHnd:   modelHnd,
+		wechatCh:   wechatCh,
+		channelMgr: channelMgr,
 	}
 	o.lastCfg.Store(config.Get())
 	o.lastReloadTime.Store(time.Now())
@@ -138,7 +146,35 @@ func (o *Orchestrator) Reload() error {
 		})
 	}
 
-	// 4. Warn about changes that require a full restart
+	// 4. WeChat channel hot-reconfigure
+	if diff.WechatChanged {
+		ctx := context.Background()
+		wcCfg := newCfg.Channels.Wechat
+
+		if wcCfg.Enabled {
+			if _, exists := o.channelMgr.GetChannel("wechat"); !exists {
+				o.channelMgr.AddChannel(o.wechatCh)
+			}
+			if o.wechatCh != nil && !o.wechatCh.IsRunning() {
+				if err := o.wechatCh.Start(ctx); err != nil {
+					logger.ErrorCF("hotreload", "wechat start failed", map[string]any{"error": err.Error()})
+				}
+			}
+		} else {
+			if o.wechatCh != nil && o.wechatCh.IsRunning() {
+				if err := o.wechatCh.Stop(ctx); err != nil {
+					logger.ErrorCF("hotreload", "wechat stop failed", map[string]any{"error": err.Error()})
+				}
+			}
+			o.channelMgr.RemoveChannel("wechat")
+		}
+
+		logger.InfoCF("hotreload", "wechat channel reconfigured", map[string]any{
+			"enabled": wcCfg.Enabled,
+		})
+	}
+
+	// 5. Warn about changes that require a full restart
 	if diff.PortChanged {
 		logger.WarnCF("hotreload", "server.port changed, restart required to take effect", map[string]any{
 			"old": oldCfg.Server.Port,

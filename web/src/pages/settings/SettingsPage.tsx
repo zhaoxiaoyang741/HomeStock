@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Clock, Radio, Brain, MessageSquare } from 'lucide-react'
+import { Clock, Radio, Brain } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getModelList } from '@/api/models'
 import { FeishuBotSection } from './FeishuBotSection'
+import { WechatBotSection } from './WechatBotSection'
 import { ModelConfigSection } from './ModelConfigSection'
-import { Card, CardContent } from '@/components/ui/card'
 
 type SectionId = 'channels' | 'models'
 
@@ -80,18 +80,7 @@ export default function SettingsPage() {
             {activeSection === 'channels' ? (
               <div className="space-y-6">
                 <FeishuBotSection />
-
-                <Card className="rounded-xl border-outline-variant/20 bg-surface-container-lowest shadow-sm">
-                  <CardContent className="p-6">
-                    <div className="flex items-center gap-3">
-                      <MessageSquare className="h-5 w-5 text-on-surface-variant/40" />
-                      <div>
-                        <p className="text-sm font-medium text-on-surface">{t('navWechat')}</p>
-                        <p className="mt-0.5 text-xs text-on-surface-variant">{t('channelPlaceholder')}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <WechatBotSection />
               </div>
             ) : (
               <ModelConfigSection />

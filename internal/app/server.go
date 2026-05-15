@@ -17,6 +17,7 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/agent"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/feishu"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/wechat"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/hotreload"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/tool"
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
@@ -43,6 +44,7 @@ type Server struct {
 
 	// Channel system
 	channelMgr *channel.Manager
+	wechatCh   *wechat.WechatChannel
 
 	// Hot-reload
 	orchestrator *hotreload.Orchestrator
@@ -84,14 +86,14 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 		return nil, err
 	}
 
-	// 4. Channels (Feishu, OAuth)
-	channelMgr, feishuHandler, fc, oauthSvc := initChannels(cfg.Channels, msgBus, uow, configPath)
+	// 4. Channels (Feishu, WeChat, OAuth)
+	channelMgr, feishuHandler, fc, oauthSvc, wechatCh := initChannels(cfg.Channels, msgBus, uow, configPath)
 
 	// 5. Model handler
 	modelHandler := initModelHandler(configPath, modelCfg, agentLoop)
 
 	// 6. Hot-reload orchestrator
-	orch := initHotReload(configPath, agentLoop, fc, oauthSvc, modelHandler)
+	orch := initHotReload(configPath, agentLoop, fc, oauthSvc, modelHandler, wechatCh, channelMgr)
 
 	// 7. Wire remaining model handler callbacks (depend on orch)
 	modelHandler.SetPostUpdateFn(func() {
@@ -111,7 +113,8 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 	}
 
 	// 9. HTTP server
-	srv := initServer(cfg.Server, db, uow, authSvc, orch, materialSvc, inventorySvc, feishuHandler, modelHandler)
+	wechatHandler := handler.NewWechatHandler(channelMgr, wechatCh)
+	srv := initServer(cfg.Server, db, uow, authSvc, orch, materialSvc, inventorySvc, feishuHandler, modelHandler, wechatHandler)
 
 	// Register tool definitions on dispatcher
 	tool.RegisterInventoryTools(disp, &tool.InventoryTools{
@@ -131,6 +134,7 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 		bus:          msgBus,
 		agentLoop:    agentLoop,
 		channelMgr:   channelMgr,
+		wechatCh:     wechatCh,
 		orchestrator: orch,
 	}, nil
 }
@@ -353,6 +357,7 @@ func initChannels(
 	feishuH *handler.FeishuHandler,
 	feishuCh *feishu.FeishuChannel,
 	oauthSvc *feishu.OAuthService,
+	wechatCh *wechat.WechatChannel,
 ) {
 	channelMgr = channel.NewManager()
 
@@ -417,6 +422,15 @@ func initChannels(
 		return nil
 	})
 
+	// WeChat channel
+	wc := wechat.NewWechatChannel()
+	wc.SetInboundHandler(inboundHandler)
+	if cfg.Wechat.Enabled {
+		channelMgr.AddChannel(wc)
+		logger.InfoCF("app", "WeChat channel enabled", nil)
+	}
+	wechatCh = wc
+
 	return
 }
 
@@ -442,8 +456,10 @@ func initHotReload(
 	feishuCh *feishu.FeishuChannel,
 	oauthSvc *feishu.OAuthService,
 	modelHnd *handler.ModelHandler,
+	wechatCh *wechat.WechatChannel,
+	channelMgr *channel.Manager,
 ) *hotreload.Orchestrator {
-	return hotreload.NewOrchestrator(configPath, agentLoop, feishuCh, oauthSvc, modelHnd)
+	return hotreload.NewOrchestrator(configPath, agentLoop, feishuCh, oauthSvc, modelHnd, wechatCh, channelMgr)
 }
 
 func initServer(
@@ -456,6 +472,7 @@ func initServer(
 	inventorySvc *service.InventoryService,
 	feishuHandler *handler.FeishuHandler,
 	modelHandler *handler.ModelHandler,
+	wechatHandler *handler.WechatHandler,
 ) *server.Server {
 	authHandler := handler.NewAuthHandler(authSvc)
 	categoryService := service.NewCategoryService(uow)
@@ -481,6 +498,7 @@ func initServer(
 			feishuHandler.RegisterRoutes,
 			modelHandler.RegisterRoutes,
 			handler.NewBatchHandler(inventorySvc, materialSvc).RegisterRoutes,
+				wechatHandler.RegisterRoutes,
 			authHandler.RegisterProtectedRoutes,
 		},
 		server.AuthMiddleware(authMw),
