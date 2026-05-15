@@ -209,6 +209,7 @@ func TestUserMemoryStore_SaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveMemory failed: %v", err)
 	}
+	engine.FlushMemory()
 	content := engine.LoadMemory("chat_test")
 	if !strings.Contains(content, "苹果") {
 		t.Fatalf("expected memory content, got %q", content)
@@ -225,6 +226,7 @@ func TestUserMemoryStore_AppendMemory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first AppendMemory failed: %v", err)
 	}
+	engine.FlushMemory()
 	content := engine.LoadMemory("chat_append")
 	if !strings.Contains(content, "苹果") {
 		t.Fatalf("expected apple memory, got %q", content)
@@ -235,6 +237,7 @@ func TestUserMemoryStore_AppendMemory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second AppendMemory failed: %v", err)
 	}
+	engine.FlushMemory()
 	content = engine.LoadMemory("chat_append")
 	if !strings.Contains(content, "牛奶") {
 		t.Fatalf("expected milk memory too, got %q", content)

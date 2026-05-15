@@ -9,10 +9,13 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 )
+
+const memoryWriteBufSize = 64
 
 // NluResult is the structured output from NLU extraction.
 type NluResult struct {
@@ -43,21 +46,56 @@ type ExtractedItem struct {
 // NluEngine builds NLU prompts and parses structured responses.
 // It does NOT make LLM calls — that is AgentLoop's responsibility.
 type NluEngine struct {
-	materialSvc   *service.MaterialService
+	materialSvc    *service.MaterialService
 	memoryBasePath string // directory for per-user memory files
+	writeCh        chan func()
+	writeWg        sync.WaitGroup
+	writerOnce     sync.Once
 }
 
 // NewNluEngine creates an NluEngine.
 func NewNluEngine(materialSvc *service.MaterialService) *NluEngine {
 	return &NluEngine{
-		materialSvc:   materialSvc,
+		materialSvc:    materialSvc,
 		memoryBasePath: "data/memories",
+		writeCh:        make(chan func(), memoryWriteBufSize),
 	}
 }
 
 // SetMemoryBasePath changes the directory used for user memory files.
 func (e *NluEngine) SetMemoryBasePath(path string) {
 	e.memoryBasePath = path
+}
+
+// startMemoryWriter launches a background goroutine to process async memory file writes.
+func (e *NluEngine) startMemoryWriter() {
+	e.writeWg.Add(1)
+	go func() {
+		defer e.writeWg.Done()
+		for fn := range e.writeCh {
+			fn()
+		}
+	}()
+}
+
+// enqueueWrite sends a write operation to the background writer. Thread-safe.
+func (e *NluEngine) enqueueWrite(fn func()) {
+	e.writerOnce.Do(e.startMemoryWriter)
+	select {
+	case e.writeCh <- fn:
+	default:
+		// Channel full — execute synchronously to avoid backpressure buildup
+		fn()
+	}
+}
+
+// FlushMemory waits for all pending memory writes to complete.
+func (e *NluEngine) FlushMemory() {
+	done := make(chan struct{})
+	e.enqueueWrite(func() {
+		close(done)
+	})
+	<-done
 }
 
 // memoryFilePath returns the full path to a user's memory file.
@@ -82,15 +120,19 @@ func (e *NluEngine) LoadMemory(chatID string) string {
 	return strings.TrimSpace(string(data))
 }
 
-// SaveMemory writes content to a user's memory file, creating directories as needed.
+// SaveMemory writes content to a user's memory file asynchronously.
 func (e *NluEngine) SaveMemory(chatID, content string) error {
-	if err := os.MkdirAll(e.memoryBasePath, 0755); err != nil {
-		return fmt.Errorf("create memory dir: %w", err)
-	}
-	return os.WriteFile(e.memoryFilePath(chatID), []byte(content), 0644)
+	fp := e.memoryFilePath(chatID)
+	e.enqueueWrite(func() {
+		if err := os.MkdirAll(e.memoryBasePath, 0755); err != nil {
+			return
+		}
+		os.WriteFile(fp, []byte(content), 0644)
+	})
+	return nil
 }
 
-// AppendMemory appends a new line of learning to a user's memory file.
+// AppendMemory asynchronously appends a learning line to a user's memory file.
 // Creates the file with a header if it doesn't exist yet.
 // Deduplicates by item name prefix: if the same item already has a memory line,
 // the old line is replaced (useful when user preferences change over time).
@@ -98,42 +140,49 @@ func (e *NluEngine) AppendMemory(chatID, learning string) error {
 	if learning == "" {
 		return nil
 	}
+
 	fp := e.memoryFilePath(chatID)
-	if err := os.MkdirAll(e.memoryBasePath, 0755); err != nil {
-		return fmt.Errorf("create memory dir: %w", err)
-	}
+	basePath := e.memoryBasePath
 
-	existing, err := os.ReadFile(fp)
-	if err != nil {
-		// File doesn't exist — create with header
-		content := "# 用户记忆\n\n## 物料偏好\n- " + learning + "\n"
-		return os.WriteFile(fp, []byte(content), 0644)
-	}
-
-	// Basic dedup: extract the item key (text before "->"), then replace any existing
-	// line about the same item, or append if no match.
-	itemKey := extractMemoryItemKey(learning)
-
-	lines := strings.Split(string(existing), "\n")
-	found := false
-	newLines := make([]string, 0, len(lines)+1)
-	for _, line := range lines {
-		if itemKey != "" && strings.HasPrefix(strings.TrimSpace(line), "- "+itemKey+" ->") {
-			// Replace old entry
-			newLines = append(newLines, "- "+learning)
-			found = true
-		} else {
-			newLines = append(newLines, line)
+	e.enqueueWrite(func() {
+		// Ensure directory exists (inside writer goroutine)
+		if err := os.MkdirAll(basePath, 0755); err != nil {
+			return
 		}
-	}
-	if !found {
-		newLines = append(newLines, "- "+learning)
-	}
-	content := strings.Join(newLines, "\n")
-	if !strings.HasSuffix(content, "\n") {
-		content += "\n"
-	}
-	return os.WriteFile(fp, []byte(content), 0644)
+
+		existing, err := os.ReadFile(fp)
+		if err != nil {
+			// File doesn't exist — create with header
+			content := "# 用户记忆\n\n## 物料偏好\n- " + learning + "\n"
+			os.WriteFile(fp, []byte(content), 0644)
+			return
+		}
+
+		// Basic dedup: extract the item key (text before "->"), then replace any existing
+		// line about the same item, or append if no match.
+		itemKey := extractMemoryItemKey(learning)
+
+		lines := strings.Split(string(existing), "\n")
+		found := false
+		newLines := make([]string, 0, len(lines)+1)
+		for _, line := range lines {
+			if itemKey != "" && strings.HasPrefix(strings.TrimSpace(line), "- "+itemKey+" ->") {
+				newLines = append(newLines, "- "+learning)
+				found = true
+			} else {
+				newLines = append(newLines, line)
+			}
+		}
+		if !found {
+			newLines = append(newLines, "- "+learning)
+		}
+		content := strings.Join(newLines, "\n")
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
+		os.WriteFile(fp, []byte(content), 0644)
+	})
+	return nil
 }
 
 // extractMemoryItemKey extracts the item name from a learning string like "苹果 -> 存放位置: 冰箱".
