@@ -523,11 +523,23 @@ func (l *AgentLoop) resolveItemNames(actions []ExtractedAction, actor service.Ac
 }
 
 // parseConfirmChoice interprets A/B/C/D/E letter responses for disambiguation.
+// Supports "A", "A.", "A、", "选项A", "选择A", and lowercase variants.
 func parseConfirmChoice(text string, candidates []ResolveResult) *ResolveResult {
 	t := strings.TrimSpace(text)
 	if t == "" {
 		return nil
 	}
+
+	// Strip trailing punctuation: "A." -> "A", "A、" -> "A"
+	t = strings.TrimRight(t, "。.、，,！!？?；; ")
+
+	// Handle "选项A" / "选择A" format
+	if strings.HasPrefix(t, "选项") || strings.HasPrefix(t, "选择") {
+		t = strings.TrimPrefix(t, "选项")
+		t = strings.TrimPrefix(t, "选择")
+		t = strings.TrimSpace(t)
+	}
+
 	labels := map[string]int{"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}
 	if idx, ok := labels[strings.ToUpper(t)]; ok && idx < len(candidates) {
 		return &candidates[idx]
@@ -965,23 +977,15 @@ func (l *AgentLoop) undoMapping(toolName string, args map[string]any) []undoScen
 	}
 }
 
-// resolveMaterialID looks up a material ID by name. Returns empty if not found.
+// resolveMaterialID looks up a material ID by name via name resolver.
 func (l *AgentLoop) resolveMaterialID(name string) string {
-	ctx := context.Background()
-	actor := service.Actor{
-		Channel:  "system",
-		UserName: "system",
-		UserID:   "system",
-		TenantID: "default",
+	if l.nameResolver != nil {
+		candidates, err := l.nameResolver(context.Background(), name, "default")
+		if err == nil && len(candidates) > 0 {
+			return candidates[0].MaterialID
+		}
 	}
-	result, err := l.dispatcher.Execute(ctx, actor, "query_inventory", map[string]any{
-		"keyword":         name,
-		"show_zero_stock": true,
-	})
-	if err != nil || result == "" {
-		return ""
-	}
-	return extractMaterialID(result)
+	return ""
 }
 
 // ---------------------------------------------------------------------------
@@ -1035,24 +1039,6 @@ func (l *AgentLoop) trimHistory(chatID string) {
 	if cut > 0 && cut < len(hist) {
 		l.histories[chatID] = hist[cut:]
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Material ID extraction
-// ---------------------------------------------------------------------------
-
-// extractMaterialID parses a material_id from tool result text.
-func extractMaterialID(result string) string {
-	prefix := "material_id:"
-	if idx := strings.Index(result, prefix); idx >= 0 {
-		rest := result[idx+len(prefix):]
-		rest = strings.TrimSpace(rest)
-		if end := strings.IndexAny(rest, " \n\t,"); end >= 0 {
-			return rest[:end]
-		}
-		return rest
-	}
-	return ""
 }
 
 // ---------------------------------------------------------------------------

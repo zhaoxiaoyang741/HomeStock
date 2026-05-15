@@ -580,3 +580,72 @@ func TestDialogState_UndoBypass(t *testing.T) {
 		t.Fatalf("expected 'no undo' message, got %q", out.Text)
 	}
 }
+
+func TestParseConfirmChoice_ExactLetter(t *testing.T) {
+	candidates := []ResolveResult{
+		{Name: "蒙牛纯牛奶", Score: 0.9},
+		{Name: "伊利纯牛奶", Score: 0.7},
+	}
+	if r := parseConfirmChoice("A", candidates); r == nil || r.Name != "蒙牛纯牛奶" {
+		t.Fatalf("expected '蒙牛纯牛奶', got %v", r)
+	}
+	if r := parseConfirmChoice("B", candidates); r == nil || r.Name != "伊利纯牛奶" {
+		t.Fatalf("expected '伊利纯牛奶', got %v", r)
+	}
+}
+
+func TestParseConfirmChoice_Lowercase(t *testing.T) {
+	candidates := []ResolveResult{
+		{Name: "蒙牛纯牛奶", Score: 0.9},
+		{Name: "伊利纯牛奶", Score: 0.7},
+	}
+	if r := parseConfirmChoice("a", candidates); r == nil || r.Name != "蒙牛纯牛奶" {
+		t.Fatalf("expected '蒙牛纯牛奶', got %v", r)
+	}
+}
+
+func TestParseConfirmChoice_Punctuation(t *testing.T) {
+	candidates := []ResolveResult{
+		{Name: "蒙牛纯牛奶", Score: 0.9},
+		{Name: "伊利纯牛奶", Score: 0.7},
+	}
+	// Trailing period, Chinese period, Chinese comma
+	for _, input := range []string{"A.", "A。", "A、", "A，"} {
+		r := parseConfirmChoice(input, candidates)
+		if r == nil || r.Name != "蒙牛纯牛奶" {
+			t.Fatalf("input %q: expected '蒙牛纯牛奶', got %v", input, r)
+		}
+	}
+}
+
+func TestParseConfirmChoice_OptionPrefix(t *testing.T) {
+	candidates := []ResolveResult{
+		{Name: "蒙牛纯牛奶", Score: 0.9},
+		{Name: "伊利纯牛奶", Score: 0.7},
+	}
+	for _, input := range []string{"选项A", "选择A", "选项 A"} {
+		r := parseConfirmChoice(input, candidates)
+		if r == nil || r.Name != "蒙牛纯牛奶" {
+			t.Fatalf("input %q: expected '蒙牛纯牛奶', got %v", input, r)
+		}
+	}
+}
+
+func TestParseConfirmChoice_OutOfRange(t *testing.T) {
+	candidates := []ResolveResult{
+		{Name: "蒙牛纯牛奶", Score: 0.9},
+	}
+	// Only 1 candidate (A), B is out of range
+	if r := parseConfirmChoice("B", candidates); r != nil {
+		t.Fatalf("expected nil for out-of-range, got %v", r)
+	}
+}
+
+func TestParseConfirmChoice_Empty(t *testing.T) {
+	candidates := []ResolveResult{
+		{Name: "蒙牛纯牛奶", Score: 0.9},
+	}
+	if r := parseConfirmChoice("", candidates); r != nil {
+		t.Fatalf("expected nil for empty input, got %v", r)
+	}
+}
