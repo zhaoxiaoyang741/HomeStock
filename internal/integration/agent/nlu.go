@@ -92,6 +92,8 @@ func (e *NluEngine) SaveMemory(chatID, content string) error {
 
 // AppendMemory appends a new line of learning to a user's memory file.
 // Creates the file with a header if it doesn't exist yet.
+// Deduplicates by item name prefix: if the same item already has a memory line,
+// the old line is replaced (useful when user preferences change over time).
 func (e *NluEngine) AppendMemory(chatID, learning string) error {
 	if learning == "" {
 		return nil
@@ -108,13 +110,38 @@ func (e *NluEngine) AppendMemory(chatID, learning string) error {
 		return os.WriteFile(fp, []byte(content), 0644)
 	}
 
-	// Append to existing file
-	content := string(existing)
+	// Basic dedup: extract the item key (text before "->"), then replace any existing
+	// line about the same item, or append if no match.
+	itemKey := extractMemoryItemKey(learning)
+
+	lines := strings.Split(string(existing), "\n")
+	found := false
+	newLines := make([]string, 0, len(lines)+1)
+	for _, line := range lines {
+		if itemKey != "" && strings.HasPrefix(strings.TrimSpace(line), "- "+itemKey+" ->") {
+			// Replace old entry
+			newLines = append(newLines, "- "+learning)
+			found = true
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+	if !found {
+		newLines = append(newLines, "- "+learning)
+	}
+	content := strings.Join(newLines, "\n")
 	if !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	content += "- " + learning + "\n"
 	return os.WriteFile(fp, []byte(content), 0644)
+}
+
+// extractMemoryItemKey extracts the item name from a learning string like "苹果 -> 存放位置: 冰箱".
+func extractMemoryItemKey(learning string) string {
+	if idx := strings.Index(learning, " ->"); idx >= 0 {
+		return learning[:idx]
+	}
+	return ""
 }
 
 var injectionPattern = regexp.MustCompile(`(?i)(ignore\s+(above|all|previous)|forget\s+(all|everything|previous)|你是\w+|you\s+are\s+\w+|忽略[以所].*指令|无视.*指令)`)

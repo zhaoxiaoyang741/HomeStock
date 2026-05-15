@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"container/list"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -44,8 +45,10 @@ type AgentLoop struct {
 	historyMu  sync.RWMutex
 	maxHistory int
 
-	sessions   map[string]*DialogSession
-	sessionMu  sync.Mutex
+	sessions     map[string]*DialogSession
+	sessionList  *list.List // LRU order: front = most recently used
+	maxSessions  int        // 0 or negative = no limit
+	sessionMu    sync.Mutex
 	nameResolver NameResolver
 
 	// Undo support (Phase 1a)
@@ -68,6 +71,8 @@ func NewAgentLoop(bus *bus.MessageBus, provider llm.LLMProvider, dispatcher *too
 		histories:    make(map[string][]llm.Message),
 		maxHistory:   defaultMaxHistory,
 		sessions:     make(map[string]*DialogSession),
+		sessionList:  list.New(),
+		maxSessions:  1000,
 		opHistory:    make(map[string][]OperationRecord),
 	}
 	if nlu != nil {
@@ -601,7 +606,7 @@ func (l *AgentLoop) executeActions(actions []ExtractedAction, msg bus.InboundMes
 				}
 				result, err := l.dispatcher.Execute(ctx, actor, "inbound_stock", args)
 				if err != nil {
-					replies = append(replies, fmt.Sprintf("「%s」入库失败: %v", item.Name, err))
+					replies = append(replies, fmt.Sprintf("「%s」入库失败：%v", item.Name, err))
 				} else {
 					replies = append(replies, result)
 					l.recordOperation(msg.ChatID, OperationRecord{
@@ -621,7 +626,7 @@ func (l *AgentLoop) executeActions(actions []ExtractedAction, msg bus.InboundMes
 				}
 				result, err := l.dispatcher.Execute(ctx, actor, "consume_material", args)
 				if err != nil {
-					replies = append(replies, fmt.Sprintf("「%s」出库失败: %v", item.Name, err))
+					replies = append(replies, fmt.Sprintf("「%s」出库失败：%v", item.Name, err))
 				} else {
 					replies = append(replies, result)
 					l.recordOperation(msg.ChatID, OperationRecord{
@@ -1068,5 +1073,5 @@ func classifyToolAction(toolName string) string {
 
 func isUndoCommand(text string) bool {
 	t := strings.TrimSpace(text)
-	return t == "撤回" || t == "撤销" || strings.HasPrefix(t, "撤回上") || strings.HasPrefix(t, "撤销上")
+	return t == "撤回" || t == "撤销" || strings.HasPrefix(t, "撤回") || strings.HasPrefix(t, "撤销")
 }

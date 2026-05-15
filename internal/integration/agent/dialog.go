@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"container/list"
 	"fmt"
 	"strings"
 	"sync"
@@ -30,6 +31,7 @@ type DialogSession struct {
 	LastActivityAt time.Time
 	mu             sync.Mutex
 	CreatedAt      time.Time
+	listElement    *list.Element // position in LRU list (internal, used by AgentLoop)
 }
 
 // PendingOperation holds partial action data while waiting for user clarification.
@@ -74,6 +76,10 @@ func (l *AgentLoop) getOrCreateSession(chatID string) *DialogSession {
 
 	session, exists := l.sessions[chatID]
 	if !exists {
+		// Evict LRU session if at capacity
+		if l.maxSessions > 0 && len(l.sessions) >= l.maxSessions {
+			l.evictLRUSession()
+		}
 		session = &DialogSession{
 			ChatID:         chatID,
 			State:          StateIdle,
@@ -81,7 +87,15 @@ func (l *AgentLoop) getOrCreateSession(chatID string) *DialogSession {
 			CreatedAt:      time.Now(),
 		}
 		l.sessions[chatID] = session
+		if l.sessionList != nil {
+			session.listElement = l.sessionList.PushFront(chatID)
+		}
 		return session
+	}
+
+	// Move to front of LRU list
+	if l.sessionList != nil && session.listElement != nil {
+		l.sessionList.MoveToFront(session.listElement)
 	}
 
 	// Timeout check — if expired, reset to Idle
@@ -93,10 +107,39 @@ func (l *AgentLoop) getOrCreateSession(chatID string) *DialogSession {
 	return session
 }
 
+// evictLRUSession removes the least recently used session and its associated data.
+// Must be called with sessionMu held.
+func (l *AgentLoop) evictLRUSession() {
+	if l.sessionList == nil {
+		return
+	}
+	elem := l.sessionList.Back()
+	if elem == nil {
+		return
+	}
+	chatID := elem.Value.(string)
+	l.sessionList.Remove(elem)
+	delete(l.sessions, chatID)
+
+	l.historyMu.Lock()
+	delete(l.histories, chatID)
+	l.historyMu.Unlock()
+
+	l.opHistoryMu.Lock()
+	delete(l.opHistory, chatID)
+	l.opHistoryMu.Unlock()
+}
+
 // cleanupSession removes all data for a chat session.
 // Lock order: sessionMu -> historyMu -> opHistoryMu
 func (l *AgentLoop) cleanupSession(chatID string) {
 	l.sessionMu.Lock()
+
+	if s, ok := l.sessions[chatID]; ok {
+		if l.sessionList != nil && s.listElement != nil {
+			l.sessionList.Remove(s.listElement)
+		}
+	}
 	delete(l.sessions, chatID)
 	l.sessionMu.Unlock()
 
