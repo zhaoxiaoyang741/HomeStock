@@ -105,8 +105,25 @@ func TestComputeMatchScore_Exact(t *testing.T) {
 }
 
 func TestComputeMatchScore_Contains(t *testing.T) {
-	if score := computeMatchScore("牛奶", "蒙牛纯牛奶", "250ml"); score != 0.8 {
-		t.Fatalf("expected 0.8, got %f", score)
+	score := computeMatchScore("牛奶", "蒙牛纯牛奶", "250ml")
+	if score < 0.82 || score > 0.84 {
+		t.Fatalf("expected ~0.827, got %f", score)
+	}
+}
+
+func TestComputeMatchScore_NameIsSubstr(t *testing.T) {
+	// User typed more specifically than the DB name
+	score := computeMatchScore("蒙牛纯牛奶", "牛奶", "")
+	if score != 0.85 {
+		t.Fatalf("expected 0.85, got %f", score)
+	}
+}
+
+func TestComputeMatchScore_CharOverlap(t *testing.T) {
+	// Chinese character overlap (fuzzy)
+	score := computeMatchScore("牛拿", "牛奶", "")
+	if score <= 0 {
+		t.Fatalf("expected positive fuzzy score, got %f", score)
 	}
 }
 
@@ -152,5 +169,97 @@ func TestBuildConfirmMessage(t *testing.T) {
 	msg := buildConfirmMessage("牛奶", candidates)
 	if !strings.Contains(msg, "A.") || !strings.Contains(msg, "B.") {
 		t.Fatalf("expected A/B options in message, got: %s", msg)
+	}
+}
+
+func TestNeedsConfirmation_LargeLead(t *testing.T) {
+	candidates := []ResolveResult{
+		{Name: "蒙牛纯牛奶", Score: 1.0},
+		{Name: "其他牛奶", Score: 0.5},
+	}
+	if needsConfirmation(candidates) {
+		t.Fatal("expected no confirmation when lead >= 0.25")
+	}
+}
+
+func TestNeedsConfirmation_HighScoreLead(t *testing.T) {
+	candidates := []ResolveResult{
+		{Name: "伊利牛奶", Score: 0.92},
+		{Name: "蒙牛牛奶", Score: 0.75},
+	}
+	if needsConfirmation(candidates) {
+		t.Fatal("expected no confirmation when top >= 0.90 and lead >= 0.15")
+	}
+}
+
+func TestUserMemoryStore_SaveAndLoad(t *testing.T) {
+	dir := t.TempDir()
+	engine := NewNluEngine(nil)
+	engine.SetMemoryBasePath(dir)
+
+	// Initially empty
+	if content := engine.LoadMemory("chat_test"); content != "" {
+		t.Fatalf("expected empty, got %q", content)
+	}
+
+	// Save and load
+	err := engine.SaveMemory("chat_test", "# 用户记忆\n\n- 苹果 -> 存放位置: 冰箱")
+	if err != nil {
+		t.Fatalf("SaveMemory failed: %v", err)
+	}
+	content := engine.LoadMemory("chat_test")
+	if !strings.Contains(content, "苹果") {
+		t.Fatalf("expected memory content, got %q", content)
+	}
+}
+
+func TestUserMemoryStore_AppendMemory(t *testing.T) {
+	dir := t.TempDir()
+	engine := NewNluEngine(nil)
+	engine.SetMemoryBasePath(dir)
+
+	// First append creates file
+	err := engine.AppendMemory("chat_append", "苹果 -> 存放位置: 冰箱")
+	if err != nil {
+		t.Fatalf("first AppendMemory failed: %v", err)
+	}
+	content := engine.LoadMemory("chat_append")
+	if !strings.Contains(content, "苹果") {
+		t.Fatalf("expected apple memory, got %q", content)
+	}
+
+	// Second append adds to file
+	err = engine.AppendMemory("chat_append", "牛奶 -> 首选: 蒙牛")
+	if err != nil {
+		t.Fatalf("second AppendMemory failed: %v", err)
+	}
+	content = engine.LoadMemory("chat_append")
+	if !strings.Contains(content, "牛奶") {
+		t.Fatalf("expected milk memory too, got %q", content)
+	}
+}
+
+func TestUserMemoryStore_AppendEmpty(t *testing.T) {
+	dir := t.TempDir()
+	engine := NewNluEngine(nil)
+	engine.SetMemoryBasePath(dir)
+
+	err := engine.AppendMemory("chat_empty", "")
+	if err != nil {
+		t.Fatalf("AppendMemory with empty string should not error: %v", err)
+	}
+	content := engine.LoadMemory("chat_empty")
+	if content != "" {
+		t.Fatalf("expected no file for empty append, got %q", content)
+	}
+}
+
+func TestMemoryFilePath_SanitizesChatID(t *testing.T) {
+	engine := NewNluEngine(nil)
+	engine.SetMemoryBasePath("/tmp/memories")
+
+	path := engine.memoryFilePath("../etc/passwd")
+	if path == "/tmp/memories/../etc/passwd.md" {
+		t.Fatal("memoryFilePath should prevent directory traversal")
 	}
 }

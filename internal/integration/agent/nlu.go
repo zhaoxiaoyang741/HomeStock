@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -14,16 +16,16 @@ import (
 
 // NluResult is the structured output from NLU extraction.
 type NluResult struct {
-	Intent  string            `json:"intent"`  // execute | clarify | confirm | reject | chitchat
+	Intent  string            `json:"intent"` // execute | clarify | confirm | reject | chitchat
 	Actions []ExtractedAction `json:"actions"`
 	RawText string            `json:"raw_text"`
 }
 
 // ExtractedAction is a single operation extracted from user input.
 type ExtractedAction struct {
-	Type       string         `json:"type"`       // inbound | consume | query | update | delete | undo
+	Type       string          `json:"type"` // inbound | consume | query | update | delete | undo
 	Items      []ExtractedItem `json:"items"`
-	Parameters map[string]any `json:"parameters"`
+	Parameters map[string]any  `json:"parameters"`
 }
 
 // ExtractedItem is a single item within an action (e.g. one product in multi-item inbound).
@@ -41,12 +43,78 @@ type ExtractedItem struct {
 // NluEngine builds NLU prompts and parses structured responses.
 // It does NOT make LLM calls — that is AgentLoop's responsibility.
 type NluEngine struct {
-	materialSvc *service.MaterialService
+	materialSvc   *service.MaterialService
+	memoryBasePath string // directory for per-user memory files
 }
 
 // NewNluEngine creates an NluEngine.
 func NewNluEngine(materialSvc *service.MaterialService) *NluEngine {
-	return &NluEngine{materialSvc: materialSvc}
+	return &NluEngine{
+		materialSvc:   materialSvc,
+		memoryBasePath: "data/memories",
+	}
+}
+
+// SetMemoryBasePath changes the directory used for user memory files.
+func (e *NluEngine) SetMemoryBasePath(path string) {
+	e.memoryBasePath = path
+}
+
+// memoryFilePath returns the full path to a user's memory file.
+func (e *NluEngine) memoryFilePath(chatID string) string {
+	// Sanitize chatID to prevent directory traversal
+	safe := strings.Map(func(r rune) rune {
+		if r == '/' || r == '\\' || r == '.' || r == ' ' {
+			return '_'
+		}
+		return r
+	}, chatID)
+	return filepath.Join(e.memoryBasePath, safe+".md")
+}
+
+// LoadMemory reads a user's memory file and returns its content.
+// Returns empty string if the file does not exist or cannot be read.
+func (e *NluEngine) LoadMemory(chatID string) string {
+	data, err := os.ReadFile(e.memoryFilePath(chatID))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// SaveMemory writes content to a user's memory file, creating directories as needed.
+func (e *NluEngine) SaveMemory(chatID, content string) error {
+	if err := os.MkdirAll(e.memoryBasePath, 0755); err != nil {
+		return fmt.Errorf("create memory dir: %w", err)
+	}
+	return os.WriteFile(e.memoryFilePath(chatID), []byte(content), 0644)
+}
+
+// AppendMemory appends a new line of learning to a user's memory file.
+// Creates the file with a header if it doesn't exist yet.
+func (e *NluEngine) AppendMemory(chatID, learning string) error {
+	if learning == "" {
+		return nil
+	}
+	fp := e.memoryFilePath(chatID)
+	if err := os.MkdirAll(e.memoryBasePath, 0755); err != nil {
+		return fmt.Errorf("create memory dir: %w", err)
+	}
+
+	existing, err := os.ReadFile(fp)
+	if err != nil {
+		// File doesn't exist — create with header
+		content := "# 用户记忆\n\n## 物料偏好\n- " + learning + "\n"
+		return os.WriteFile(fp, []byte(content), 0644)
+	}
+
+	// Append to existing file
+	content := string(existing)
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	content += "- " + learning + "\n"
+	return os.WriteFile(fp, []byte(content), 0644)
 }
 
 var injectionPattern = regexp.MustCompile(`(?i)(ignore\s+(above|all|previous)|forget\s+(all|everything|previous)|你是\w+|you\s+are\s+\w+|忽略[以所].*指令|无视.*指令)`)
@@ -137,9 +205,13 @@ var stopWords = map[string]bool{
 
 func isStopWord(s string) bool { return stopWords[s] }
 
-// BuildNluSystemPrompt returns the full NLU extraction prompt with catalog and context injected.
-func (e *NluEngine) BuildNluSystemPrompt(catalog, recentContext string) string {
+// BuildNluSystemPrompt returns the full NLU extraction prompt with catalog, context, and user memory injected.
+func (e *NluEngine) BuildNluSystemPrompt(catalog, recentContext, userMemory string) string {
 	prompt := nluSystemPromptBase
+	if userMemory != "" {
+		prompt += "\n\n## 用户偏好记忆（只读参考）\n" + userMemory
+		prompt += "\n根据上述用户记忆中的偏好信息辅助推断字段值。用户的习惯性操作可直接采纳，无需确认。"
+	}
 	if catalog != "" {
 		prompt += "\n\n" + catalog
 	}
@@ -265,17 +337,25 @@ type ResolveResult struct {
 type NameResolver func(ctx context.Context, name, tenantID string) ([]ResolveResult, error)
 
 // DefaultNameResolver returns a NameResolver backed by MaterialService.List.
+// Deduplicates results by name+spec to avoid showing identical entries.
 func DefaultNameResolver(materialSvc *service.MaterialService) NameResolver {
 	return func(ctx context.Context, name, tenantID string) ([]ResolveResult, error) {
 		summaries, err := materialSvc.List(ctx, repository.MaterialFilter{
-			TenantID: tenantID,
-			Keyword:  name,
+			TenantID:      tenantID,
+			Keyword:       name,
+			ShowZeroStock: true,
 		})
 		if err != nil {
 			return nil, err
 		}
 		results := make([]ResolveResult, 0, len(summaries))
+		seen := make(map[string]bool)
 		for _, s := range summaries {
+			key := s.Name + "|" + s.Spec
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
 			score := computeMatchScore(name, s.Name, s.Spec)
 			results = append(results, ResolveResult{
 				MaterialID:   s.ID,
@@ -292,6 +372,7 @@ func DefaultNameResolver(materialSvc *service.MaterialService) NameResolver {
 }
 
 // computeMatchScore returns a similarity score [0, 1] for name matching.
+// Supports exact match, substring match with ratio bonus, and ordered character overlap.
 func computeMatchScore(input, dbName, dbSpec string) float64 {
 	in := strings.TrimSpace(strings.ToLower(input))
 	name := strings.TrimSpace(strings.ToLower(dbName))
@@ -302,17 +383,70 @@ func computeMatchScore(input, dbName, dbSpec string) float64 {
 		full = name + " " + spec
 	}
 
+	// Exact match — score 1.0
 	if in == full || in == name {
 		return 1.0
 	}
-	if strings.Contains(full, in) || strings.Contains(in, full) {
-		return 0.8
+
+	// Input is a substring of the full name — score 0.80-0.95 based on length ratio
+	if strings.Contains(full, in) {
+		inLen := len([]rune(in))
+		fullLen := len([]rune(full))
+		if fullLen > 0 {
+			ratio := float64(inLen) / float64(fullLen)
+			return 0.80 + (0.15 * ratio)
+		}
+		return 0.80
 	}
+
+	// Full name is a substring of the input (user typed more specifically) — score 0.85
+	if strings.Contains(in, name) {
+		return 0.85
+	}
+
+	// Ordered character overlap (Chinese-friendly fuzzy match) — score up to 0.70
+	inRunes := []rune(in)
+	nameRunes := []rune(name)
+
+	matchedChars := 0
+	lastIdx := 0
+	for _, r := range inRunes {
+		for j := lastIdx; j < len(nameRunes); j++ {
+			if nameRunes[j] == r {
+				matchedChars++
+				lastIdx = j + 1
+				break
+			}
+		}
+	}
+
+	if matchedChars > 0 {
+		overlap := float64(matchedChars) / float64(len(inRunes))
+		return overlap * 0.70
+	}
+
 	return 0.0
 }
 
-// needsConfirmation returns true if there are multiple candidates with score >= 0.6.
+// needsConfirmation returns true if name ambiguity requires user confirmation.
+// Uses lead margin to auto-resolve clear winners.
 func needsConfirmation(candidates []ResolveResult) bool {
+	if len(candidates) <= 1 {
+		return false
+	}
+
+	// If the top candidate leads by >= 0.25, auto-select
+	lead := candidates[0].Score - candidates[1].Score
+	if lead >= 0.25 {
+		return false
+	}
+
+	// If top candidate is >= 0.90 and leads by >= 0.15, auto-select
+	if candidates[0].Score >= 0.90 && lead >= 0.15 {
+		return false
+	}
+
+	// Otherwise, count how many candidates are above the threshold
 	count := 0
 	for _, c := range candidates {
 		if c.Score >= 0.6 {

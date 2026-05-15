@@ -24,6 +24,7 @@ func (it *InventoryTools) InboundStock(ctx context.Context, actor service.Actor,
 	unit, _ := args["unit"].(string)
 	location, _ := args["location"].(string)
 	notes, _ := args["notes"].(string)
+	materialID, _ := args["material_id"].(string)
 
 	if name == "" {
 		return "", fmt.Errorf("inbound_stock: name is required")
@@ -45,6 +46,7 @@ func (it *InventoryTools) InboundStock(ctx context.Context, actor service.Actor,
 		Name:       name,
 		Spec:       spec,
 		CategoryID: categoryID,
+		MaterialID: materialID,
 		Quantity:   quantity,
 		Unit:       unit,
 		Location:   location,

@@ -178,7 +178,7 @@ func (l *AgentLoop) handleIdleState(session *DialogSession, msg bus.InboundMessa
 	}
 
 	recentCtx := l.buildRecentContext(msg.ChatID)
-	result := l.nluCall(l.ctx, text, recentCtx, actor)
+	result := l.nluCall(l.ctx, text, recentCtx, actor, msg.ChatID)
 	if result == nil {
 		l.fallbackToStandardFlow(msg, actor, msg.ChatID)
 		return
@@ -232,6 +232,14 @@ func (l *AgentLoop) handleIdleState(session *DialogSession, msg bus.InboundMessa
 		l.appendHistory(msg.ChatID, llm.Message{Role: "assistant", Content: reply})
 		l.trimHistory(msg.ChatID)
 
+		// Extract learnings for user memory
+		learnings := l.extractMemoryFromActions(result.Actions)
+		for _, lrn := range learnings {
+			if err := l.nlu.AppendMemory(msg.ChatID, lrn); err != nil {
+				logger.WarnCF("agent", "failed to save user memory", map[string]any{"error": err.Error()})
+			}
+		}
+
 	case "clarify":
 		l.reply(msg, "请描述得更清楚一些，您想做什么操作？")
 	}
@@ -254,7 +262,7 @@ func (l *AgentLoop) handleClarifyingState(session *DialogSession, msg bus.Inboun
 	}
 
 	recentCtx := l.buildRecentContext(msg.ChatID)
-	result := l.nluCall(l.ctx, text, recentCtx, actor)
+	result := l.nluCall(l.ctx, text, recentCtx, actor, msg.ChatID)
 	if result == nil {
 		pending.AskCount++
 		if pending.AskCount >= 3 {
@@ -302,6 +310,15 @@ func (l *AgentLoop) handleClarifyingState(session *DialogSession, msg bus.Inboun
 	l.reply(msg, reply)
 	l.appendHistory(msg.ChatID, llm.Message{Role: "assistant", Content: reply})
 	l.trimHistory(msg.ChatID)
+
+	// Extract learnings for user memory
+	learnings := l.extractMemoryFromActions(pending.Actions)
+	for _, lrn := range learnings {
+		if err := l.nlu.AppendMemory(msg.ChatID, lrn); err != nil {
+			logger.WarnCF("agent", "failed to save user memory", map[string]any{"error": err.Error()})
+		}
+	}
+
 	session.State = StateIdle
 	session.PendingOp = nil
 }
@@ -361,6 +378,15 @@ func (l *AgentLoop) handleConfirmingState(session *DialogSession, msg bus.Inboun
 	l.reply(msg, reply)
 	l.appendHistory(msg.ChatID, llm.Message{Role: "assistant", Content: reply})
 	l.trimHistory(msg.ChatID)
+
+	// Extract learnings for user memory
+	learnings := l.extractMemoryFromActions(pending.Actions)
+	for _, lrn := range learnings {
+		if err := l.nlu.AppendMemory(msg.ChatID, lrn); err != nil {
+			logger.WarnCF("agent", "failed to save user memory", map[string]any{"error": err.Error()})
+		}
+	}
+
 	session.State = StateIdle
 	session.PendingOp = nil
 }
@@ -369,10 +395,11 @@ func (l *AgentLoop) handleConfirmingState(session *DialogSession, msg bus.Inboun
 // NLU call helper
 // ---------------------------------------------------------------------------
 
-// nluCall builds the NLU prompt, calls the LLM (tools=nil), and parses the result.
-func (l *AgentLoop) nluCall(ctx context.Context, text, recentContext string, actor service.Actor) *NluResult {
+// nluCall builds the NLU prompt (with user memory injected), calls the LLM, and parses the result.
+func (l *AgentLoop) nluCall(ctx context.Context, text, recentContext string, actor service.Actor, chatID string) *NluResult {
+	userMemory := l.nlu.LoadMemory(chatID)
 	catalog := l.nlu.PrefetchCatalog(ctx, text, actor.TenantID)
-	sysPrompt := l.nlu.BuildNluSystemPrompt(catalog, recentContext)
+	sysPrompt := l.nlu.BuildNluSystemPrompt(catalog, recentContext, userMemory)
 
 	messages := []llm.Message{
 		{Role: "system", Content: sysPrompt},
@@ -629,17 +656,17 @@ func (l *AgentLoop) executeActions(actions []ExtractedAction, msg bus.InboundMes
 }
 
 // buildInboundArgs constructs arguments for inbound_stock from an extracted item.
+// If ResolvedMaterialID is empty, the service layer will auto-create the material by name.
 func (l *AgentLoop) buildInboundArgs(item ExtractedItem) map[string]any {
-	materialID := item.ResolvedMaterialID
-	if materialID == "" {
-		return nil
-	}
 	if item.Quantity == nil || *item.Quantity <= 0 {
 		return nil
 	}
 	args := map[string]any{
-		"material_id": materialID,
-		"quantity":    *item.Quantity,
+		"name":     item.Name,
+		"quantity": *item.Quantity,
+	}
+	if item.ResolvedMaterialID != "" {
+		args["material_id"] = item.ResolvedMaterialID
 	}
 	if item.Unit != "" {
 		args["unit"] = item.Unit
@@ -667,6 +694,30 @@ func (l *AgentLoop) buildConsumeArgs(item ExtractedItem) map[string]any {
 		"quantity":    *item.Quantity,
 		"reason":      "用户操作",
 	}
+}
+
+// extractMemoryFromActions generates learnable preference entries from executed actions.
+// These are stored in the user's memory file to reduce confirmations in future interactions.
+func (l *AgentLoop) extractMemoryFromActions(actions []ExtractedAction) []string {
+	var learnings []string
+	for _, action := range actions {
+		if action.Type != "inbound" {
+			continue
+		}
+		for _, item := range action.Items {
+			var parts []string
+			if item.Location != "" {
+				parts = append(parts, "存放位置: "+item.Location)
+			}
+			if item.Unit != "" {
+				parts = append(parts, "默认单位: "+item.Unit)
+			}
+			if len(parts) > 0 {
+				learnings = append(learnings, item.Name+" -> "+strings.Join(parts, ", "))
+			}
+		}
+	}
+	return learnings
 }
 
 // ---------------------------------------------------------------------------
