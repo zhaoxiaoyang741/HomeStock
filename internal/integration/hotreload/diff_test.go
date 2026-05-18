@@ -1,6 +1,7 @@
 package hotreload
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
@@ -14,7 +15,7 @@ func TestCalcDiff_ModelChanged(t *testing.T) {
 	if !diff.ModelChanged {
 		t.Error("expected ModelChanged=true when APIBase differs")
 	}
-	if diff.FeishuChanged || diff.LogChanged || diff.PortChanged || diff.DatabaseChanged {
+	if diff.ChannelsChanged["feishu"] || diff.LogChanged || diff.PortChanged || diff.DBChanged {
 		t.Error("expected only ModelChanged to be true")
 	}
 }
@@ -22,11 +23,14 @@ func TestCalcDiff_ModelChanged(t *testing.T) {
 func TestCalcDiff_FeishuChanged(t *testing.T) {
 	oldCfg := baseCfg()
 	newCfg := baseCfg()
-	newCfg.Channels.Feishu.AppID = "new-app-id"
+
+	feishuCfg, _ := newCfg.FeishuConfig()
+	feishuCfg.AppID = "new-app-id"
+	_ = newCfg.SetChannelConfig("feishu", feishuCfg)
 
 	diff := CalcDiff(oldCfg, newCfg)
-	if !diff.FeishuChanged {
-		t.Error("expected FeishuChanged=true when AppID differs")
+	if !diff.ChannelsChanged["feishu"] {
+		t.Error("expected ChannelsChanged[feishu]=true when AppID differs")
 	}
 }
 
@@ -58,31 +62,39 @@ func TestCalcDiff_DatabaseChanged(t *testing.T) {
 	newCfg.Database.DSN = "postgres://localhost/newdb"
 
 	diff := CalcDiff(oldCfg, newCfg)
-	if !diff.DatabaseChanged {
-		t.Error("expected DatabaseChanged=true")
+	if !diff.DBChanged {
+		t.Error("expected DBChanged=true")
 	}
 }
 
 func TestCalcDiff_NoChange(t *testing.T) {
 	cfg := baseCfg()
 	diff := CalcDiff(cfg, cfg)
-	if diff != (ConfigDiff{}) {
+	if diff.ModelChanged || diff.LogChanged || diff.PortChanged || diff.DBChanged || len(diff.ChannelsChanged) > 0 {
 		t.Errorf("expected no changes, got %+v", diff)
 	}
 }
 
 // helpers
 
+func rawJSON(v any) json.RawMessage {
+	data, _ := json.Marshal(v)
+	return data
+}
+
 func baseCfg() *config.Config {
 	return &config.Config{
 		Server:   config.ServerConfig{Port: "8888"},
 		Database: config.DatabaseConfig{Driver: "sqlite", DSN: "./data/inventory.db"},
-		Channels: config.ChannelsConfig{
-			Feishu: config.FeishuChannelConfig{
+		Channels: map[string]json.RawMessage{
+			"feishu": rawJSON(config.FeishuChannelConfig{
 				Enabled:   false,
 				AppID:     "cli_xxx",
 				AppSecret: "secret",
-			},
+			}),
+			"wechat": rawJSON(config.WechatChannelConfig{
+				Enabled: false,
+			}),
 		},
 		ModelList: []config.ModelConfig{
 			{ModelName: "default", Model: "gpt-4o", Provider: "openai", Enabled: true, APIBase: "https://api.openai.com/v1"},

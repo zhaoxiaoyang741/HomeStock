@@ -1,13 +1,14 @@
 package channel
 
 import (
+	"encoding/json"
 	"fmt"
 	"sync"
 )
 
-// Factory creates a Channel from its channel-specific config section.
-// The config argument is the per-channel config value (e.g. FeishuChannelConfig).
-type Factory func(config any) (Channel, error)
+// Factory creates a Channel from its channel-specific raw JSON config section.
+// Each factory is responsible for unmarshalling the raw config into its own type.
+type Factory func(raw json.RawMessage) (Channel, error)
 
 var (
 	registryMu   sync.RWMutex

@@ -195,7 +195,7 @@ func (h *FeishuHandler) UpdateConfig(c *gin.Context) {
 
 	var savedCfg config.FeishuChannelConfig
 	if err := config.Save(h.configPath, func(cfg *config.Config) {
-		fc := &cfg.Channels.Feishu
+		fc, _ := cfg.FeishuConfig()
 		if req.Enabled != nil {
 			fc.Enabled = *req.Enabled
 		}
@@ -205,7 +205,8 @@ func (h *FeishuHandler) UpdateConfig(c *gin.Context) {
 		if req.AppSecret != nil && *req.AppSecret != "" {
 			fc.AppSecret = *req.AppSecret
 		}
-		savedCfg = *fc
+		savedCfg = fc
+		_ = cfg.SetChannelConfig("feishu", fc)
 	}); err != nil {
 		httpresp.Error(c, http.StatusInternalServerError, "save config failed: "+err.Error())
 		return

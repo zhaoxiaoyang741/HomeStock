@@ -1,4 +1,4 @@
-﻿package config
+package config
 
 import (
 	"encoding/json"
@@ -13,8 +13,9 @@ type Config struct {
 	Server ServerConfig `json:"server"`
 	// Database controls storage backend settings.
 	Database DatabaseConfig `json:"database"`
-	// Channels controls external messaging channel configurations.
-	Channels ChannelsConfig `json:"channels"`
+	// Channels maps channel name to its raw JSON configuration.
+	// Each channel factory decides how to unmarshal its own section.
+	Channels map[string]json.RawMessage `json:"channels"`
 	// ModelList is the list of LLM model configurations for multi-model support.
 	ModelList []ModelConfig `json:"model_list"`
 	// Auth controls user authentication settings.
@@ -49,21 +50,53 @@ type DatabaseConfig struct {
 	DSN string `json:"dsn"`
 }
 
-type ChannelsConfig struct {
-	Feishu FeishuChannelConfig `json:"feishu"`
-	Wechat WechatChannelConfig `json:"wechat"`
-}
-
 type WechatChannelConfig struct {
 	Enabled bool `json:"enabled"`
 }
 
 type FeishuChannelConfig struct {
-	Enabled      bool   `json:"enabled"`
-	AppID        string `json:"app_id"`
-	AppSecret    string `json:"app_secret"`
-	RedirectURI  string `json:"redirect_uri,omitempty"`
-	FrontendURL  string `json:"frontend_url,omitempty"`
+	Enabled     bool   `json:"enabled"`
+	AppID       string `json:"app_id"`
+	AppSecret   string `json:"app_secret"`
+	RedirectURI string `json:"redirect_uri,omitempty"`
+	FrontendURL string `json:"frontend_url,omitempty"`
+}
+
+// FeishuConfig returns the deserialized Feishu channel configuration.
+func (c *Config) FeishuConfig() (FeishuChannelConfig, bool) {
+	return channelConfig[FeishuChannelConfig](c, "feishu")
+}
+
+// WechatConfig returns the deserialized WeChat channel configuration.
+func (c *Config) WechatConfig() (WechatChannelConfig, bool) {
+	return channelConfig[WechatChannelConfig](c, "wechat")
+}
+
+// SetChannelConfig marshals and stores a typed channel config into the config map.
+func (c *Config) SetChannelConfig(name string, cfg any) error {
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal channel config %q: %w", name, err)
+	}
+	if c.Channels == nil {
+		c.Channels = make(map[string]json.RawMessage)
+	}
+	c.Channels[name] = data
+	return nil
+}
+
+// channelConfig is a generic helper to unmarshal a named channel config from the map.
+func channelConfig[T any](c *Config, name string) (T, bool) {
+	var zero T
+	raw, ok := c.Channels[name]
+	if !ok {
+		return zero, false
+	}
+	var cfg T
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return zero, false
+	}
+	return cfg, true
 }
 
 type ModelConfig struct {
@@ -78,7 +111,7 @@ type ModelConfig struct {
 	Enabled bool `json:"enabled,omitempty"`
 	// APIKey is the API key for the LLM provider.
 	APIKey string `json:"api_key"`
-	// APIBase is the base URL for the API, optional 鈥?defaults to the provider's default.
+	// APIBase is the base URL for the API, optional — defaults to the provider's default.
 	APIBase string `json:"api_base,omitempty"`
 }
 
@@ -127,6 +160,17 @@ func Get() *Config {
 }
 
 func defaultConfig() *Config {
+	feishuRaw, _ := json.Marshal(FeishuChannelConfig{
+		Enabled:     false,
+		AppID:       "",
+		AppSecret:   "",
+		RedirectURI: "http://localhost:8888/api/v1/feishu/callback",
+		FrontendURL: "http://localhost:5173",
+	})
+	wechatRaw, _ := json.Marshal(WechatChannelConfig{
+		Enabled: false,
+	})
+
 	return &Config{
 		Server: ServerConfig{
 			Port: "8888",
@@ -135,17 +179,9 @@ func defaultConfig() *Config {
 			Driver: "sqlite",
 			DSN:    "./data/inventory.db",
 		},
-		Channels: ChannelsConfig{
-			Feishu: FeishuChannelConfig{
-				Enabled:     false,
-				AppID:       "",
-				AppSecret:   "",
-				RedirectURI: "http://localhost:8888/api/v1/feishu/callback",
-				FrontendURL: "http://localhost:5173",
-			},
-			Wechat: WechatChannelConfig{
-				Enabled: false,
-			},
+		Channels: map[string]json.RawMessage{
+			"feishu": feishuRaw,
+			"wechat": wechatRaw,
 		},
 		ModelList: []ModelConfig{
 			{
@@ -213,6 +249,12 @@ func cloneConfig(cfg *Config) *Config {
 	}
 
 	cloned := *cfg
+	cloned.Channels = make(map[string]json.RawMessage, len(cfg.Channels))
+	for k, v := range cfg.Channels {
+		data := make(json.RawMessage, len(v))
+		copy(data, v)
+		cloned.Channels[k] = data
+	}
 	if cfg.ModelList != nil {
 		cloned.ModelList = make([]ModelConfig, len(cfg.ModelList))
 		copy(cloned.ModelList, cfg.ModelList)

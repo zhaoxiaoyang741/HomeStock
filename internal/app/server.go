@@ -87,7 +87,7 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 	}
 
 	// 4. Channels (Feishu, WeChat, OAuth)
-	channelMgr, feishuHandler, fc, oauthSvc, wechatCh := initChannels(cfg.Channels, msgBus, uow, configPath)
+	channelMgr, feishuHandler, fc, oauthSvc, wechatCh := initChannels(cfg, msgBus, uow, configPath)
 
 	// 5. Model handler
 	modelHandler := initModelHandler(configPath, modelCfg, agentLoop)
@@ -106,7 +106,7 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 	})
 
 	// 8. Seed Feishu token cache from stored OAuth credentials
-	if cfg.Channels.Feishu.Enabled {
+	if feishuCfg, ok := cfg.FeishuConfig(); ok && feishuCfg.Enabled {
 		if err := oauthSvc.SeedTokenCache(context.Background(), fc.GetTokenCache()); err != nil {
 			logger.WarnCF("app", "feishu token cache seed failed", map[string]any{"error": err.Error()})
 		}
@@ -196,7 +196,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 // routeOutbound reads agent outbound messages from the bus and routes them
-// to the appropriate channel via ChannelManager.
+// to the appropriate channel via the Manager's per-channel worker queue.
 func (s *Server) routeOutbound() {
 	defer s.outboundWg.Done()
 	for {
@@ -205,24 +205,23 @@ func (s *Server) routeOutbound() {
 			if !ok {
 				return
 			}
-			ch, exists := s.channelMgr.GetChannel(msg.Channel)
-			if !exists {
-				logger.WarnCF("app", "no channel for outbound message", map[string]any{
-					"channel": msg.Channel,
-					"chat_id": msg.ChatID,
-				})
-				continue
-			}
-			if err := ch.Send(s.outboundCtx, channel.OutboundMessage{
+			if err := s.channelMgr.RouteOutbound(s.outboundCtx, channel.OutboundMessage{
 				Channel: msg.Channel,
 				ChatID:  msg.ChatID,
 				Text:    msg.Text,
 			}); err != nil {
-				logger.ErrorCF("app", "channel send failed", map[string]any{
-					"channel": msg.Channel,
-					"chat_id": msg.ChatID,
-					"error":   err.Error(),
-				})
+				if err == channel.ErrNotRunning {
+					logger.WarnCF("app", "no active worker for outbound message", map[string]any{
+						"channel": msg.Channel,
+						"chat_id": msg.ChatID,
+					})
+				} else {
+					logger.ErrorCF("app", "route outbound failed", map[string]any{
+						"channel": msg.Channel,
+						"chat_id": msg.ChatID,
+						"error":   err.Error(),
+					})
+				}
 			}
 		case <-s.outboundCtx.Done():
 			return
@@ -348,7 +347,7 @@ func firstEnabledModel(models []config.ModelConfig) *config.ModelConfig {
 }
 
 func initChannels(
-	cfg config.ChannelsConfig,
+	cfg *config.Config,
 	msgBus *bus.MessageBus,
 	uow *gormrepo.UnitOfWork,
 	configPath string,
@@ -379,30 +378,52 @@ func initChannels(
 		}
 	}
 
-	fc := feishu.NewFeishuChannel(cfg.Feishu.AppID, cfg.Feishu.AppSecret)
-	fc.SetInboundHandler(inboundHandler)
-	if cfg.Feishu.Enabled {
-		channelMgr.AddChannel(fc)
-		logger.InfoCF("app", "Feishu channel enabled", nil)
-	}
+	// Use factory registry for all channels
+	channel.RangeFactories(func(name string, factory channel.Factory) bool {
+		raw, ok := cfg.Channels[name]
+		if !ok {
+			return true // no config for this channel, skip
+		}
+		ch, err := factory(raw)
+		if err != nil {
+			logger.ErrorCF("app", "channel factory error", map[string]any{"name": name, "error": err.Error()})
+			return true
+		}
+		if ch == nil {
+			return true // factory returned nil (channel disabled)
+		}
+		if setter, ok := ch.(channel.InboundHandlerSetter); ok {
+			setter.SetInboundHandler(inboundHandler)
+		}
+		channelMgr.AddChannel(ch)
+		logger.InfoCF("app", "channel created via factory", map[string]any{"name": name})
+		return true
+	})
 
+	// Feishu OAuth service (always created, may be nil if not configured)
+	feishuCfg, _ := cfg.FeishuConfig()
 	oauthSvc = feishu.NewOAuthService(
-		cfg.Feishu.AppID,
-		cfg.Feishu.AppSecret,
-		cfg.Feishu.RedirectURI,
-		cfg.Feishu.FrontendURL,
+		feishuCfg.AppID,
+		feishuCfg.AppSecret,
+		feishuCfg.RedirectURI,
+		feishuCfg.FrontendURL,
 		uow.Repos().SystemSettings(),
 	)
 
-	feishuCh = fc
-	feishuH = handler.NewFeishuHandler(oauthSvc, channelMgr, fc, cfg.Feishu.FrontendURL, configPath)
+	// Feishu channel — may be nil if disabled
+	if rawCh, ok := channelMgr.GetChannel("feishu"); ok {
+		feishuCh, _ = rawCh.(*feishu.FeishuChannel)
+	}
+	feishuH = handler.NewFeishuHandler(oauthSvc, channelMgr, feishuCh, feishuCfg.FrontendURL, configPath)
 
 	// Channel update callback: reconfigures Feishu channel when settings change
 	feishuH.SetChannelUpdateFn(func(feishuCfg config.FeishuChannelConfig) error {
 		ctx := context.Background()
 
-		if err := fc.Reconfigure(ctx, feishuCfg.AppID, feishuCfg.AppSecret, feishuCfg.Enabled); err != nil {
-			return err
+		if feishuCh != nil {
+			if err := feishuCh.Reconfigure(ctx, feishuCfg.AppID, feishuCfg.AppSecret, feishuCfg.Enabled); err != nil {
+				return err
+			}
 		}
 
 		oauthSvc.UpdateCredentials(feishuCfg.AppID, feishuCfg.AppSecret)
@@ -412,8 +433,8 @@ func initChannels(
 		}
 
 		if feishuCfg.Enabled {
-			if _, exists := channelMgr.GetChannel("feishu"); !exists {
-				channelMgr.AddChannel(fc)
+			if _, exists := channelMgr.GetChannel("feishu"); !exists && feishuCh != nil {
+				channelMgr.AddChannel(feishuCh)
 			}
 		} else {
 			channelMgr.RemoveChannel("feishu")
@@ -422,14 +443,10 @@ func initChannels(
 		return nil
 	})
 
-	// WeChat channel
-	wc := wechat.NewWechatChannel()
-	wc.SetInboundHandler(inboundHandler)
-	if cfg.Wechat.Enabled {
-		channelMgr.AddChannel(wc)
-		logger.InfoCF("app", "WeChat channel enabled", nil)
+	// WeChat channel — may be nil if disabled
+	if rawCh, ok := channelMgr.GetChannel("wechat"); ok {
+		wechatCh, _ = rawCh.(*wechat.WechatChannel)
 	}
-	wechatCh = wc
 
 	return
 }
@@ -498,7 +515,7 @@ func initServer(
 			feishuHandler.RegisterRoutes,
 			modelHandler.RegisterRoutes,
 			handler.NewBatchHandler(inventorySvc, materialSvc).RegisterRoutes,
-				wechatHandler.RegisterRoutes,
+			wechatHandler.RegisterRoutes,
 			authHandler.RegisterProtectedRoutes,
 		},
 		server.AuthMiddleware(authMw),

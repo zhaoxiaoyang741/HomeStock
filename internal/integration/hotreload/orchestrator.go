@@ -126,62 +126,115 @@ func (o *Orchestrator) Reload() error {
 		}
 	}
 
-	// 3. Feishu channel hot-reconfigure
-	if diff.FeishuChanged {
-		ctx := context.Background()
-		fcCfg := newCfg.Channels.Feishu
+	// 3. Channel hot-reconfigure via factory-based generic loop
+	feishuCfg, _ := newCfg.FeishuConfig()
+	wechatCfg, _ := newCfg.WechatConfig()
 
-		// The feishu channel reference may not be available in all builds
-		if o.feishuCh != nil && o.oauthSvc != nil {
-			if err := o.feishuCh.Reconfigure(ctx, fcCfg.AppID, fcCfg.AppSecret, fcCfg.Enabled); err != nil {
-				logger.ErrorCF("hotreload", "feishu reconfigure failed", map[string]any{"error": err.Error()})
-			}
-
-			o.oauthSvc.UpdateCredentials(fcCfg.AppID, fcCfg.AppSecret)
-			_ = o.oauthSvc.ClearAuth(ctx)
+	for name, changed := range diff.ChannelsChanged {
+		if !changed {
+			continue
 		}
 
-		logger.InfoCF("hotreload", "feishu channel reconfigured", map[string]any{
-			"enabled": fcCfg.Enabled,
-		})
-	}
+		raw, hasNew := newCfg.Channels[name]
 
-	// 4. WeChat channel hot-reconfigure
-	if diff.WechatChanged {
-		ctx := context.Background()
-		wcCfg := newCfg.Channels.Wechat
+		switch name {
+		case "feishu":
+			// Feishu has OAuth dependencies — use the existing path
+			if o.feishuCh != nil && o.oauthSvc != nil {
+				ctx := context.Background()
 
-		if wcCfg.Enabled {
-			if _, exists := o.channelMgr.GetChannel("wechat"); !exists {
-				o.channelMgr.AddChannel(o.wechatCh)
-			}
-			if o.wechatCh != nil && !o.wechatCh.IsRunning() {
-				if err := o.wechatCh.Start(ctx); err != nil {
-					logger.ErrorCF("hotreload", "wechat start failed", map[string]any{"error": err.Error()})
+				if err := o.feishuCh.Reconfigure(ctx, feishuCfg.AppID, feishuCfg.AppSecret, feishuCfg.Enabled); err != nil {
+					logger.ErrorCF("hotreload", "feishu reconfigure failed", map[string]any{"error": err.Error()})
+				}
+
+				o.oauthSvc.UpdateCredentials(feishuCfg.AppID, feishuCfg.AppSecret)
+				_ = o.oauthSvc.ClearAuth(ctx)
+
+				if feishuCfg.Enabled {
+					if _, exists := o.channelMgr.GetChannel("feishu"); !exists {
+						o.channelMgr.AddChannel(o.feishuCh)
+					}
+				} else {
+					o.channelMgr.RemoveChannel("feishu")
 				}
 			}
-		} else {
-			if o.wechatCh != nil && o.wechatCh.IsRunning() {
-				if err := o.wechatCh.Stop(ctx); err != nil {
-					logger.ErrorCF("hotreload", "wechat stop failed", map[string]any{"error": err.Error()})
+			logger.InfoCF("hotreload", "feishu channel reconfigured", map[string]any{
+				"enabled": feishuCfg.Enabled,
+			})
+
+		case "wechat":
+			// WeChat has login state — use the existing instance
+			if wechatCfg.Enabled {
+				if _, exists := o.channelMgr.GetChannel("wechat"); !exists {
+					o.channelMgr.AddChannel(o.wechatCh)
+				}
+				if o.wechatCh != nil && !o.wechatCh.IsRunning() {
+					ctx := context.Background()
+					if err := o.wechatCh.Start(ctx); err != nil {
+						logger.ErrorCF("hotreload", "wechat start failed", map[string]any{"error": err.Error()})
+					}
+				}
+			} else {
+				if o.wechatCh != nil && o.wechatCh.IsRunning() {
+					ctx := context.Background()
+					if err := o.wechatCh.Stop(ctx); err != nil {
+						logger.ErrorCF("hotreload", "wechat stop failed", map[string]any{"error": err.Error()})
+					}
+				}
+				o.channelMgr.RemoveChannel("wechat")
+			}
+			logger.InfoCF("hotreload", "wechat channel reconfigured", map[string]any{
+				"enabled": wechatCfg.Enabled,
+			})
+
+		default:
+			// Generic channel: stop old → recreate from factory → start new
+			if o.channelMgr != nil {
+				ctx := context.Background()
+
+				// Stop old instance
+				if ch, ok := o.channelMgr.GetChannel(name); ok {
+					_ = ch.Stop(ctx)
+					o.channelMgr.RemoveChannel(name)
+				}
+
+				if !hasNew {
+					continue // channel was removed
+				}
+
+				// Re-create from factory
+				factory, ok := channel.GetFactory(name)
+				if !ok {
+					continue
+				}
+				ch, err := factory(raw)
+				if err != nil || ch == nil {
+					continue
+				}
+				if setter, ok := ch.(channel.InboundHandlerSetter); ok {
+					setter.SetInboundHandler(func(ctx context.Context, msg channel.InboundMessage) {
+						// inbound routing placeholder — wired via manager in normal flow
+					})
+				}
+				o.channelMgr.AddChannel(ch)
+				if err := ch.Start(ctx); err != nil {
+					logger.ErrorCF("hotreload", "channel start failed after reload", map[string]any{
+						"name":  name,
+						"error": err.Error(),
+					})
 				}
 			}
-			o.channelMgr.RemoveChannel("wechat")
 		}
-
-		logger.InfoCF("hotreload", "wechat channel reconfigured", map[string]any{
-			"enabled": wcCfg.Enabled,
-		})
 	}
 
-	// 5. Warn about changes that require a full restart
+	// 4. Warn about changes that require a full restart
 	if diff.PortChanged {
 		logger.WarnCF("hotreload", "server.port changed, restart required to take effect", map[string]any{
 			"old": oldCfg.Server.Port,
 			"new": newCfg.Server.Port,
 		})
 	}
-	if diff.DatabaseChanged {
+	if diff.DBChanged {
 		logger.WarnCF("hotreload", "database config changed, restart required to take effect", map[string]any{
 			"old_driver": oldCfg.Database.Driver,
 			"new_driver": newCfg.Database.Driver,

@@ -7,11 +7,10 @@ import (
 // ConfigDiff describes which parts of the configuration have changed.
 type ConfigDiff struct {
 	ModelChanged    bool
-	FeishuChanged   bool
-	WechatChanged   bool
 	LogChanged      bool
 	PortChanged     bool
-	DatabaseChanged bool
+	DBChanged       bool
+	ChannelsChanged map[string]bool // channel name → whether its config changed
 }
 
 // CalcDiff compares two Config structs and returns what changed.
@@ -31,13 +30,22 @@ func CalcDiff(old, new *config.Config) ConfigDiff {
 		diff.ModelChanged = true
 	}
 
-	// Feishu channel
-	diff.FeishuChanged = old.Channels.Feishu.Enabled != new.Channels.Feishu.Enabled ||
-		old.Channels.Feishu.AppID != new.Channels.Feishu.AppID ||
-		old.Channels.Feishu.AppSecret != new.Channels.Feishu.AppSecret
-
-	// WeChat channel
-	diff.WechatChanged = old.Channels.Wechat.Enabled != new.Channels.Wechat.Enabled
+	// Channels — generic diff by name
+	diff.ChannelsChanged = make(map[string]bool)
+	allNames := make(map[string]struct{})
+	for name := range old.Channels {
+		allNames[name] = struct{}{}
+	}
+	for name := range new.Channels {
+		allNames[name] = struct{}{}
+	}
+	for name := range allNames {
+		oldRaw, oldOk := old.Channels[name]
+		newRaw, newOk := new.Channels[name]
+		if !oldOk || !newOk || string(oldRaw) != string(newRaw) {
+			diff.ChannelsChanged[name] = true
+		}
+	}
 
 	// Logger
 	diff.LogChanged = old.Log.Level != new.Log.Level ||
@@ -47,7 +55,7 @@ func CalcDiff(old, new *config.Config) ConfigDiff {
 	diff.PortChanged = old.Server.Port != new.Server.Port
 
 	// Database config (requires restart)
-	diff.DatabaseChanged = old.Database.Driver != new.Database.Driver ||
+	diff.DBChanged = old.Database.Driver != new.Database.Driver ||
 		old.Database.DSN != new.Database.DSN
 
 	return diff

@@ -39,4 +39,17 @@ type OutboundMessage struct {
 
 	// Text is the message text content.
 	Text string
+
+	// MediaType indicates the message type: "text", "voice", "image", "file".
+	// Used by MediaSender-aware channels. If empty, treat as plain text.
+	MediaType string `json:"media_type,omitempty"`
+
+	// MediaURL is a downloadable URL for the media content.
+	MediaURL string `json:"media_url,omitempty"`
+
+	// MediaData holds raw media bytes. Not serialized.
+	MediaData []byte `json:"-"`
+
+	// ReferenceID is an optional correlation ID for retry deduplication.
+	ReferenceID string `json:"reference_id,omitempty"`
 }
