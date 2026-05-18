@@ -1,13 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { MessageSquare, PowerOff, RefreshCw, Loader2, QrCode, Smartphone, CheckCircle2, AlertCircle } from 'lucide-react'
+import { MessageSquare, PowerOff, RefreshCw, Loader2, QrCode, Check, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
-import { getWechatQrCode, getWechatStatus, disconnectWechat, reconnectWechat } from '@/api/wechat'
-import type { WechatStatus, WechatQrCode } from '@/types/wechat'
+import { getWechatStatus, disconnectWechat, reconnectWechat, startWechatQRFlow, pollWechatQRFlow } from '@/api/wechat'
+import type { WechatStatus } from '@/types/wechat'
+
+type BindingState = 'idle' | 'loading' | 'waiting' | 'scaned' | 'confirmed' | 'expired' | 'error'
 
 export function WechatBotSection() {
   const { t } = useTranslation('settings')
@@ -17,83 +19,114 @@ export function WechatBotSection() {
   const [connecting, setConnecting] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
 
-  // QR code state
-  const [qrCode, setQrCode] = useState<WechatQrCode | null>(null)
-  const [qrPolling, setQrPolling] = useState(false)
-  const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // QR binding state
+  const [bindState, setBindState] = useState<BindingState>('idle')
+  const [qrDataURI, setQrDataURI] = useState<string | null>(null)
+  const [accountID, setAccountID] = useState<string | null>(null)
+  const [bindError, setBindError] = useState('')
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const initialRef = useRef(true)
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollGenerationRef = useRef(0)
 
-  const fetchStatus = useCallback(async () => {
-    try {
-      const s = await getWechatStatus()
-      setStatus(s)
-      setError('')
-    } catch (err) {
-      if (!loading) {
-        setError(err instanceof Error ? err.message : t('wechatStatusFailed'))
-      }
-    } finally {
-      setLoading(false)
+  // Stop QR polling
+  const stopQrPolling = useCallback(() => {
+    pollGenerationRef.current += 1
+    if (pollTimerRef.current !== null) {
+      clearInterval(pollTimerRef.current)
+      pollTimerRef.current = null
     }
-  }, [loading, t])
+  }, [])
 
+  useEffect(() => () => stopQrPolling(), [stopQrPolling])
+
+  const refreshStatus = useCallback(() => {
+    setLoading(true)
+    getWechatStatus()
+      .then((s) => {
+        setStatus(s)
+        setError('')
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : t('wechatStatusFailed'))
+      })
+      .finally(() => {
+        setLoading(false)
+      })
+  }, [t])
+
+  // Start QR polling
+  const startQrPolling = useCallback((flowID: string) => {
+    stopQrPolling()
+    const generation = pollGenerationRef.current
+    let inFlight = false
+    pollTimerRef.current = setInterval(async () => {
+      if (inFlight) return
+      inFlight = true
+      try {
+        const resp = await pollWechatQRFlow(flowID)
+        if (generation !== pollGenerationRef.current) return
+        if (resp.status === 'scaned') {
+          setBindState('scaned')
+        } else if (resp.status === 'confirmed') {
+          stopQrPolling()
+          setAccountID(resp.account_id ?? null)
+          setBindState('confirmed')
+          // Refresh status after binding
+          setTimeout(() => refreshStatus(), 500)
+        } else if (resp.status === 'expired') {
+          stopQrPolling()
+          setBindState('expired')
+        } else if (resp.status === 'error') {
+          stopQrPolling()
+          setBindState('error')
+          setBindError(resp.error ?? t('wechatBindError'))
+        }
+      } catch {
+        // transient network error — keep polling
+      } finally {
+        inFlight = false
+      }
+    }, 2000)
+  }, [stopQrPolling, t, refreshStatus])
+
+  // Status polling
   useEffect(() => {
-    void fetchStatus()
-    pollingRef.current = setInterval(() => {
-      void fetchStatus()
-    }, 10000)
+    const poll = () => {
+      getWechatStatus()
+        .then((s) => {
+          setStatus(s)
+          setError('')
+          // If already bound, show confirmed state
+          if (s.has_token && s.account_id) {
+            setBindState('confirmed')
+            setAccountID(s.account_id)
+          }
+        })
+        .catch((err) => {
+          if (!initialRef.current) {
+            setError(err instanceof Error ? err.message : t('wechatStatusFailed'))
+          }
+        })
+        .finally(() => {
+          initialRef.current = false
+          setLoading(false)
+        })
+    }
+    poll()
+    pollingRef.current = setInterval(poll, 10000)
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current)
     }
-  }, [fetchStatus])
-
-  // QR code polling
-  const startQrPolling = useCallback(() => {
-    setQrPolling(true)
-    const poll = async () => {
-      try {
-        const qr = await getWechatQrCode()
-        setQrCode(qr)
-
-        // If login successful or expired, stop polling
-        if (qr.status === 'success' || qr.status === 'expired') {
-          if (qrPollRef.current) clearInterval(qrPollRef.current)
-          setQrPolling(false)
-          // Refresh overall status
-          void fetchStatus()
-        }
-      } catch {
-        // ignore polling errors
-      }
-    }
-    void poll()
-    qrPollRef.current = setInterval(poll, 2000)
-  }, [fetchStatus])
-
-  const stopQrPolling = useCallback(() => {
-    if (qrPollRef.current) {
-      clearInterval(qrPollRef.current)
-      qrPollRef.current = null
-    }
-    setQrPolling(false)
-    setQrCode(null)
-  }, [])
-
-  // Cleanup QR polling on unmount
-  useEffect(() => {
-    return () => {
-      if (qrPollRef.current) clearInterval(qrPollRef.current)
-    }
-  }, [])
+  }, [t])
 
   async function handleConnect() {
     setConnecting(true)
     setError('')
     try {
       await reconnectWechat()
-      // Start polling QR code
-      startQrPolling()
+      setTimeout(() => refreshStatus(), 1000)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('wechatConnectFailed'))
     } finally {
@@ -106,8 +139,7 @@ export function WechatBotSection() {
     setError('')
     try {
       await disconnectWechat()
-      stopQrPolling()
-      setStatus((prev) => prev ? { ...prev, connected: false, logged_in: false } : null)
+      setStatus((prev) => prev ? { ...prev, connected: false, account_id: '' } : null)
     } catch (err) {
       setError(err instanceof Error ? err.message : t('wechatDisconnectFailed'))
     } finally {
@@ -115,17 +147,164 @@ export function WechatBotSection() {
     }
   }
 
+  async function handleBind() {
+    setBindState('loading')
+    setBindError('')
+    setQrDataURI(null)
+    stopQrPolling()
+    try {
+      const resp = await startWechatQRFlow()
+      setQrDataURI(resp.qr_data_uri ?? null)
+      setBindState('waiting')
+      startQrPolling(resp.flow_id)
+    } catch (e) {
+      setBindState('error')
+      setBindError(e instanceof Error ? e.message : t('wechatBindError'))
+    }
+  }
+
+  function handleRebind() {
+    stopQrPolling()
+    setBindState('idle')
+    setQrDataURI(null)
+    setAccountID(null)
+    setBindError('')
+  }
+
   const isConnected = status?.connected ?? false
-  const isLoggedIn = status?.logged_in ?? false
   const isEnabled = status?.enabled ?? false
-  const qrImageUrl = qrCode?.uuid ? `https://login.weixin.qq.com/qrcode/${qrCode.uuid}` : null
+  const nickname = status?.account_id ?? ''
+  const isBound = status?.has_token ?? false
+
+  // Render QR binding section
+  const renderBindSection = () => {
+    if (bindState === 'idle') {
+      if (isBound) {
+        return (
+          <div className="flex flex-col items-center gap-3 py-4">
+            <div className="flex items-center gap-2 rounded-full bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+              <Check className="h-4 w-4" />
+              {t('wechatBound')}
+            </div>
+            {accountID && (
+              <p className="font-mono text-xs text-on-surface-variant">{accountID}</p>
+            )}
+            <Button variant="outline" size="sm" onClick={handleRebind} className="mt-1 gap-2">
+              <RefreshCw className="h-3.5 w-3.5" />
+              {t('wechatRebind')}
+            </Button>
+          </div>
+        )
+      }
+      return (
+        <div className="flex flex-col items-center gap-4 py-4">
+          <p className="text-sm text-on-surface-variant">{t('wechatNotBound')}</p>
+          <Button onClick={() => void handleBind()} className="gap-2">
+            <QrCode className="h-4 w-4" />
+            {t('wechatBind')}
+          </Button>
+        </div>
+      )
+    }
+
+    if (bindState === 'loading') {
+      return (
+        <div className="flex flex-col items-center gap-3 py-6">
+          <Loader2 className="h-8 w-8 animate-spin text-on-surface-variant" />
+          <p className="text-sm text-on-surface-variant">{t('wechatGeneratingQR')}</p>
+        </div>
+      )
+    }
+
+    if (bindState === 'waiting' || bindState === 'scaned') {
+      return (
+        <div className="flex flex-col items-center gap-4 py-4">
+          {qrDataURI ? (
+            <img
+              src={qrDataURI}
+              alt="WeChat QR Code"
+              className="h-48 w-48 rounded-xl border border-outline-variant/60 bg-white p-2 shadow-sm"
+            />
+          ) : (
+            <div className="flex h-48 w-48 items-center justify-center rounded-xl border border-outline-variant/60 bg-surface-container">
+              <Loader2 className="h-8 w-8 animate-spin text-on-surface-variant" />
+            </div>
+          )}
+          {bindState === 'scaned' ? (
+            <div className="flex items-center gap-2 rounded-full bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-600 dark:text-amber-400">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {t('wechatScanned')}
+            </div>
+          ) : (
+            <p className="text-sm text-on-surface-variant">{t('wechatScanHint')}</p>
+          )}
+          <Button variant="ghost" size="sm" onClick={handleRebind} className="text-on-surface-variant">
+            <RefreshCw className="mr-1 h-3.5 w-3.5" />
+            {t('common:refresh')}
+          </Button>
+        </div>
+      )
+    }
+
+    if (bindState === 'confirmed') {
+      return (
+        <div className="flex flex-col items-center gap-3 py-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
+            <Check className="h-7 w-7 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+            {t('wechatBound')}
+          </p>
+          {accountID && (
+            <p className="font-mono text-xs text-on-surface-variant">{accountID}</p>
+          )}
+          <Button variant="outline" size="sm" onClick={handleRebind} className="mt-1 gap-2">
+            <RefreshCw className="h-3.5 w-3.5" />
+            {t('wechatRebind')}
+          </Button>
+        </div>
+      )
+    }
+
+    if (bindState === 'expired') {
+      return (
+        <div className="flex flex-col items-center gap-4 py-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10">
+            <X className="h-7 w-7 text-amber-600 dark:text-amber-400" />
+          </div>
+          <p className="text-sm text-amber-600 dark:text-amber-400">{t('wechatExpired')}</p>
+          <Button variant="outline" size="sm" onClick={() => void handleBind()} className="gap-2">
+            <RefreshCw className="h-3.5 w-3.5" />
+            {t('wechatRetry')}
+          </Button>
+        </div>
+      )
+    }
+
+    if (bindState === 'error') {
+      return (
+        <div className="flex flex-col items-center gap-4 py-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-error-container/50">
+            <X className="h-7 w-7 text-error" />
+          </div>
+          <p className="text-sm text-error">{bindError || t('wechatBindError')}</p>
+          <Button variant="outline" size="sm" onClick={handleRebind} className="gap-2">
+            <RefreshCw className="h-3.5 w-3.5" />
+            {t('wechatRetry')}
+          </Button>
+        </div>
+      )
+    }
+
+    return null
+  }
 
   return (
     <div className="space-y-6">
       <Card className="rounded-xl border-outline-variant/20 bg-surface-container-lowest shadow-sm">
         <CardHeader className="pb-4">
           <div className="flex items-center gap-3">
-            <MessageSquare className="w-5 h-5 text-primary" />
+            <MessageSquare className="h-5 w-5 text-primary" />
             <div>
               <CardTitle className="text-lg font-bold tracking-tight">{t('wechatBotTitle')}</CardTitle>
               <CardDescription>{t('wechatBotDescription')}</CardDescription>
@@ -135,11 +314,16 @@ export function WechatBotSection() {
         <CardContent className="space-y-5">
           <Separator />
 
+          {/* QR Code Binding Section */}
+          {renderBindSection()}
+
+          <Separator />
+
           {/* Connection status indicator */}
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3">
               <div className={cn(
-                'w-3 h-3 rounded-full',
+                'h-3 w-3 rounded-full',
                 loading ? 'bg-on-surface-variant/30' :
                 isConnected ? 'bg-primary' : 'bg-error'
               )} />
@@ -148,8 +332,10 @@ export function WechatBotSection() {
                   {loading ? t('wechatStatusChecking') :
                    isConnected ? t('wechatConnected') : t('wechatDisconnected')}
                 </p>
-                {!loading && isLoggedIn && (
-                  <p className="text-xs text-on-surface-variant">{t('wechatLoggedIn')}</p>
+                {!loading && isConnected && nickname && (
+                  <p className="text-xs text-on-surface-variant">
+                    {t('wechatSelfHint', { nickname })}
+                  </p>
                 )}
               </div>
             </div>
@@ -165,79 +351,6 @@ export function WechatBotSection() {
             </div>
           )}
 
-          {/* QR code display */}
-          {qrPolling && qrCode && qrCode.status !== 'success' && (
-            <div className="flex flex-col items-center gap-3 py-4">
-              {qrImageUrl && (
-                <div className="relative">
-                  <img
-                    src={qrImageUrl}
-                    alt="WeChat QR Code"
-                    className="w-48 h-48 rounded-lg border border-outline-variant/20"
-                  />
-                  {/* Status overlay */}
-                  {qrCode.status === 'scanned' && (
-                    <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-surface/80">
-                      <div className="text-center">
-                        <Smartphone className="w-8 h-8 mx-auto text-primary mb-2" />
-                        <p className="text-sm font-medium text-on-surface">{t('wechatScanned')}</p>
-                      </div>
-                    </div>
-                  )}
-                  {qrCode.status === 'expired' && (
-                    <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-surface/80">
-                      <div className="text-center">
-                        <AlertCircle className="w-8 h-8 mx-auto text-error mb-2" />
-                        <p className="text-sm font-medium text-on-surface">{t('wechatExpired')}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Status text */}
-              <div className="flex items-center gap-2 text-sm text-on-surface-variant">
-                {qrCode.status === 'waiting' && (
-                  <>
-                    <QrCode className="w-4 h-4" />
-                    <span>{t('wechatQrWaiting')}</span>
-                  </>
-                )}
-                {qrCode.status === 'scanned' && (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>{t('wechatQrScanned')}</span>
-                  </>
-                )}
-              </div>
-
-              {/* Retry button for expired */}
-              {qrCode.status === 'expired' && (
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={() => void handleConnect()}
-                  disabled={connecting}
-                >
-                  {connecting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                  )}
-                  {t('wechatRetry')}
-                </Button>
-              )}
-            </div>
-          )}
-
-          {/* Login success */}
-          {qrCode?.status === 'success' && !isConnected && (
-            <div className="flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{t('wechatLoginSuccess')}</span>
-            </div>
-          )}
-
           {/* Action buttons */}
           <div className="flex items-center gap-3 flex-wrap">
             {!isConnected ? (
@@ -245,12 +358,12 @@ export function WechatBotSection() {
                 variant="default"
                 size="sm"
                 onClick={() => void handleConnect()}
-                disabled={connecting || qrPolling}
+                disabled={connecting}
               >
-                {connecting || qrPolling ? (
+                {connecting ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
-                  <Smartphone className="mr-2 h-4 w-4" />
+                  <RefreshCw className="mr-2 h-4 w-4" />
                 )}
                 {connecting ? t('wechatConnecting') : t('wechatConnect')}
               </Button>
@@ -272,28 +385,19 @@ export function WechatBotSection() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => { setLoading(true); void fetchStatus() }}
+              onClick={() => refreshStatus()}
               disabled={loading}
             >
               <RefreshCw className={cn('mr-2 h-4 w-4', loading ? 'animate-spin' : '')} />
               {t('common:refresh')}
             </Button>
-
-            {/* Cancel QR polling */}
-            {qrPolling && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={stopQrPolling}
-              >
-                {t('wechatCancel')}
-              </Button>
-            )}
           </div>
 
           {/* Hint text when not enabled */}
           {!isEnabled && !isConnected && (
-            <p className="text-xs text-on-surface-variant">{t('wechatNotEnabledHint')}</p>
+            <p className="text-xs text-on-surface-variant">
+              {t('wechatNotEnabledHint')}
+            </p>
           )}
         </CardContent>
       </Card>

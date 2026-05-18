@@ -113,7 +113,7 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 	}
 
 	// 9. HTTP server
-	wechatHandler := handler.NewWechatHandler(channelMgr, wechatCh)
+	wechatHandler := handler.NewWechatHandler(channelMgr, wechatCh, configPath)
 	srv := initServer(cfg.Server, db, uow, authSvc, orch, materialSvc, inventorySvc, feishuHandler, modelHandler, wechatHandler)
 
 	// Register tool definitions on dispatcher

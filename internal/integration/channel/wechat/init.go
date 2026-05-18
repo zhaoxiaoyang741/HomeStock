@@ -16,6 +16,6 @@ func init() {
 		if !cfg.Enabled {
 			return nil, nil
 		}
-		return NewWechatChannel(), nil
+		return NewWechatChannel(cfg), nil
 	})
 }

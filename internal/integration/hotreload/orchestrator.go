@@ -1,4 +1,4 @@
-package hotreload
+﻿package hotreload
 
 import (
 	"context"
@@ -29,9 +29,9 @@ type Orchestrator struct {
 	wechatCh   *wechat.WechatChannel
 	channelMgr *channel.Manager
 
-	lastCfg        atomic.Value // stores *config.Config — the last successfully applied config
+	lastCfg        atomic.Value // stores *config.Config 鈥?the last successfully applied config
 	reloading      atomic.Bool  // prevents concurrent reloads
-	lastReloadTime atomic.Value // stores time.Time — when the last reload completed
+	lastReloadTime atomic.Value // stores time.Time 鈥?when the last reload completed
 }
 
 // NewOrchestrator creates an Orchestrator and seeds it with the initial config.
@@ -139,7 +139,7 @@ func (o *Orchestrator) Reload() error {
 
 		switch name {
 		case "feishu":
-			// Feishu has OAuth dependencies — use the existing path
+			// Feishu has OAuth dependencies 鈥?use the existing path
 			if o.feishuCh != nil && o.oauthSvc != nil {
 				ctx := context.Background()
 
@@ -163,7 +163,10 @@ func (o *Orchestrator) Reload() error {
 			})
 
 		case "wechat":
-			// WeChat has login state — use the existing instance
+			// WeChat has login state 鈥?use the existing instance
+			if o.wechatCh != nil {
+				o.wechatCh.SetConfig(wechatCfg)
+			}
 			if wechatCfg.Enabled {
 				if _, exists := o.channelMgr.GetChannel("wechat"); !exists {
 					o.channelMgr.AddChannel(o.wechatCh)
@@ -188,7 +191,7 @@ func (o *Orchestrator) Reload() error {
 			})
 
 		default:
-			// Generic channel: stop old → recreate from factory → start new
+			// Generic channel: stop old 鈫?recreate from factory 鈫?start new
 			if o.channelMgr != nil {
 				ctx := context.Background()
 
@@ -213,7 +216,7 @@ func (o *Orchestrator) Reload() error {
 				}
 				if setter, ok := ch.(channel.InboundHandlerSetter); ok {
 					setter.SetInboundHandler(func(ctx context.Context, msg channel.InboundMessage) {
-						// inbound routing placeholder — wired via manager in normal flow
+						// inbound routing placeholder 鈥?wired via manager in normal flow
 					})
 				}
 				o.channelMgr.AddChannel(ch)
@@ -245,3 +248,4 @@ func (o *Orchestrator) Reload() error {
 	o.lastReloadTime.Store(time.Now())
 	return nil
 }
+

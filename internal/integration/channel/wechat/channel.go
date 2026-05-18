@@ -3,36 +3,45 @@ package wechat
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
+	"time"
 
-	"github.com/eatmoreapple/openwechat"
+	"github.com/google/uuid"
 
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 )
 
-const (
-	storageFilename = "data/wechat_storage.json"
-)
-
-// WechatChannel implements channel.Channel for personal WeChat via openwechat.
+// WechatChannel implements channel.Channel for personal WeChat
+// via the Tencent iLink REST API (same approach as picoclaw).
 type WechatChannel struct {
 	*channel.BaseChannel
-	bot       *openwechat.Bot
-	self      *openwechat.Self
-	loginSess *LoginSession
-	stopped   chan struct{}
-
-	mu         sync.Mutex
-	startOnce  sync.Once
-	stopOnce   sync.Once
+	cfg           config.WechatChannelConfig
+	api           *ApiClient
+	ctx           context.Context
+	cancel        context.CancelFunc
+	stateMgr      *WechatStateManager
+	contextTokens sync.Map // from_user_id → context_token (in-memory cache)
+	mu            sync.Mutex
+	typingMu      sync.Mutex
+	typingCache   map[string]typingTicketCacheEntry
+	pauseMu       sync.Mutex
+	pauseUntil    time.Time
+	syncCursor    string
+	syncCursorMu  sync.Mutex
+	stopped       chan struct{}
+	stopOnce      sync.Once
 }
 
-// NewWechatChannel creates a new WechatChannel.
-func NewWechatChannel() *WechatChannel {
+// NewWechatChannel creates a WechatChannel from the given config.
+func NewWechatChannel(cfg config.WechatChannelConfig) *WechatChannel {
 	c := &WechatChannel{
 		BaseChannel: &channel.BaseChannel{},
-		loginSess:   &LoginSession{},
+		cfg:         cfg,
+		typingCache: make(map[string]typingTicketCacheEntry),
+		stateMgr:    NewWechatStateManager(&cfg),
 		stopped:     make(chan struct{}),
 	}
 	c.InitBase("wechat", nil)
@@ -42,216 +51,397 @@ func NewWechatChannel() *WechatChannel {
 // Name returns the channel name.
 func (c *WechatChannel) Name() string { return "wechat" }
 
-// Start establishes the WeChat connection via openwechat.
+// Start initializes the API client and begins the long-poll receive loop.
 func (c *WechatChannel) Start(ctx context.Context) error {
-	c.BaseStart(ctx)
-	c.mu.Lock()
-	c.bot = openwechat.NewBot(ctx)
-	bot := c.bot
-	c.mu.Unlock()
+	c.ctx, c.cancel = context.WithCancel(ctx)
+	c.BaseStart(c.ctx)
 
-	// Set up QR code UUID callback
-	bot.UUIDCallback = func(uuid string) {
-		c.mu.Lock()
-		c.loginSess = NewLoginSession(uuid)
-		c.mu.Unlock()
-		logger.InfoCF("wechat", "QR code ready, waiting for scan", map[string]any{
-			"uuid": uuid,
-		})
+	baseURL := c.cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://ilinkai.weixin.qq.com/"
 	}
 
-	// Scan callback
-	bot.ScanCallBack = func(_ openwechat.CheckLoginResponse) {
-		c.mu.Lock()
-		c.loginSess.SetStatus(LoginStatusScanned)
-		c.mu.Unlock()
-		logger.InfoC("wechat", "QR code scanned, please confirm on phone")
-	}
-
-	// Login callback
-	bot.LoginCallBack = func(_ openwechat.CheckLoginResponse) {
-		c.mu.Lock()
-		c.loginSess.SetStatus(LoginStatusSuccess)
-		c.mu.Unlock()
-		logger.InfoC("wechat", "Login successful")
-	}
-
-	// Logout callback
-	bot.LogoutCallBack = func(b *openwechat.Bot) {
-		logger.InfoC("wechat", "Bot logged out")
-	}
-
-	// Message handler
-	bot.MessageHandler = func(msg *openwechat.Message) {
-		c.handleMessage(msg)
-	}
-
-	// Try hot login first (reuse saved session), fall back to QR login
-	storage := openwechat.NewFileHotReloadStorage(storageFilename)
-	if err := bot.HotLogin(storage); err != nil {
-		logger.InfoC("wechat", "Hot login failed, trying QR login")
-		// Reset login session for QR login
-		c.mu.Lock()
-		c.loginSess = &LoginSession{}
-		c.mu.Unlock()
-
-		if err := bot.Login(); err != nil {
-			close(c.stopped)
-			return fmt.Errorf("wechat: qr login failed: %w", err)
-		}
-	}
-
-	// Get current user info
-	self, err := bot.GetCurrentUser()
+	api, err := NewApiClient(baseURL, c.cfg.Token, c.cfg.Proxy)
 	if err != nil {
-		close(c.stopped)
-		return fmt.Errorf("wechat: get current user: %w", err)
+		c.cancel()
+		c.BaseStop()
+		return fmt.Errorf("wechat: failed to create API client: %w", err)
 	}
-	c.mu.Lock()
-	c.self = self
-	c.mu.Unlock()
+	c.api = api
 
-	logger.InfoCF("wechat", "Bot logged in as %s", map[string]any{
-		"nickname": self.NickName,
+	// Restore persisted state
+	if err := c.restoreState(); err != nil {
+		logger.WarnCF("wechat", "Failed to restore state", map[string]any{"error": err.Error()})
+	}
+
+	// Start the polling loop
+	go c.pollLoop(c.ctx)
+
+	logger.InfoCF("wechat", "channel started", map[string]any{
+		"base_url": baseURL,
+	})
+	return nil
+}
+
+// Stop gracefully stops the poll loop and cleans up.
+func (c *WechatChannel) Stop(ctx context.Context) error {
+	logger.InfoC("wechat", "stopping channel")
+
+	if c.cancel != nil {
+		c.cancel()
+	}
+
+	c.stopOnce.Do(func() {
+		close(c.stopped)
 	})
 
-	// Block until bot exits (message sync runs in background goroutine)
-	go func() {
-		if err := bot.Block(); err != nil {
-			logger.InfoCF("wechat", "Bot exited", map[string]any{
-				"error": err.Error(),
-			})
-		} else {
-			logger.InfoC("wechat", "Bot exited normally")
-		}
-		close(c.stopped)
-	}()
-
-	return nil
-}
-
-// Stop gracefully shuts down the WeChat connection.
-func (c *WechatChannel) Stop(ctx context.Context) error {
-	c.mu.Lock()
-	if c.bot != nil {
-		c.bot.Exit()
-	}
-	c.mu.Unlock()
-
-	// Wait for bot to fully stop
-	select {
-	case <-c.stopped:
-	case <-ctx.Done():
-	}
-
 	c.BaseStop()
-	logger.InfoC("wechat", "Channel stopped")
+	logger.InfoC("wechat", "channel stopped")
 	return nil
 }
 
-// Send delivers an outbound message through WeChat.
+// Send delivers a text message to a WeChat user via the iLink API.
 func (c *WechatChannel) Send(ctx context.Context, msg channel.OutboundMessage) error {
-	if !c.IsRunning() {
+	if !c.IsRunning() || c.api == nil {
 		return fmt.Errorf("wechat: channel not running")
 	}
-	if msg.ChatID == "" {
-		return fmt.Errorf("wechat: chat ID is empty")
+	if err := c.ensureSessionActive(); err != nil {
+		return err
 	}
 	if msg.Text == "" {
 		return nil
 	}
 
-	c.mu.Lock()
-	self := c.self
-	bot := c.bot
-	c.mu.Unlock()
+	toUserID := msg.ChatID
 
-	if self == nil || bot == nil {
-		return fmt.Errorf("wechat: not logged in")
+	// Retrieve context_token from our per-user map
+	contextToken := ""
+	if ct, ok := c.contextTokens.Load(toUserID); ok {
+		contextToken, _ = ct.(string)
+	}
+	if contextToken == "" {
+		// Also try the state manager
+		contextToken = c.stateMgr.GetContextToken(toUserID)
+	}
+	if contextToken == "" {
+		return fmt.Errorf("wechat: missing context token for chat %s", toUserID)
 	}
 
-	// Send text directly via bot caller — only needs UserName, no Friend/Group object
-	sendMsg := openwechat.NewTextSendMessage(msg.Text, self.UserName, msg.ChatID)
-	_, err := bot.Caller.WebWxSendMsg(ctx, &openwechat.CallerWebWxSendMsgOptions{
-		LoginInfo:   bot.Storage.LoginInfo,
-		BaseRequest: bot.Storage.Request,
-		Message:     sendMsg,
-	})
-	if err != nil {
-		return fmt.Errorf("wechat: send message: %w", err)
+	if err := c.sendTextMessage(ctx, toUserID, contextToken, msg.Text); err != nil {
+		logger.ErrorCF("wechat", "failed to send message", map[string]any{
+			"to_user_id": toUserID,
+			"error":      err.Error(),
+		})
+		if c.remainingPause() > 0 {
+			return fmt.Errorf("wechat: send failed (session paused)")
+		}
+		return fmt.Errorf("wechat: send failed: %w", err)
 	}
+
 	return nil
 }
 
-// GetLoginSession returns a snapshot of the current login session state.
-func (c *WechatChannel) GetLoginSession() LoginSession {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.loginSess == nil {
-		return LoginSession{}
-	}
-	return c.loginSess.Snapshot()
+// GetSelfInfo returns the WeChat account ID (as self ID) and nickname.
+// Nickname is not available via iLink API, so account_id is used for both.
+func (c *WechatChannel) GetSelfInfo() (int64, string) {
+	// AccountID may be a string like "wx_xxx", not a numeric int64.
+	// Return 0 and the account_id as nickname for display.
+	return 0, c.cfg.AccountID
 }
 
-// IsLoggedIn returns true if the bot has successfully logged in.
-func (c *WechatChannel) IsLoggedIn() bool {
+// SetConfig updates the channel config at runtime (used by hot-reload).
+func (c *WechatChannel) SetConfig(cfg config.WechatChannelConfig) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.self != nil
+	c.cfg = cfg
+	c.stateMgr = NewWechatStateManager(&cfg)
 }
 
-// handleMessage processes an incoming WeChat message and pushes it to the bus.
-func (c *WechatChannel) handleMessage(msg *openwechat.Message) {
-	// Only process text messages from friends or self
-	if !msg.IsText() {
+// HasToken returns whether the channel has a valid auth token.
+func (c *WechatChannel) HasToken() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.cfg.Token != ""
+}
+
+// ---------------------------------------------------------------------------
+// State persistence
+// ---------------------------------------------------------------------------
+
+func (c *WechatChannel) restoreState() error {
+	// Restore context tokens
+	tokens, err := c.stateMgr.LoadContextTokens()
+	if err != nil {
+		logger.WarnCF("wechat", "failed to load context tokens", map[string]any{"error": err.Error()})
+	} else if len(tokens) > 0 {
+		for userID, token := range tokens {
+			c.contextTokens.Store(userID, token)
+		}
+		logger.InfoCF("wechat", "restored context tokens", map[string]any{"count": len(tokens)})
+	}
+
+	// Restore sync cursor
+	cursor, err := c.stateMgr.LoadCursor()
+	if err != nil {
+		logger.WarnCF("wechat", "failed to load sync cursor", map[string]any{"error": err.Error()})
+	} else if cursor != "" {
+		c.syncCursorMu.Lock()
+		c.syncCursor = cursor
+		c.syncCursorMu.Unlock()
+		logger.InfoCF("wechat", "restored sync cursor", map[string]any{"bytes": len(cursor)})
+	}
+
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Poll loop
+// ---------------------------------------------------------------------------
+
+func (c *WechatChannel) pollLoop(ctx context.Context) {
+	const (
+		defaultPollTimeoutMs = 35_000
+		retryDelay           = 2 * time.Second
+		backoffDelay         = 30 * time.Second
+		maxConsecutiveFails  = 3
+	)
+
+	consecutiveFails := 0
+
+	c.syncCursorMu.Lock()
+	getUpdatesBuf := c.syncCursor
+	c.syncCursorMu.Unlock()
+
+	nextTimeoutMs := defaultPollTimeoutMs
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.InfoC("wechat", "poll loop stopped")
+			return
+		default:
+		}
+
+		if err := c.waitWhileSessionPaused(ctx); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			continue
+		}
+
+		pollCtx, pollCancel := context.WithTimeout(ctx, time.Duration(nextTimeoutMs+5000)*time.Millisecond)
+
+		resp, err := c.api.GetUpdates(pollCtx, GetUpdatesReq{
+			GetUpdatesBuf: getUpdatesBuf,
+		})
+		pollCancel()
+
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+
+			consecutiveFails++
+			logger.WarnCF("wechat", "getUpdates failed", map[string]any{
+				"error":   err.Error(),
+				"attempt": consecutiveFails,
+			})
+
+			if consecutiveFails >= maxConsecutiveFails {
+				logger.ErrorCF("wechat", "too many consecutive failures, backing off", map[string]any{
+					"duration": backoffDelay,
+				})
+				consecutiveFails = 0
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(backoffDelay):
+				}
+			} else {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(retryDelay):
+				}
+			}
+			continue
+		}
+
+		if isSessionExpiredStatus(resp.Ret, resp.Errcode) {
+			remaining := c.pauseSession("getupdates", resp.Ret, resp.Errcode, resp.Errmsg)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(remaining):
+			}
+			continue
+		}
+
+		if resp.Errcode != 0 || resp.Ret != 0 {
+			consecutiveFails++
+			logger.ErrorCF("wechat", "getUpdates API error", map[string]any{
+				"ret":     resp.Ret,
+				"errcode": resp.Errcode,
+				"errmsg":  resp.Errmsg,
+			})
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(retryDelay):
+			}
+			continue
+		}
+
+		consecutiveFails = 0
+
+		if resp.LongpollingTimeoutMs > 0 {
+			nextTimeoutMs = resp.LongpollingTimeoutMs
+		}
+
+		// Advance cursor
+		if resp.GetUpdatesBuf != "" {
+			getUpdatesBuf = resp.GetUpdatesBuf
+			c.syncCursorMu.Lock()
+			c.syncCursor = resp.GetUpdatesBuf
+			c.syncCursorMu.Unlock()
+			if err := c.stateMgr.SaveCursor(resp.GetUpdatesBuf); err != nil {
+				logger.WarnCF("wechat", "failed to persist sync cursor", map[string]any{"error": err.Error()})
+			}
+		}
+
+		// Dispatch messages
+		for _, msg := range resp.Msgs {
+			c.handleMessage(ctx, msg)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Message handling
+// ---------------------------------------------------------------------------
+
+func (c *WechatChannel) handleMessage(ctx context.Context, msg WeixinMessage) {
+	fromUserID := msg.FromUserID
+	if fromUserID == "" {
 		return
 	}
 
-	// Skip messages sent by self (echo)
-	if msg.IsSendBySelf() {
+	// Build text content from item_list
+	var parts []string
+	hasMedia := false
+	for _, item := range msg.ItemList {
+		switch item.Type {
+		case MessageItemTypeText:
+			if item.TextItem != nil && item.TextItem.Text != "" {
+				parts = append(parts, item.TextItem.Text)
+			}
+		case MessageItemTypeVoice:
+			if item.VoiceItem != nil && item.VoiceItem.Text != "" {
+				parts = append(parts, item.VoiceItem.Text)
+			} else {
+				parts = append(parts, "[audio]")
+			}
+			hasMedia = true
+		case MessageItemTypeImage:
+			parts = append(parts, "[image]")
+			hasMedia = true
+		case MessageItemTypeFile:
+			if item.FileItem != nil && item.FileItem.FileName != "" {
+				parts = append(parts, fmt.Sprintf("[file: %s]", item.FileItem.FileName))
+			} else {
+				parts = append(parts, "[file]")
+			}
+			hasMedia = true
+		case MessageItemTypeVideo:
+			parts = append(parts, "[video]")
+			hasMedia = true
+		}
+	}
+
+	content := strings.Join(parts, "\n")
+	if content == "" && !hasMedia {
 		return
 	}
 
-	// Skip system messages
-	if msg.IsSystem() {
-		return
+	senderID := fromUserID
+	senderName := fromUserID
+
+	logger.InfoCF("wechat", "message received", map[string]any{
+		"sender":  senderID,
+		"content": truncate(content, 100),
+	})
+
+	// Store context_token for outbound reply association
+	if msg.ContextToken != "" {
+		c.contextTokens.Store(fromUserID, msg.ContextToken)
+		if err := c.stateMgr.SetContextToken(fromUserID, msg.ContextToken); err != nil {
+			logger.WarnCF("wechat", "failed to persist context token", map[string]any{"error": err.Error()})
+		}
 	}
 
-	ctx := c.Context()
+	ctx = c.Context()
 	if ctx == nil {
 		return
 	}
 
-	chatID := msg.FromUserName
-	if msg.IsSendByGroup() {
-		// Get group UserName for reply routing
-		receiver, err := msg.Receiver()
-		if err == nil && receiver != nil {
-			chatID = receiver.UserName
-		}
-	}
-
-	senderName := msg.FromUserName
-	sender, err := msg.Sender()
-	if err == nil && sender != nil {
-		senderName = sender.NickName
-	}
-
-	content := msg.Content
-
-	logger.InfoCF("wechat", "message received", map[string]any{
-		"sender":  senderName,
-		"chat_id": chatID,
-		"content": content,
-	})
-
-	// Push into the message bus via BaseChannel's inbound handler
 	c.HandleInbound(ctx, channel.InboundMessage{
 		Channel:    "wechat",
-		ChatID:     chatID,
-		SenderID:   msg.FromUserName,
+		ChatID:     fromUserID,
+		SenderID:   senderID,
 		SenderName: senderName,
 		Text:       content,
 		MediaType:  "text",
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Sending
+// ---------------------------------------------------------------------------
+
+func (c *WechatChannel) sendTextMessage(ctx context.Context, toUserID, contextToken, text string) error {
+	req := SendMessageReq{
+		Msg: SendMsg{
+			ToUserID:     toUserID,
+			ClientID:     "homestock-" + uuid.New().String(),
+			MessageType:  MessageTypeBot,
+			MessageState: MessageStateFinish,
+			ItemList: []MessageItem{
+				{
+					Type: MessageItemTypeText,
+					TextItem: &TextItem{
+						Text: text,
+					},
+				},
+			},
+			ContextToken: contextToken,
+		},
+	}
+
+	resp, err := c.api.SendMessage(ctx, req)
+	if err != nil {
+		return fmt.Errorf("send message: %w", err)
+	}
+
+	if isSessionExpiredStatus(resp.Ret, resp.Errcode) {
+		c.pauseSession("sendmessage", resp.Ret, resp.Errcode, resp.Errmsg)
+		return fmt.Errorf("session expired (ret=%d errcode=%d)", resp.Ret, resp.Errcode)
+	}
+
+	if resp.Ret != 0 || resp.Errcode != 0 {
+		return fmt.Errorf("send message API error: ret=%d errcode=%d errmsg=%s", resp.Ret, resp.Errcode, resp.Errmsg)
+	}
+
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+func truncate(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n]) + "..."
 }

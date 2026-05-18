@@ -93,7 +93,12 @@ func baseCfg() *config.Config {
 				AppSecret: "secret",
 			}),
 			"wechat": rawJSON(config.WechatChannelConfig{
-				Enabled: false,
+				Enabled:    false,
+				Token:      "",
+				AccountID:  "",
+				BaseURL:    "https://ilinkai.weixin.qq.com/",
+				CDNBaseURL: "https://novac2c.cdn.weixin.qq.com/c2c",
+				Proxy:      "",
 			}),
 		},
 		ModelList: []config.ModelConfig{

@@ -51,7 +51,12 @@ type DatabaseConfig struct {
 }
 
 type WechatChannelConfig struct {
-	Enabled bool `json:"enabled"`
+	Enabled    bool   `json:"enabled"`
+	Token      string `json:"token"`
+	AccountID  string `json:"account_id"`
+	BaseURL    string `json:"base_url"`
+	CDNBaseURL string `json:"cdn_base_url"`
+	Proxy      string `json:"proxy"`
 }
 
 type FeishuChannelConfig struct {
@@ -168,7 +173,12 @@ func defaultConfig() *Config {
 		FrontendURL: "http://localhost:5173",
 	})
 	wechatRaw, _ := json.Marshal(WechatChannelConfig{
-		Enabled: false,
+		Enabled:    false,
+		Token:      "",
+		AccountID:  "",
+		BaseURL:    "https://ilinkai.weixin.qq.com/",
+		CDNBaseURL: "https://novac2c.cdn.weixin.qq.com/c2c",
+		Proxy:      "",
 	})
 
 	return &Config{
