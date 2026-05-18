@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 	"regexp"
 	"sort"
 	"strings"
@@ -283,7 +284,8 @@ func isStopWord(s string) bool { return stopWords[s] }
 
 // BuildNluSystemPrompt returns the full NLU extraction prompt with catalog, context, and user memory injected.
 func (e *NluEngine) BuildNluSystemPrompt(catalog, recentContext, userMemory string) string {
-	prompt := nluSystemPromptBase
+	today := time.Now().Format("2006-01-02")
+	prompt := fmt.Sprintf("当前日期: %s\n\n", today) + nluSystemPromptBase
 	if userMemory != "" {
 		prompt += "\n\n## 用户偏好记忆（只读参考）\n" + userMemory
 		prompt += "\n根据上述用户记忆中的偏好信息辅助推断字段值。用户的习惯性操作可直接采纳，无需确认。"

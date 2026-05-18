@@ -511,6 +511,24 @@ func (l *AgentLoop) resolveItemNames(actions []ExtractedAction, actor service.Ac
 			if err != nil || len(candidates) == 0 {
 				continue
 			}
+
+			// If item has a spec, only match materials with the same spec
+			// to prevent "500ml牛奶" and "1L牛奶" from being treated as one.
+			if item.Spec != "" {
+				var exact []ResolveResult
+				for _, c := range candidates {
+					if c.Spec == item.Spec {
+						exact = append(exact, c)
+					}
+				}
+				if len(exact) == 0 {
+					// No existing material with this spec — skip resolution,
+					// let the service layer auto-create a new material with the spec.
+					continue
+				}
+				candidates = exact
+			}
+
 			if needsConfirmation(candidates) {
 				return &PendingConfirmItem{
 					ActionIdx:  i,
@@ -688,6 +706,9 @@ func (l *AgentLoop) buildInboundArgs(item ExtractedItem) map[string]any {
 	}
 	if item.ResolvedMaterialID != "" {
 		args["material_id"] = item.ResolvedMaterialID
+	}
+	if item.Spec != "" {
+		args["spec"] = item.Spec
 	}
 	if item.Unit != "" {
 		args["unit"] = item.Unit

@@ -53,11 +53,10 @@ func (s *InventoryService) Inbound(ctx context.Context, actor Actor, in InboundI
 		}
 
 		unit := strings.TrimSpace(in.Unit)
-		if unit == "" {
+		if material.DefaultUnit != "" {
 			unit = material.DefaultUnit
-		}
-		if material.DefaultUnit != "" && unit != material.DefaultUnit {
-			return repository.ErrMaterialUnitMismatch
+		} else if unit == "" {
+			unit = "个"
 		}
 
 		lot := &model.StockLot{
