@@ -163,19 +163,20 @@ func (o *Orchestrator) Reload() error {
 			})
 
 		case "wechat":
-			// WeChat has login state 鈥?use the existing instance
-			if o.wechatCh != nil {
-				o.wechatCh.SetConfig(wechatCfg)
-			}
+			// WeChat has login state -- restart to pick up config changes (token etc.)
 			if wechatCfg.Enabled {
-				if _, exists := o.channelMgr.GetChannel("wechat"); !exists {
-					o.channelMgr.AddChannel(o.wechatCh)
-				}
-				if o.wechatCh != nil && !o.wechatCh.IsRunning() {
-					ctx := context.Background()
+				ctx := context.Background()
+				if o.wechatCh != nil {
+					if o.wechatCh.IsRunning() {
+						_ = o.wechatCh.Stop(ctx)
+					}
+					o.wechatCh.SetConfig(wechatCfg)
 					if err := o.wechatCh.Start(ctx); err != nil {
 						logger.ErrorCF("hotreload", "wechat start failed", map[string]any{"error": err.Error()})
 					}
+				}
+				if _, exists := o.channelMgr.GetChannel("wechat"); !exists {
+					o.channelMgr.AddChannel(o.wechatCh)
 				}
 			} else {
 				if o.wechatCh != nil && o.wechatCh.IsRunning() {
@@ -189,7 +190,6 @@ func (o *Orchestrator) Reload() error {
 			logger.InfoCF("hotreload", "wechat channel reconfigured", map[string]any{
 				"enabled": wechatCfg.Enabled,
 			})
-
 		default:
 			// Generic channel: stop old 鈫?recreate from factory 鈫?start new
 			if o.channelMgr != nil {

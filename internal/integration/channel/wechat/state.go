@@ -15,12 +15,13 @@ import (
 )
 
 const (
-	weixinDefaultCDNBaseURL    = "https://novac2c.cdn.weixin.qq.com/c2c"
-	weixinConfigCacheTTL       = 24 * time.Hour
-	weixinConfigRetryInitial   = 2 * time.Second
-	weixinConfigRetryMax       = time.Hour
-	weixinSessionPauseDuration = time.Hour
-	weixinSessionExpiredCode   = -14
+	weixinDefaultCDNBaseURL       = "https://novac2c.cdn.weixin.qq.com/c2c"
+	weixinConfigCacheTTL          = 24 * time.Hour
+	weixinConfigRetryInitial      = 2 * time.Second
+	weixinConfigRetryMax          = time.Hour
+	weixinSessionPauseDuration    = 5 * time.Minute
+	weixinSessionExpiredCode      = -14
+	weixinMaxConsecutiveExpiries  = 6 // 6 * 5min = 30 min total before giving up
 )
 
 type typingTicketCacheEntry struct {
@@ -128,15 +129,27 @@ func (c *WechatChannel) pauseSession(operation string, ret, errcode int, errmsg 
 		c.pauseUntil = until
 	}
 
+	c.consecutiveSessionExpiries++
+
 	remaining := time.Until(c.pauseUntil)
-	logger.ErrorCF("wechat", "Session expired; pausing WeChat channel", map[string]any{
-		"operation": operation,
-		"ret":       ret,
-		"errcode":   errcode,
-		"errmsg":    errmsg,
-		"until":     c.pauseUntil.Format(time.RFC3339),
-		"minutes":   int((remaining + time.Minute - 1) / time.Minute),
-	})
+
+	fields := map[string]any{
+		"operation":      operation,
+		"ret":            ret,
+		"errcode":        errcode,
+		"errmsg":         errmsg,
+		"until":          c.pauseUntil.Format(time.RFC3339),
+		"minutes":        int((remaining + time.Minute - 1) / time.Minute),
+		"consecutive":    c.consecutiveSessionExpiries,
+		"max_consecutive": weixinMaxConsecutiveExpiries,
+	}
+
+	if c.consecutiveSessionExpiries >= weixinMaxConsecutiveExpiries {
+		logger.ErrorCF("wechat", "Session expired repeatedly; token may be invalid, re-login required", fields)
+	} else {
+		logger.ErrorCF("wechat", "Session expired; pausing WeChat channel", fields)
+	}
+
 	return remaining
 }
 
@@ -153,6 +166,13 @@ func (c *WechatChannel) remainingPause() time.Duration {
 		return 0
 	}
 	return remaining
+}
+
+func (c *WechatChannel) clearPause() {
+	c.pauseMu.Lock()
+	defer c.pauseMu.Unlock()
+	c.pauseUntil = time.Time{}
+	c.consecutiveSessionExpiries = 0
 }
 
 func (c *WechatChannel) waitWhileSessionPaused(ctx context.Context) error {

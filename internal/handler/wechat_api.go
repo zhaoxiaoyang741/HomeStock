@@ -245,7 +245,7 @@ func (h *WechatHandler) PollQRFlow(c *gin.Context) {
 	httpresp.OK(c, resp)
 }
 
-// saveWechatBinding writes the token to config and updates the running channel.
+// saveWechatBinding writes the token to config and restarts the channel with the new token.
 func (h *WechatHandler) saveWechatBinding(token, accountID string) error {
 	baseURL := weixinBaseURL
 	cdnBaseURL := "https://novac2c.cdn.weixin.qq.com/c2c"
@@ -264,14 +264,33 @@ func (h *WechatHandler) saveWechatBinding(token, accountID string) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	// Update the running channel instance
+	// Restart the channel with the new token so the ApiClient and pollLoop pick it up.
 	if h.wxCh != nil {
+		bgCtx := context.Background()
+
+		if h.wxCh.IsRunning() {
+			_ = h.wxCh.Stop(bgCtx)
+		}
+
 		h.wxCh.SetConfig(config.WechatChannelConfig{
-			Token:     token,
-			AccountID: accountID,
-			Enabled:   true,
-			BaseURL:   baseURL,
+			Token:      token,
+			AccountID:  accountID,
+			Enabled:    true,
+			BaseURL:    baseURL,
 			CDNBaseURL: cdnBaseURL,
+		})
+
+		if err := h.wxCh.Start(bgCtx); err != nil {
+			return fmt.Errorf("restart channel after binding: %w", err)
+		}
+
+		// Ensure the channel is registered with the manager
+		if _, exists := h.chMgr.GetChannel("wechat"); !exists {
+			h.chMgr.AddChannel(h.wxCh)
+		}
+
+		logger.InfoCF("wechat", "channel restarted with new token", map[string]any{
+			"account_id": accountID,
 		})
 	}
 

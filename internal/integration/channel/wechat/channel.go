@@ -28,11 +28,12 @@ type WechatChannel struct {
 	typingMu      sync.Mutex
 	typingCache   map[string]typingTicketCacheEntry
 	pauseMu       sync.Mutex
-	pauseUntil    time.Time
-	syncCursor    string
-	syncCursorMu  sync.Mutex
-	stopped       chan struct{}
-	stopOnce      sync.Once
+	pauseUntil                  time.Time
+	syncCursor                  string
+	syncCursorMu                sync.Mutex
+	consecutiveSessionExpiries  int
+	stopped                     chan struct{}
+	stopOnce                    sync.Once
 }
 
 // NewWechatChannel creates a WechatChannel from the given config.
@@ -293,6 +294,7 @@ func (c *WechatChannel) pollLoop(ctx context.Context) {
 		}
 
 		consecutiveFails = 0
+		c.clearPause()
 
 		if resp.LongpollingTimeoutMs > 0 {
 			nextTimeoutMs = resp.LongpollingTimeoutMs
@@ -431,6 +433,7 @@ func (c *WechatChannel) sendTextMessage(ctx context.Context, toUserID, contextTo
 		return fmt.Errorf("send message API error: ret=%d errcode=%d errmsg=%s", resp.Ret, resp.Errcode, resp.Errmsg)
 	}
 
+	c.clearPause()
 	return nil
 }
 
