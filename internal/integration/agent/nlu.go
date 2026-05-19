@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/reply"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 )
@@ -479,25 +480,15 @@ func needsConfirmation(candidates []ResolveResult) bool {
 
 // buildConfirmMessage formats candidate list for user disambiguation.
 func buildConfirmMessage(name string, candidates []ResolveResult) string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("找到多个「%s」：\n", name))
-	labels := []string{"A", "B", "C", "D", "E"}
-	for i, c := range candidates {
-		if i >= len(labels) {
-			break
-		}
-		b.WriteString(fmt.Sprintf("  %s. %s", labels[i], c.Name))
-		if c.Spec != "" {
-			b.WriteString(fmt.Sprintf(" (%s)", c.Spec))
-		}
-		b.WriteString(fmt.Sprintf(" — 单位: %s", c.DefaultUnit))
-		b.WriteString("\n")
+	items := make([]reply.ConfirmCandidateData, 0, len(candidates))
+	for _, c := range candidates {
+		items = append(items, reply.ConfirmCandidateData{
+			Name: c.Name,
+			Spec: c.Spec,
+			Unit: c.DefaultUnit,
+		})
 	}
-	if len(candidates) > len(labels) {
-		b.WriteString(fmt.Sprintf("  ...以及其他 %d 个\n", len(candidates)-len(labels)))
-	}
-	b.WriteString("请回复选项字母（如 A、B、C），或输入更精确的名称。")
-	return b.String()
+	return reply.ConfirmDisambiguation(name, items)
 }
 
 func min(a, b int) int {

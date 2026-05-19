@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/reply"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
@@ -57,12 +58,19 @@ func (it *InventoryTools) InboundStock(ctx context.Context, actor service.Actor,
 		return "", fmt.Errorf("入库失败: %w", err)
 	}
 
-	result := fmt.Sprintf("✅ 入库成功！\n物品：%s\n数量：%.2f %s\n位置：%s\n",
-		lot.Material.Name, lot.QuantityOnHand, lot.Unit, lot.Location)
+	expireStr := ""
 	if lot.ExpireAt != nil {
-		result += fmt.Sprintf("\n过期日期：%s", lot.ExpireAt.Format("2006-01-02"))
+		expireStr = lot.ExpireAt.Format("2006-01-02")
 	}
-	return result, nil
+	rc := reply.ForChannel(actor.Channel)
+	return reply.InboundSuccess(rc, reply.InventoryItemData{
+		Name:     lot.Material.Name,
+		Spec:     lot.Material.Spec,
+		Quantity: lot.QuantityOnHand,
+		Unit:     lot.Unit,
+		Location: lot.Location,
+		ExpireAt: expireStr,
+	}), nil
 }
 
 func (it *InventoryTools) ConsumeMaterial(ctx context.Context, actor service.Actor, args map[string]any) (string, error) {
@@ -83,12 +91,17 @@ func (it *InventoryTools) ConsumeMaterial(ctx context.Context, actor service.Act
 	}
 
 	total := 0.0
-	detail := ""
+	details := make([]reply.ConsumeDetailData, 0, len(results))
 	for _, r := range results {
 		total += r.ConsumedQuantity
-		detail += fmt.Sprintf("\n- 批次 %s: 消耗 %.2f，剩余 %.2f", r.LotID, r.ConsumedQuantity, r.RemainingQuantity)
+		details = append(details, reply.ConsumeDetailData{
+			LotID:             r.LotID,
+			ConsumedQuantity:  r.ConsumedQuantity,
+			RemainingQuantity: r.RemainingQuantity,
+		})
 	}
-	return fmt.Sprintf("✅ 消耗成功！共消耗 %.2f%s", total, detail), nil
+	rc := reply.ForChannel(actor.Channel)
+	return reply.ConsumeSuccess(rc, total, details), nil
 }
 
 func (it *InventoryTools) QueryInventory(ctx context.Context, actor service.Actor, args map[string]any) (string, error) {
@@ -113,40 +126,28 @@ func (it *InventoryTools) QueryInventory(ctx context.Context, actor service.Acto
 	}
 
 	if len(lots) == 0 {
-		return "📭 没有找到匹配的库存记录。", nil
+		rc := reply.ForChannel(actor.Channel)
+		return reply.Empty(rc, "没有找到匹配的库存记录。"), nil
 	}
 
-	type lotInfo struct {
-		Name     string
-		Qty      float64
-		Unit     string
-		Location string
-		ExpireAt *time.Time
-	}
-	items := make([]lotInfo, 0, len(lots))
+	items := make([]reply.InventoryItemData, 0, len(lots))
 	for _, l := range lots {
-		name := l.Material.Name
-		if l.Material.Spec != "" {
-			name += " (" + l.Material.Spec + ")"
+		expireStr := ""
+		if l.ExpireAt != nil {
+			expireStr = l.ExpireAt.Format("2006-01-02")
 		}
-		items = append(items, lotInfo{
-			Name:     name,
-			Qty:      l.QuantityOnHand,
+		items = append(items, reply.InventoryItemData{
+			Name:     l.Material.Name,
+			Spec:     l.Material.Spec,
+			Quantity: l.QuantityOnHand,
 			Unit:     l.Unit,
 			Location: l.Location,
-			ExpireAt: l.ExpireAt,
+			ExpireAt: expireStr,
 		})
 	}
 
-	result := fmt.Sprintf("📦 共找到 %d 条记录：\n", len(items))
-	for _, item := range items {
-		line := fmt.Sprintf("\n- %s: %.2f %s [%s]", item.Name, item.Qty, item.Unit, item.Location)
-		if item.ExpireAt != nil {
-			line += fmt.Sprintf(" (过期: %s)", item.ExpireAt.Format("2006-01-02"))
-		}
-		result += line
-	}
-	return result, nil
+	rc := reply.ForChannel(actor.Channel)
+	return reply.InventoryList(rc, items), nil
 }
 
 func (it *InventoryTools) UpdateStockLot(ctx context.Context, actor service.Actor, args map[string]any) (string, error) {
@@ -180,14 +181,24 @@ func (it *InventoryTools) UpdateStockLot(ctx context.Context, actor service.Acto
 				return "", fmt.Errorf("更新信息失败: %w", err)
 			}
 		}
-		return fmt.Sprintf("✅ 批次 %s 已更新！当前数量: %.2f %s", lotID, updated.QuantityOnHand, updated.Unit), nil
+		rc := reply.ForChannel(actor.Channel)
+		return reply.UpdateSuccess(rc, reply.UpdateResultData{
+			LotID:    lotID,
+			Quantity: updated.QuantityOnHand,
+			Unit:     updated.Unit,
+		}), nil
 	}
 
 	updated, err := it.InventorySvc.UpdateLot(ctx, actor, lotID, actor.TenantID, input)
 	if err != nil {
 		return "", fmt.Errorf("更新失败: %w", err)
 	}
-	return fmt.Sprintf("✅ 批次 %s 信息已更新！当前数量: %.2f %s", lotID, updated.QuantityOnHand, updated.Unit), nil
+	rc := reply.ForChannel(actor.Channel)
+	return reply.UpdateSuccess(rc, reply.UpdateResultData{
+		LotID:    lotID,
+		Quantity: updated.QuantityOnHand,
+		Unit:     updated.Unit,
+	}), nil
 }
 
 // InventoryToolDefinitions returns the LLM tool definitions for inventory operations.

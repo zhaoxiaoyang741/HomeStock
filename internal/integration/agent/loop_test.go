@@ -576,7 +576,7 @@ func TestDialogState_UndoBypass(t *testing.T) {
 	})
 
 	out := <-mb.OutboundChan()
-	if out.Text != "没有可撤回的操作。" {
+	if out.Text != "ℹ️ 没有可撤回的操作。" {
 		t.Fatalf("expected 'no undo' message, got %q", out.Text)
 	}
 }

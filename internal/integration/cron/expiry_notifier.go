@@ -3,9 +3,9 @@ package cron
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/reply"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/model"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
@@ -81,8 +81,7 @@ func (n *ExpiringStockNotifier) Run(ctx context.Context) error {
 		return nil
 	}
 
-	msg := buildExpiryMessage(lots)
-	n.sendNotifications(ctx, msg)
+	n.sendNotifications(ctx, lots)
 	return nil
 }
 
@@ -122,29 +121,29 @@ func parseHHMM(s string) int {
 }
 
 // buildExpiryMessage creates a formatted notification message from expiring lots.
-func buildExpiryMessage(lots []model.StockLot) string {
-	var b strings.Builder
-	b.WriteString("以下食材即将过期：\n")
+// channelName is used to select the appropriate formatting (plain text vs markdown table).
+func buildExpiryMessage(lots []model.StockLot, channelName string) string {
+	items := make([]reply.ExpiryItemData, 0, len(lots))
 	for _, lot := range lots {
 		expireStr := "未知"
 		if lot.ExpireAt != nil {
 			expireStr = lot.ExpireAt.Format("2006-01-02")
 		}
-		name := lot.Material.Name
-		spec := lot.Material.Spec
-		nameStr := name
-		if spec != "" {
-			nameStr = name + " (" + spec + ")"
-		}
-		b.WriteString(fmt.Sprintf("\n %s\n  数量: %.1f %s\n  过期: %s\n  存放: %s\n",
-			nameStr, lot.QuantityOnHand, lot.Unit, expireStr, lot.Location))
+		items = append(items, reply.ExpiryItemData{
+			Name:     lot.Material.Name,
+			Spec:     lot.Material.Spec,
+			Quantity: lot.QuantityOnHand,
+			Unit:     lot.Unit,
+			Location: lot.Location,
+			ExpireAt: expireStr,
+		})
 	}
-	return b.String()
+	rc := reply.ForChannel(channelName)
+	return reply.ExpiryWarning(rc, items)
 }
 
-// sendNotifications sends the expiry message to all enabled channels
-// that implement NotifyTargetProvider.
-func (n *ExpiringStockNotifier) sendNotifications(ctx context.Context, msg string) {
+// sendNotifications builds per-channel expiry messages and sends them.
+func (n *ExpiringStockNotifier) sendNotifications(ctx context.Context, lots []model.StockLot) {
 	for _, name := range n.channelMgr.GetEnabledChannels() {
 		ch, ok := n.channelMgr.GetChannel(name)
 		if !ok {
@@ -165,7 +164,7 @@ func (n *ExpiringStockNotifier) sendNotifications(ctx context.Context, msg strin
 		if err := n.channelMgr.RouteOutbound(ctx, channel.OutboundMessage{
 			Channel: name,
 			ChatID:  chatID,
-			Text:    msg,
+			Text:    buildExpiryMessage(lots, name),
 		}); err != nil {
 			logger.ErrorCF("cron", "failed to send expiry notification",
 				map[string]any{"channel": name, "chat_id": chatID, "error": err.Error()})

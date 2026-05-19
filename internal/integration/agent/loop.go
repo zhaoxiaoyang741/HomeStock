@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/reply"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/tool"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
@@ -144,9 +145,9 @@ func (l *AgentLoop) processMessage(msg bus.InboundMessage) {
 	if isUndoCommand(userContent) {
 		undone := l.undoLastOperation(msg.ChatID)
 		if undone {
-			l.reply(msg, "已撤回上一条操作。")
+			l.reply(msg, reply.Success(reply.ForChannel(msg.Channel), "已撤回上一条操作。"))
 		} else {
-			l.reply(msg, "没有可撤回的操作。")
+			l.reply(msg, reply.Info(reply.ForChannel(msg.Channel), "没有可撤回的操作。"))
 		}
 		return
 	}
@@ -247,7 +248,7 @@ func (l *AgentLoop) handleIdleState(session *DialogSession, msg bus.InboundMessa
 		}
 
 	case "clarify":
-		l.reply(msg, "请描述得更清楚一些，您想做什么操作？")
+		l.reply(msg, reply.Info(reply.ForChannel(msg.Channel), "请描述得更清楚一些，您想做什么操作？"))
 	}
 }
 
@@ -272,7 +273,7 @@ func (l *AgentLoop) handleClarifyingState(session *DialogSession, msg bus.Inboun
 	if result == nil {
 		pending.AskCount++
 		if pending.AskCount >= 3 {
-			l.reply(msg, "抱歉，无法理解您的输入，请稍后重新尝试。")
+			l.reply(msg, reply.Warning(reply.ForChannel(msg.Channel), "抱歉，无法理解您的输入，请稍后重新尝试。"))
 			session.State = StateIdle
 			session.PendingOp = nil
 			return
@@ -288,7 +289,7 @@ func (l *AgentLoop) handleClarifyingState(session *DialogSession, msg bus.Inboun
 	if len(pending.MissingReqs) > 0 {
 		pending.AskCount++
 		if pending.AskCount >= 3 {
-			l.reply(msg, "抱歉，无法获取完整信息，请稍后重新尝试。")
+			l.reply(msg, reply.Warning(reply.ForChannel(msg.Channel), "抱歉，无法获取完整信息，请稍后重新尝试。"))
 			session.State = StateIdle
 			session.PendingOp = nil
 			return
@@ -353,12 +354,12 @@ func (l *AgentLoop) handleConfirmingState(session *DialogSession, msg bus.Inboun
 	if selected == nil {
 		pending.AskCount++
 		if pending.AskCount >= 3 {
-			l.reply(msg, "抱歉，无法识别您选择的物料，请稍后重新尝试。")
+			l.reply(msg, reply.Warning(reply.ForChannel(msg.Channel), "抱歉，无法识别您选择的物料，请稍后重新尝试。"))
 			session.State = StateIdle
 			session.PendingOp = nil
 			return
 		}
-		l.reply(msg, "请回复 A、B、C 选择物料，或输入更精确的名称。")
+		l.reply(msg, reply.Info(reply.ForChannel(msg.Channel), "请回复 A、B、C 选择物料，或输入更精确的名称。"))
 		return
 	}
 
@@ -451,7 +452,7 @@ func (l *AgentLoop) fallbackToStandardFlow(msg bus.InboundMessage, actor service
 			"chat_id": chatID,
 			"error":   err.Error(),
 		})
-		l.reply(msg, "服务暂时不可用，请稍后重试。")
+		l.reply(msg, reply.Error(reply.ForChannel(msg.Channel), "服务暂时不可用，请稍后重试。"))
 		return
 	}
 
@@ -635,12 +636,12 @@ func (l *AgentLoop) executeActions(actions []ExtractedAction, msg bus.InboundMes
 			for _, item := range action.Items {
 				args := l.buildInboundArgs(item)
 				if args == nil {
-					replies = append(replies, fmt.Sprintf("「%s」入库失败：缺少必要参数", item.Name))
+					replies = append(replies, reply.Error(reply.ForChannel(msg.Channel), fmt.Sprintf("「%s」入库失败：缺少必要参数", item.Name)))
 					continue
 				}
 				result, err := l.dispatcher.Execute(ctx, actor, "inbound_stock", args)
 				if err != nil {
-					replies = append(replies, fmt.Sprintf("「%s」入库失败：%v", item.Name, err))
+					replies = append(replies, reply.Error(reply.ForChannel(msg.Channel), fmt.Sprintf("「%s」入库失败：%v", item.Name, err)))
 				} else {
 					replies = append(replies, result)
 					l.recordOperation(msg.ChatID, OperationRecord{
@@ -655,12 +656,12 @@ func (l *AgentLoop) executeActions(actions []ExtractedAction, msg bus.InboundMes
 			for _, item := range action.Items {
 				args := l.buildConsumeArgs(item)
 				if args == nil {
-					replies = append(replies, fmt.Sprintf("「%s」出库失败：缺少必要参数", item.Name))
+					replies = append(replies, reply.Error(reply.ForChannel(msg.Channel), fmt.Sprintf("「%s」出库失败：缺少必要参数", item.Name)))
 					continue
 				}
 				result, err := l.dispatcher.Execute(ctx, actor, "consume_material", args)
 				if err != nil {
-					replies = append(replies, fmt.Sprintf("「%s」出库失败：%v", item.Name, err))
+					replies = append(replies, reply.Error(reply.ForChannel(msg.Channel), fmt.Sprintf("「%s」出库失败：%v", item.Name, err)))
 				} else {
 					replies = append(replies, result)
 					l.recordOperation(msg.ChatID, OperationRecord{
@@ -682,13 +683,13 @@ func (l *AgentLoop) executeActions(actions []ExtractedAction, msg bus.InboundMes
 			args := map[string]any{"keyword": keyword, "show_zero_stock": false}
 			result, err := l.dispatcher.Execute(ctx, actor, "query_inventory", args)
 			if err != nil {
-				replies = append(replies, fmt.Sprintf("查询失败: %v", err))
+				replies = append(replies, reply.Error(reply.ForChannel(msg.Channel), fmt.Sprintf("查询失败: %v", err)))
 			} else {
 				replies = append(replies, result)
 			}
 
 		default:
-			replies = append(replies, fmt.Sprintf("不支持的操作: %s", action.Type))
+			replies = append(replies, reply.Error(reply.ForChannel(msg.Channel), fmt.Sprintf("不支持的操作: %s", action.Type)))
 		}
 	}
 	return strings.Join(replies, "\n")
