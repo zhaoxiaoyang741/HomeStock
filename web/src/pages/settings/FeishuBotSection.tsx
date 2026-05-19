@@ -12,7 +12,13 @@ import { cn } from '@/lib/utils'
 import { getFeishuAuthUrl, getFeishuStatus, disconnectFeishu, updateFeishuConfig, reconnectFeishu } from '@/api/feishu'
 import type { FeishuStatus } from '@/types/feishu'
 
-export function FeishuBotSection() {
+interface FeishuBotSectionProps {
+  isActive: boolean
+  onActivate: () => void
+  onDeactivate: () => void
+}
+
+export function FeishuBotSection({ isActive, onActivate, onDeactivate }: FeishuBotSectionProps) {
   const { t } = useTranslation('settings')
   const [status, setStatus] = useState<FeishuStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -30,6 +36,8 @@ export function FeishuBotSection() {
   const [saveSuccess, setSaveSuccess] = useState('')
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const prevActiveRef = useRef(isActive)
+  const initialSyncRef = useRef(false)
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -63,6 +71,24 @@ export function FeishuBotSection() {
       }
     }
   }, [fetchStatus])
+
+  // Sync initial enabled state to parent
+  useEffect(() => {
+    if (!loading && !initialSyncRef.current) {
+      if (enabled) {
+        onActivate()
+      }
+      initialSyncRef.current = true
+    }
+  }, [loading, enabled, onActivate])
+
+  // Auto-disable when another channel takes over
+  useEffect(() => {
+    if (prevActiveRef.current && !isActive) {
+      updateFeishuConfig({ enabled: false }).catch(() => {})
+    }
+    prevActiveRef.current = isActive
+  }, [isActive])
 
   // Listen for OAuth callback result from redirected window
   useEffect(() => {
@@ -110,6 +136,22 @@ export function FeishuBotSection() {
     }
   }
 
+  async function handleToggle(checked: boolean) {
+    setEnabled(checked)
+    try {
+      await updateFeishuConfig({ enabled: checked })
+      if (checked) {
+        onActivate()
+      } else {
+        onDeactivate()
+      }
+    } catch (err) {
+      // Revert local state on failure
+      setEnabled(!checked)
+      setError(err instanceof Error ? err.message : t('feishuSaveFailed'))
+    }
+  }
+
   async function handleAuthorize() {
     setAuthLoading(true)
     setError('')
@@ -130,6 +172,7 @@ export function FeishuBotSection() {
       await disconnectFeishu()
       setStatus((prev) => prev ? { ...prev, connected: false, enabled: false, bot_name: '' } : null)
       setEnabled(false)
+      onDeactivate()
     } catch (err) {
       setError(err instanceof Error ? err.message : t('feishuDisconnectFailed'))
     } finally {
@@ -157,14 +200,22 @@ export function FeishuBotSection() {
     <div className="space-y-6">
       <Card className="rounded-xl border-outline-variant/20 bg-surface-container-lowest shadow-sm">
         <CardHeader className="pb-4">
-          <div className="flex items-center gap-3">
-            <Bot className="w-5 h-5 text-primary" />
-            <div>
-              <CardTitle className="text-lg font-bold tracking-tight">{t('feishuBotTitle')}</CardTitle>
-              <CardDescription>{t('feishuBotDescription')}</CardDescription>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Bot className="w-5 h-5 text-primary" />
+              <div>
+                <CardTitle className="text-lg font-bold tracking-tight">{t('feishuBotTitle')}</CardTitle>
+                <CardDescription>{t('feishuBotDescription')}</CardDescription>
+              </div>
             </div>
+            <Checkbox
+              checked={enabled}
+              onCheckedChange={(checked) => handleToggle(checked === true)}
+            />
           </div>
         </CardHeader>
+
+        {isActive && (
         <CardContent className="space-y-5">
           <Separator />
 
@@ -262,25 +313,13 @@ export function FeishuBotSection() {
             </Button>
           </div>
 
-          <Separator />
+          {(isConfigured || appId) && <Separator />}
 
           {/* Configuration form */}
           <div className="space-y-4">
             <div>
               <h4 className="text-sm font-medium text-on-surface">{t('feishuConfigTitle')}</h4>
               <p className="text-xs text-on-surface-variant mt-0.5">{t('feishuConfigHint')}</p>
-            </div>
-
-            {/* Enable toggle */}
-            <div className="flex items-center justify-between rounded-lg border border-outline-variant/20 bg-surface-container-low px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-on-surface">{t('feishuEnable')}</p>
-                <p className="text-xs text-on-surface-variant">{t('feishuEnableHint')}</p>
-              </div>
-              <Checkbox
-                checked={enabled}
-                onCheckedChange={(checked) => setEnabled(checked === true)}
-              />
             </div>
 
             {/* App ID */}
@@ -344,6 +383,7 @@ export function FeishuBotSection() {
             <p className="text-xs text-on-surface-variant">{t('feishuNotConfiguredHint')}</p>
           )}
         </CardContent>
+        )}
       </Card>
     </div>
   )

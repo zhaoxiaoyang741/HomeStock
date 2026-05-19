@@ -4,14 +4,21 @@ import { MessageSquare, PowerOff, RefreshCw, Loader2, QrCode, Check, X } from 'l
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
-import { getWechatStatus, disconnectWechat, reconnectWechat, startWechatQRFlow, pollWechatQRFlow } from '@/api/wechat'
+import { getWechatStatus, disconnectWechat, reconnectWechat, startWechatQRFlow, pollWechatQRFlow, updateWechatConfig } from '@/api/wechat'
 import type { WechatStatus } from '@/types/wechat'
 
 type BindingState = 'idle' | 'loading' | 'waiting' | 'scaned' | 'confirmed' | 'expired' | 'error'
 
-export function WechatBotSection() {
+interface WechatBotSectionProps {
+  isActive: boolean
+  onActivate: () => void
+  onDeactivate: () => void
+}
+
+export function WechatBotSection({ isActive, onActivate, onDeactivate }: WechatBotSectionProps) {
   const { t } = useTranslation('settings')
   const [status, setStatus] = useState<WechatStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -25,10 +32,13 @@ export function WechatBotSection() {
   const [accountID, setAccountID] = useState<string | null>(null)
   const [bindError, setBindError] = useState('')
 
+  const [enabled, setEnabled] = useState(false)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const initialRef = useRef(true)
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollGenerationRef = useRef(0)
+  const prevActiveRef = useRef(isActive)
+  const initialSyncRef = useRef(false)
 
   // Stop QR polling
   const stopQrPolling = useCallback(() => {
@@ -73,6 +83,8 @@ export function WechatBotSection() {
           stopQrPolling()
           setAccountID(resp.account_id ?? null)
           setBindState('confirmed')
+          setEnabled(true)
+          onActivate()
           // Refresh status after binding
           setTimeout(() => refreshStatus(), 500)
         } else if (resp.status === 'expired') {
@@ -89,7 +101,7 @@ export function WechatBotSection() {
         inFlight = false
       }
     }, 2000)
-  }, [stopQrPolling, t, refreshStatus])
+  }, [stopQrPolling, t, refreshStatus, onActivate])
 
   // Status polling
   useEffect(() => {
@@ -97,6 +109,7 @@ export function WechatBotSection() {
       getWechatStatus()
         .then((s) => {
           setStatus(s)
+          setEnabled(s.enabled)
           setError('')
           // If already bound, show confirmed state
           if (s.has_token && s.account_id) {
@@ -121,6 +134,39 @@ export function WechatBotSection() {
     }
   }, [t])
 
+  // Sync initial enabled state to parent
+  useEffect(() => {
+    if (!loading && !initialSyncRef.current) {
+      if (enabled) {
+        onActivate()
+      }
+      initialSyncRef.current = true
+    }
+  }, [loading, enabled, onActivate])
+
+  // Auto-disable when another channel takes over
+  useEffect(() => {
+    if (prevActiveRef.current && !isActive) {
+      updateWechatConfig({ enabled: false }).catch(() => {})
+      setEnabled(false)
+    }
+    prevActiveRef.current = isActive
+  }, [isActive])
+
+  async function handleToggle(checked: boolean) {
+    setEnabled(checked)
+    try {
+      await updateWechatConfig({ enabled: checked })
+      if (checked) {
+        onActivate()
+      } else {
+        onDeactivate()
+      }
+    } catch {
+      setEnabled(!checked)
+    }
+  }
+
   async function handleConnect() {
     setConnecting(true)
     setError('')
@@ -140,6 +186,8 @@ export function WechatBotSection() {
     try {
       await disconnectWechat()
       setStatus((prev) => prev ? { ...prev, connected: false, account_id: '' } : null)
+      setEnabled(false)
+      onDeactivate()
     } catch (err) {
       setError(err instanceof Error ? err.message : t('wechatDisconnectFailed'))
     } finally {
@@ -303,14 +351,22 @@ export function WechatBotSection() {
     <div className="space-y-6">
       <Card className="rounded-xl border-outline-variant/20 bg-surface-container-lowest shadow-sm">
         <CardHeader className="pb-4">
-          <div className="flex items-center gap-3">
-            <MessageSquare className="h-5 w-5 text-primary" />
-            <div>
-              <CardTitle className="text-lg font-bold tracking-tight">{t('wechatBotTitle')}</CardTitle>
-              <CardDescription>{t('wechatBotDescription')}</CardDescription>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <MessageSquare className="h-5 w-5 text-primary" />
+              <div>
+                <CardTitle className="text-lg font-bold tracking-tight">{t('wechatBotTitle')}</CardTitle>
+                <CardDescription>{t('wechatBotDescription')}</CardDescription>
+              </div>
             </div>
+            <Checkbox
+              checked={enabled}
+              onCheckedChange={(checked) => handleToggle(checked === true)}
+            />
           </div>
         </CardHeader>
+
+        {isActive && (
         <CardContent className="space-y-5">
           <Separator />
 
@@ -400,6 +456,7 @@ export function WechatBotSection() {
             </p>
           )}
         </CardContent>
+        )}
       </Card>
     </div>
   )

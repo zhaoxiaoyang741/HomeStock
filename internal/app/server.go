@@ -123,6 +123,61 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 
 	// 9. HTTP server
 	wechatHandler := handler.NewWechatHandler(channelMgr, wechatCh, configPath)
+	wechatHandler.SetChannelUpdateFn(func(cfg config.WechatChannelConfig) error {
+		ctx := context.Background()
+
+		if cfg.Enabled {
+			// Get existing channel from manager, or create a new one
+			wc := wechatCh
+			if wc == nil {
+				if rawCh, ok := channelMgr.GetChannel("wechat"); ok {
+					wc, _ = rawCh.(*wechat.WechatChannel)
+				}
+			}
+			if wc == nil {
+				wc = wechat.NewWechatChannel(cfg)
+				wc.SetInboundHandler(func(ctx context.Context, msg channel.InboundMessage) {
+					if err := msgBus.PublishInbound(ctx, bus.InboundMessage{
+						Channel:    msg.Channel,
+						ChatID:     msg.ChatID,
+						SenderID:   msg.SenderID,
+						SenderName: msg.SenderName,
+						Text:       msg.Text,
+						MediaType:  msg.MediaType,
+						FileKey:    msg.FileKey,
+					}); err != nil {
+						logger.ErrorCF("app", "publish inbound failed", map[string]any{
+							"channel": msg.Channel,
+							"error":   err.Error(),
+						})
+					}
+				})
+				wechatHandler.SetChannel(wc)
+				channelMgr.AddChannel(wc)
+			}
+
+			if !wc.IsRunning() {
+				wc.SetConfig(cfg)
+				if err := wc.Start(ctx); err != nil {
+					return err
+				}
+			}
+			if _, exists := channelMgr.GetChannel("wechat"); !exists {
+				channelMgr.AddChannel(wc)
+			}
+		} else {
+			if rawCh, ok := channelMgr.GetChannel("wechat"); ok {
+				if wc, ok := rawCh.(*wechat.WechatChannel); ok && wc.IsRunning() {
+					if err := wc.Stop(ctx); err != nil {
+						return err
+					}
+				}
+			}
+			channelMgr.RemoveChannel("wechat")
+		}
+
+		return nil
+	})
 	cronHandler := handler.NewCronHandler(configPath)
 	srv := initServer(cfg.Server, db, uow, authSvc, orch, materialSvc, inventorySvc, feishuHandler, modelHandler, wechatHandler, cronHandler)
 
@@ -179,9 +234,9 @@ func (s *Server) Start() error {
 }
 
 // Shutdown gracefully stops all subsystems in reverse dependency order.
-// Order: HTTP → hot-reload → cron → outbound/drain bus → agent → channels → DB
+// Order: HTTP �?hot-reload �?cron �?outbound/drain bus �?agent �?channels �?DB
 func (s *Server) Shutdown(ctx context.Context) error {
-	// 1. Stop HTTP first — no new requests
+	// 1. Stop HTTP first �?no new requests
 	if err := s.server.Shutdown(ctx); err != nil {
 		logger.ErrorCF("app", "http server shutdown error", map[string]any{"error": err.Error()})
 	}
@@ -303,26 +358,17 @@ func initAdminUser(authSvc *service.AuthService) error {
 	return nil
 }
 
-const systemPrompt = `你是 HomeStock（变便）库存管理助手，可以通过飞书帮助用户管理家庭库存。
-你可以帮助用户：
+const systemPrompt = `你是 HomeStock（变便）库存管理助手，可以通过飞书帮助用户管理家庭库存�?你可以帮助用户：
 1. 查询库存情况
 2. 新增物品入库
-3. 消耗出库
-4. 更新批次信息
+3. 消耗出�?4. 更新批次信息
 
-每次操作前先确认用户意图，操作完成后反馈结果。
-回复简洁友好。
-
+每次操作前先确认用户意图，操作完成后反馈结果�?回复简洁友好�?
 == 批量输入指引 ==
-用户可以一次输入多个物品，例如："买了5斤苹果、2箱牛奶、一袋大米"。
-遇到这种情况，请分别调用入库/出库工具处理每个物品，每次调用一个物品。
-处理完所有物品后，汇总结果一次性回复用户。
-
+用户可以一次输入多个物品，例如�?买了5斤苹果�?箱牛奶、一袋大�?�?遇到这种情况，请分别调用入库/出库工具处理每个物品，每次调用一个物品�?处理完所有物品后，汇总结果一次性回复用户�?
 == 确认为先 ==
-如果用户一次提及多个物品，或者操作可能影响较大（如大量出库），
-先列出物品让用户自然确认（如"识别到苹果5斤、牛奶2箱，需要入库吗？"），
-等用户回复确认后再调用工具执行。
-如果是单个物品的简单操作或查询类请求，直接执行不需要确认。`
+如果用户一次提及多个物品，或者操作可能影响较大（如大量出库）�?先列出物品让用户自然确认（如"识别到苹�?斤、牛�?箱，需要入库吗�?），
+等用户回复确认后再调用工具执行�?如果是单个物品的简单操作或查询类请求，直接执行不需要确认。`
 
 func initAgent(
 	modelList []config.ModelConfig,
@@ -429,7 +475,7 @@ func initChannels(
 		uow.Repos().SystemSettings(),
 	)
 
-	// Feishu channel — may be nil if disabled
+	// Feishu channel �?may be nil if disabled
 	if rawCh, ok := channelMgr.GetChannel("feishu"); ok {
 		feishuCh, _ = rawCh.(*feishu.FeishuChannel)
 	}
@@ -462,7 +508,7 @@ func initChannels(
 		return nil
 	})
 
-	// WeChat channel — may be nil if disabled
+	// WeChat channel �?may be nil if disabled
 	if rawCh, ok := channelMgr.GetChannel("wechat"); ok {
 		wechatCh, _ = rawCh.(*wechat.WechatChannel)
 	}

@@ -31,6 +31,20 @@ type WechatHandler struct {
 	// QR flow management
 	weixinMu    sync.Mutex
 	weixinFlows map[string]*weixinFlow
+
+	// updateChan is called when the user updates wechat config from the UI.
+	updateChan func(config.WechatChannelConfig) error
+}
+
+// SetChannelUpdateFn registers the callback for reconfiguring the channel
+// after a config update.
+func (h *WechatHandler) SetChannelUpdateFn(fn func(config.WechatChannelConfig) error) {
+	h.updateChan = fn
+}
+
+// SetChannel updates the WeChat channel instance (used at runtime when enabling a previously disabled channel).
+func (h *WechatHandler) SetChannel(wxCh *wx.WechatChannel) {
+	h.wxCh = wxCh
 }
 
 // weixinFlow represents a QR login flow.
@@ -83,6 +97,7 @@ func (h *WechatHandler) RegisterRoutes(api *gin.RouterGroup) {
 	api.GET("/wechat/qrcode/:id", h.PollQRFlow)
 	api.POST("/wechat/disconnect", h.Disconnect)
 	api.POST("/wechat/reconnect", h.Reconnect)
+	api.PATCH("/wechat/config", h.UpdateConfig)
 }
 
 // Status returns the WeChat channel connection status.
@@ -336,6 +351,43 @@ func (h *WechatHandler) Reconnect(c *gin.Context) {
 	}
 
 	httpresp.OK(c, gin.H{"message": "reconnected"})
+}
+
+// UpdateConfig handles runtime updates to the WeChat channel configuration.
+// Request: { enabled?: bool }
+func (h *WechatHandler) UpdateConfig(c *gin.Context) {
+	var req struct {
+		Enabled *bool `json:"enabled,omitempty"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpresp.Error(c, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+
+	if req.Enabled == nil {
+		httpresp.OK(c, gin.H{"message": "no changes"})
+		return
+	}
+
+	var savedCfg config.WechatChannelConfig
+	if err := config.Save(h.configPath, func(cfg *config.Config) {
+		wc, _ := cfg.WechatConfig()
+		wc.Enabled = *req.Enabled
+		savedCfg = wc
+		_ = cfg.SetChannelConfig("wechat", wc)
+	}); err != nil {
+		httpresp.Error(c, http.StatusInternalServerError, "save config failed: "+err.Error())
+		return
+	}
+
+	if h.updateChan != nil {
+		if err := h.updateChan(savedCfg); err != nil {
+			httpresp.Error(c, http.StatusInternalServerError, "reconfigure channel failed: "+err.Error())
+			return
+		}
+	}
+
+	httpresp.OK(c, gin.H{"message": "config updated"})
 }
 
 // ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ const SECTION_ITEMS: { id: SectionId; labelKey: string; icon: typeof Radio }[] =
 export default function SettingsPage() {
   const { t } = useTranslation('settings')
   const [activeSection, setActiveSection] = useState<SectionId>('channels')
+  const [activeChannel, setActiveChannel] = useState<'feishu' | 'wechat' | null>(null)
   const [lastReloadTime, setLastReloadTime] = useState('')
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -81,8 +82,16 @@ export default function SettingsPage() {
           <div className="min-h-0 flex-1 overflow-y-auto pt-6">
             {activeSection === 'channels' ? (
               <div className="space-y-6">
-                <FeishuBotSection />
-                <WechatBotSection />
+                <FeishuBotSection
+                  isActive={activeChannel === 'feishu'}
+                  onActivate={() => setActiveChannel('feishu')}
+                  onDeactivate={() => setActiveChannel(null)}
+                />
+                <WechatBotSection
+                  isActive={activeChannel === 'wechat'}
+                  onActivate={() => setActiveChannel('wechat')}
+                  onDeactivate={() => setActiveChannel(null)}
+                />
               </div>
             ) : activeSection === 'cron' ? (
               <CronConfigSection />

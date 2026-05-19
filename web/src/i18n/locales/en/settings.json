@@ -61,6 +61,8 @@
   "wechatExpired": "QR code expired, please try again",
   "wechatRetry": "Retry",
   "wechatBindError": "Binding failed",
+  "wechatEnable": "Enable WeChat Bot",
+  "wechatEnableHint": "When enabled, the bot can receive and respond to messages.",
   "channelPlaceholder": "WeChat Bot integration coming soon",
   "modelSectionPlaceholder": "Model configuration coming soon",
   "noChannelSelected": "Select a channel to configure",

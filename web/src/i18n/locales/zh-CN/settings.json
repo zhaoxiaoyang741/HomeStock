@@ -61,6 +61,8 @@
   "wechatExpired": "二维码已过期，请重新尝试",
   "wechatRetry": "重试",
   "wechatBindError": "绑定失败",
+  "wechatEnable": "启用微信机器人",
+  "wechatEnableHint": "启用后机器人可以接收和回复消息。",
   "channelPlaceholder": "微信机器人集成即将推出",
   "modelSectionPlaceholder": "模型配置即将推出",
   "noChannelSelected": "请选择一个通道进行配置",

@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { WechatStatus, WechatQRFlowResponse } from '@/types/wechat'
+import type { WechatStatus, WechatQRFlowResponse, UpdateWechatConfigPayload } from '@/types/wechat'
 import type { Result } from '@/types/api'
 
 export async function getWechatStatus(): Promise<WechatStatus> {
@@ -23,4 +23,8 @@ export async function startWechatQRFlow(): Promise<WechatQRFlowResponse> {
 export async function pollWechatQRFlow(flowID: string): Promise<WechatQRFlowResponse> {
   const res = await api.get<Result<WechatQRFlowResponse>>(`/v1/wechat/qrcode/${encodeURIComponent(flowID)}`)
   return res.data
+}
+
+export async function updateWechatConfig(payload: UpdateWechatConfigPayload): Promise<void> {
+  await api.patch<Result<unknown>>('/v1/wechat/config', payload)
 }
