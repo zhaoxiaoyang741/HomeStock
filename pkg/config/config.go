@@ -81,6 +81,17 @@ type CronConfig struct {
 	// ExpiryCheckPollInterval is how often the expiry scanner runs.
 	// Accepts Go duration strings: "30m", "1h", "6h". Default: "6h".
 	ExpiryCheckPollInterval string `json:"expiry_check_poll_interval,omitempty"`
+	// NotifyEnabled controls whether expiry notifications are sent via channels.
+	// Default: false.
+	NotifyEnabled bool `json:"notify_enabled,omitempty"`
+	// NotifyTimeStart is the start of the notification time window in HH:MM format.
+	// Notifications are only sent within [NotifyTimeStart, NotifyTimeEnd).
+	// Default: "09:00".
+	NotifyTimeStart string `json:"notify_time_start,omitempty"`
+	// NotifyTimeEnd is the end of the notification time window in HH:MM format.
+	// Notifications are only sent within [NotifyTimeStart, NotifyTimeEnd).
+	// Default: "21:00".
+	NotifyTimeEnd string `json:"notify_time_end,omitempty"`
 }
 
 // FeishuConfig returns the deserialized Feishu channel configuration.
@@ -225,6 +236,9 @@ func defaultConfig() *Config {
 			Enabled:                 true,
 			ExpiryCheckIntervalDays: 7,
 			ExpiryCheckPollInterval: "6h",
+			NotifyEnabled:           false,
+			NotifyTimeStart:         "09:00",
+			NotifyTimeEnd:           "21:00",
 		},
 		Log: LogConfig{
 			Level: 0, // INFO
@@ -363,6 +377,15 @@ func applyEnvOverrides(cfg *Config) error {
 	}
 	if value, ok := os.LookupEnv("HOMESTOCK_CRON_EXPIRY_POLL"); ok {
 		cfg.Cron.ExpiryCheckPollInterval = value
+	}
+	if value, ok := os.LookupEnv("HOMESTOCK_CRON_NOTIFY_ENABLED"); ok {
+		cfg.Cron.NotifyEnabled = value == "true"
+	}
+	if value, ok := os.LookupEnv("HOMESTOCK_CRON_NOTIFY_TIME_START"); ok {
+		cfg.Cron.NotifyTimeStart = value
+	}
+	if value, ok := os.LookupEnv("HOMESTOCK_CRON_NOTIFY_TIME_END"); ok {
+		cfg.Cron.NotifyTimeEnd = value
 	}
 
 	return nil

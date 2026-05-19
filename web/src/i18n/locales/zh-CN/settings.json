@@ -90,5 +90,21 @@
   "modelEnableHint": "启用后可以在聊天中使用此模型",
   "modelSaving": "保存中...",
   "modelEmpty": "暂无模型配置，请在 config.json 中配置 model_list",
-  "lastReloadTime": "上次配置重载"
+  "lastReloadTime": "上次配置重载",
+  "navCron": "定时任务",
+  "cronSectionTitle": "定时任务调度",
+  "cronSectionDescription": "配置定时任务调度和库存过期提醒",
+  "cronEnabled": "启用定时任务",
+  "cronEnabledHint": "关闭后定时任务将不再执行",
+  "cronIntervalDays": "过期检查天数",
+  "cronIntervalDaysHint": "提前多少天标记为即将过期",
+  "cronPollInterval": "轮询间隔",
+  "cronPollIntervalHint": "Go 时长格式，如 30m、1h、6h",
+  "notifySectionTitle": "过期通知",
+  "notifyEnabled": "启用过期通知",
+  "notifyEnabledHint": "开启后将在指定时间段内通过已启用的消息通道发送提醒",
+  "notifyTimeStart": "通知开始时间",
+  "notifyTimeEnd": "通知结束时间",
+  "cronSaveSuccess": "定时任务配置保存成功",
+  "cronSaveFailed": "定时任务配置保存失败"
 }

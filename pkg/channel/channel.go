@@ -2,6 +2,14 @@ package channel
 
 import "context"
 
+// NotifyTargetProvider is an optional interface channels can implement
+// to provide a default notification target ChatID for system notifications.
+// Channels that participate in system-level notifications (e.g. expiry alerts)
+// should store the ChatID of the user who last sent a message and return it here.
+type NotifyTargetProvider interface {
+	NotifyChatID() string
+}
+
 // Channel is the abstraction for a messaging channel.
 //
 // Each concrete channel (e.g. Feishu, Telegram) implements this interface

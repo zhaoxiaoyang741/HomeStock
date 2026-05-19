@@ -30,7 +30,8 @@ type FeishuChannel struct {
 	wsClient   *larkws.Client
 	tokenCache *tokenCache
 
-	botOpenID atomic.Value
+	botOpenID    atomic.Value
+	notifyChatID atomic.Value
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
@@ -186,6 +187,9 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	if chatID == "" {
 		return nil
 	}
+
+	// Record as notification target for system notifications.
+	c.notifyChatID.Store(chatID)
 
 	senderID := extractFeishuSenderID(sender)
 	if senderID == "" {
@@ -407,6 +411,13 @@ func (c *FeishuChannel) Reconfigure(ctx context.Context, appID, appSecret string
 	}
 
 	return nil
+}
+
+// NotifyChatID returns the ChatID of the last conversation that received a message.
+// Implements channel.NotifyTargetProvider for system notifications.
+func (c *FeishuChannel) NotifyChatID() string {
+	id, _ := c.notifyChatID.Load().(string)
+	return id
 }
 
 // GetTokenCache returns the internal token cache for seeding OAuth tokens.

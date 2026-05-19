@@ -6,11 +6,13 @@ import { getModelList } from '@/api/models'
 import { FeishuBotSection } from './FeishuBotSection'
 import { WechatBotSection } from './WechatBotSection'
 import { ModelConfigSection } from './ModelConfigSection'
+import { CronConfigSection } from './CronConfigSection'
 
-type SectionId = 'channels' | 'models'
+type SectionId = 'channels' | 'models' | 'cron'
 
 const SECTION_ITEMS: { id: SectionId; labelKey: string; icon: typeof Radio }[] = [
   { id: 'channels', labelKey: 'navChannels', icon: Radio },
+  { id: 'cron', labelKey: 'navCron', icon: Clock },
   { id: 'models', labelKey: 'navModels', icon: Brain },
 ]
 
@@ -82,6 +84,8 @@ export default function SettingsPage() {
                 <FeishuBotSection />
                 <WechatBotSection />
               </div>
+            ) : activeSection === 'cron' ? (
+              <CronConfigSection />
             ) : (
               <ModelConfigSection />
             )}

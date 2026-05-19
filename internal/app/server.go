@@ -101,8 +101,8 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 	// 6. Hot-reload orchestrator
 	orch := initHotReload(configPath, agentLoop, fc, oauthSvc, modelHandler, wechatCh, channelMgr)
 
-	// 7. Cron scheduler (depends on uow)
-	cronSvc := initCron(uow, cfg.Cron)
+	// 7. Cron scheduler (depends on uow, channelMgr)
+	cronSvc := initCron(uow, cfg.Cron, channelMgr)
 
 	// 8. Wire remaining model handler callbacks (depend on orch)
 	modelHandler.SetPostUpdateFn(func() {
@@ -123,7 +123,8 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 
 	// 9. HTTP server
 	wechatHandler := handler.NewWechatHandler(channelMgr, wechatCh, configPath)
-	srv := initServer(cfg.Server, db, uow, authSvc, orch, materialSvc, inventorySvc, feishuHandler, modelHandler, wechatHandler)
+	cronHandler := handler.NewCronHandler(configPath)
+	srv := initServer(cfg.Server, db, uow, authSvc, orch, materialSvc, inventorySvc, feishuHandler, modelHandler, wechatHandler, cronHandler)
 
 	// Register tool definitions on dispatcher
 	tool.RegisterInventoryTools(disp, &tool.InventoryTools{
@@ -485,7 +486,7 @@ func initModelHandler(configPath string, modelCfg *config.ModelConfig, agentLoop
 	return modelHandler
 }
 
-func initCron(uow *gormrepo.UnitOfWork, cfg config.CronConfig) *cron.Service {
+func initCron(uow *gormrepo.UnitOfWork, cfg config.CronConfig, channelMgr *channel.Manager) *cron.Service {
 	svc := cron.New()
 
 	if cfg.Enabled {
@@ -494,7 +495,7 @@ func initCron(uow *gormrepo.UnitOfWork, cfg config.CronConfig) *cron.Service {
 			interval = 6 * time.Hour
 		}
 		svc.Register(
-			appcron.NewExpiringStockNotifier(uow, cfg.ExpiryCheckIntervalDays),
+			appcron.NewExpiringStockNotifier(uow, cfg.ExpiryCheckIntervalDays, channelMgr),
 			cron.ScheduleDef{Interval: interval},
 		)
 		logger.InfoCF("app", "cron: registered expiry_notifier", map[string]any{
@@ -529,6 +530,7 @@ func initServer(
 	feishuHandler *handler.FeishuHandler,
 	modelHandler *handler.ModelHandler,
 	wechatHandler *handler.WechatHandler,
+	cronHandler *handler.CronHandler,
 ) *server.Server {
 	authHandler := handler.NewAuthHandler(authSvc)
 	categoryService := service.NewCategoryService(uow)
@@ -555,6 +557,7 @@ func initServer(
 			modelHandler.RegisterRoutes,
 			handler.NewBatchHandler(inventorySvc, materialSvc).RegisterRoutes,
 			wechatHandler.RegisterRoutes,
+			cronHandler.RegisterRoutes,
 			authHandler.RegisterProtectedRoutes,
 		},
 		server.AuthMiddleware(authMw),

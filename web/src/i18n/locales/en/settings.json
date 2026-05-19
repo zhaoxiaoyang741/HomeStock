@@ -90,5 +90,21 @@
   "modelEnableHint": "When enabled, this model can be used in chat",
   "modelSaving": "Saving...",
   "modelEmpty": "No models configured. Add model_list entries in config.json",
-  "lastReloadTime": "Last config reload"
+  "lastReloadTime": "Last config reload",
+  "navCron": "Scheduled Tasks",
+  "cronSectionTitle": "Cron Schedule",
+  "cronSectionDescription": "Configure scheduled tasks and expiry notifications",
+  "cronEnabled": "Enable Cron",
+  "cronEnabledHint": "When disabled, scheduled tasks will not run",
+  "cronIntervalDays": "Expiry Check Days",
+  "cronIntervalDaysHint": "Days before expiry to flag items",
+  "cronPollInterval": "Poll Interval",
+  "cronPollIntervalHint": "Go duration format, e.g. 30m, 1h, 6h",
+  "notifySectionTitle": "Expiry Notifications",
+  "notifyEnabled": "Enable Notifications",
+  "notifyEnabledHint": "Send expiry alerts via enabled channels during the time window",
+  "notifyTimeStart": "Notify Start Time",
+  "notifyTimeEnd": "Notify End Time",
+  "cronSaveSuccess": "Cron config saved successfully",
+  "cronSaveFailed": "Failed to save cron config"
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,6 +25,7 @@ type WechatChannel struct {
 	cancel        context.CancelFunc
 	stateMgr      *WechatStateManager
 	contextTokens sync.Map // from_user_id → context_token (in-memory cache)
+	notifyChatID  atomic.Value
 	mu            sync.Mutex
 	typingMu      sync.Mutex
 	typingCache   map[string]typingTicketCacheEntry
@@ -99,6 +101,13 @@ func (c *WechatChannel) Stop(ctx context.Context) error {
 	c.BaseStop()
 	logger.InfoC("wechat", "channel stopped")
 	return nil
+}
+
+// NotifyChatID returns the ChatID of the last user who sent a message.
+// Implements channel.NotifyTargetProvider for system notifications.
+func (c *WechatChannel) NotifyChatID() string {
+	id, _ := c.notifyChatID.Load().(string)
+	return id
 }
 
 // Send delivers a text message to a WeChat user via the iLink API.
@@ -327,6 +336,9 @@ func (c *WechatChannel) handleMessage(ctx context.Context, msg WeixinMessage) {
 	if fromUserID == "" {
 		return
 	}
+
+	// Record as notification target for system notifications.
+	c.notifyChatID.Store(fromUserID)
 
 	// Build text content from item_list
 	var parts []string
