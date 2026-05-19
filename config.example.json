@@ -10,43 +10,53 @@
   "channels": {
     "feishu": {
       "enabled": false,
-      "app_id": "",
-      "app_secret": "",
+      "app_id": "your_feishu_app_id",
+      "app_secret": "your_feishu_app_secret",
       "redirect_uri": "http://localhost:8888/api/v1/feishu/callback",
       "frontend_url": "http://localhost:5173"
+    },
+    "wechat": {
+      "enabled": false,
+      "token": "your_wechat_token",
+      "account_id": "your_wechat_account_id",
+      "base_url": "https://ilinkai.weixin.qq.com/",
+      "cdn_base_url": "https://novac2c.cdn.weixin.qq.com/c2c",
+      "proxy": ""
     }
   },
   "model_list": [
     {
-      "model_name": "deepseek",
-      "model": "deepseek-chat",
-      "provider": "deepseek",
-      "enabled": true,
-      "api_key": "sk-your-deepseek-key",
-      "api_base": "https://api.deepseek.com"
-    },
-    {
       "model_name": "openai",
       "model": "gpt-4o",
       "provider": "openai",
-      "enabled": false,
-      "api_key": "sk-your-openai-key"
+      "api_key": "sk-your-key"
     },
     {
       "model_name": "local",
       "model": "qwen3:8b",
       "provider": "ollama",
-      "enabled": false,
       "api_key": "",
       "api_base": "http://localhost:11434"
+    },
+    {
+      "model_name": "deepseek",
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "enabled": true,
+      "api_key": "sk-your-deepseek-key",
+      "api_base": "https://api.deepseek.com"
     }
   ],
   "auth": {
-    "jwt_secret": "",
     "token_duration_minutes": 1440
   },
   "log": {
     "level": 0,
     "path": "logs/info.log"
+  },
+  "cron": {
+    "enabled": true,
+    "expiry_check_interval_days": 7,
+    "expiry_check_poll_interval": "6h"
   }
 }
