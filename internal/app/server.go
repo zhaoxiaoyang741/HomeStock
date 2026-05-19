@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	appcron "github.com/zhaoxiaoyang741/HomeStock/internal/integration/cron"
 	httpreq "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/request"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/agent"
@@ -25,6 +27,7 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/cron"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/database"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
@@ -49,6 +52,9 @@ type Server struct {
 	// Hot-reload
 	orchestrator *hotreload.Orchestrator
 	hotReloadW   *hotreload.Watcher
+
+	// Cron scheduler
+	cronSvc *cron.Service
 
 	// Outbound router lifecycle
 	outboundCtx    context.Context
@@ -95,7 +101,10 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 	// 6. Hot-reload orchestrator
 	orch := initHotReload(configPath, agentLoop, fc, oauthSvc, modelHandler, wechatCh, channelMgr)
 
-	// 7. Wire remaining model handler callbacks (depend on orch)
+	// 7. Cron scheduler (depends on uow)
+	cronSvc := initCron(uow, cfg.Cron)
+
+	// 8. Wire remaining model handler callbacks (depend on orch)
 	modelHandler.SetPostUpdateFn(func() {
 		if err := orch.Reload(); err != nil {
 			logger.ErrorCF("app", "hot-reload after model update failed", map[string]any{"error": err.Error()})
@@ -136,6 +145,7 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 		channelMgr:   channelMgr,
 		wechatCh:     wechatCh,
 		orchestrator: orch,
+		cronSvc:      cronSvc,
 	}, nil
 }
 
@@ -144,6 +154,10 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 func (s *Server) Start() error {
 	ctx := context.Background()
 	s.agentLoop.Start(ctx)
+
+	// Start cron scheduler
+	s.cronSvc.Start()
+	logger.InfoCF("app", "cron scheduler started", map[string]any{"jobs": len(s.cronSvc.Jobs())})
 
 	cfg := config.Get()
 	if cfg.Server.HotReload {
@@ -164,7 +178,7 @@ func (s *Server) Start() error {
 }
 
 // Shutdown gracefully stops all subsystems in reverse dependency order.
-// Order: HTTP → hot-reload → outbound/drain bus → agent → channels → DB
+// Order: HTTP → hot-reload → cron → outbound/drain bus → agent → channels → DB
 func (s *Server) Shutdown(ctx context.Context) error {
 	// 1. Stop HTTP first — no new requests
 	if err := s.server.Shutdown(ctx); err != nil {
@@ -176,22 +190,26 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.hotReloadW.Stop()
 	}
 
-	// 3. Cancel outbound router (drains bus)
+	// 3. Stop cron scheduler
+	s.cronSvc.Stop()
+	logger.InfoCF("app", "cron scheduler stopped", nil)
+
+	// 4. Cancel outbound router (drains bus)
 	if s.outboundCancel != nil {
 		s.outboundCancel()
 	}
 	s.outboundWg.Wait()
 	s.bus.Close()
 
-	// 4. Stop agent loop
+	// 5. Stop agent loop
 	s.agentLoop.Stop()
 
-	// 5. Stop channels
+	// 6. Stop channels
 	if err := s.channelMgr.StopAll(ctx); err != nil {
 		logger.ErrorCF("app", "channel manager stop error", map[string]any{"error": err.Error()})
 	}
 
-	// 6. Close DB
+	// 7. Close DB
 	return s.sqlDB.Close()
 }
 
@@ -465,6 +483,27 @@ func initModelHandler(configPath string, modelCfg *config.ModelConfig, agentLoop
 		return nil
 	})
 	return modelHandler
+}
+
+func initCron(uow *gormrepo.UnitOfWork, cfg config.CronConfig) *cron.Service {
+	svc := cron.New()
+
+	if cfg.Enabled {
+		interval, err := time.ParseDuration(cfg.ExpiryCheckPollInterval)
+		if err != nil || interval <= 0 {
+			interval = 6 * time.Hour
+		}
+		svc.Register(
+			appcron.NewExpiringStockNotifier(uow, cfg.ExpiryCheckIntervalDays),
+			cron.ScheduleDef{Interval: interval},
+		)
+		logger.InfoCF("app", "cron: registered expiry_notifier", map[string]any{
+			"interval":    interval.String(),
+			"expiry_days": cfg.ExpiryCheckIntervalDays,
+		})
+	}
+
+	return svc
 }
 
 func initHotReload(

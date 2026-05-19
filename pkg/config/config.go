@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 )
 
@@ -20,6 +21,9 @@ type Config struct {
 	ModelList []ModelConfig `json:"model_list"`
 	// Auth controls user authentication settings.
 	Auth AuthConfig `json:"auth"`
+
+	// Cron controls background scheduled task settings.
+	Cron CronConfig `json:"cron"`
 
 	Log LogConfig `json:"log"`
 }
@@ -65,6 +69,18 @@ type FeishuChannelConfig struct {
 	AppSecret   string `json:"app_secret"`
 	RedirectURI string `json:"redirect_uri,omitempty"`
 	FrontendURL string `json:"frontend_url,omitempty"`
+}
+
+// CronConfig controls background scheduled task settings.
+type CronConfig struct {
+	// Enabled enables the cron scheduler. Default: true.
+	Enabled bool `json:"enabled,omitempty"`
+	// ExpiryCheckIntervalDays is the number of days before expiry to flag lots.
+	// Default: 7.
+	ExpiryCheckIntervalDays int `json:"expiry_check_interval_days,omitempty"`
+	// ExpiryCheckPollInterval is how often the expiry scanner runs.
+	// Accepts Go duration strings: "30m", "1h", "6h". Default: "6h".
+	ExpiryCheckPollInterval string `json:"expiry_check_poll_interval,omitempty"`
 }
 
 // FeishuConfig returns the deserialized Feishu channel configuration.
@@ -205,6 +221,11 @@ func defaultConfig() *Config {
 			JWTSecret:            "",
 			TokenDurationMinutes: 1440, // 24 h
 		},
+		Cron: CronConfig{
+			Enabled:                 true,
+			ExpiryCheckIntervalDays: 7,
+			ExpiryCheckPollInterval: "6h",
+		},
 		Log: LogConfig{
 			Level: 0, // INFO
 			Path:  "logs/info.log",
@@ -333,6 +354,15 @@ func applyEnvOverrides(cfg *Config) error {
 
 	if value, ok := os.LookupEnv("HOMESTOCK_AUTH_JWT_SECRET"); ok {
 		cfg.Auth.JWTSecret = value
+	}
+
+	if value, ok := os.LookupEnv("HOMESTOCK_CRON_EXPIRY_DAYS"); ok {
+		if days, err := strconv.Atoi(value); err == nil {
+			cfg.Cron.ExpiryCheckIntervalDays = days
+		}
+	}
+	if value, ok := os.LookupEnv("HOMESTOCK_CRON_EXPIRY_POLL"); ok {
+		cfg.Cron.ExpiryCheckPollInterval = value
 	}
 
 	return nil

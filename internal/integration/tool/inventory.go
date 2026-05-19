@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 )
 
 // InventoryTools holds service dependencies for inventory-related tool handlers.
@@ -57,8 +57,8 @@ func (it *InventoryTools) InboundStock(ctx context.Context, actor service.Actor,
 		return "", fmt.Errorf("入库失败: %w", err)
 	}
 
-	result := fmt.Sprintf("✅ 入库成功！\n物品：%s\n数量：%.2f %s\n位置：%s\n批次：%s",
-		lot.Material.Name, lot.QuantityOnHand, lot.Unit, lot.Location, lot.ID)
+	result := fmt.Sprintf("✅ 入库成功！\n物品：%s\n数量：%.2f %s\n位置：%s\n",
+		lot.Material.Name, lot.QuantityOnHand, lot.Unit, lot.Location)
 	if lot.ExpireAt != nil {
 		result += fmt.Sprintf("\n过期日期：%s", lot.ExpireAt.Format("2006-01-02"))
 	}
