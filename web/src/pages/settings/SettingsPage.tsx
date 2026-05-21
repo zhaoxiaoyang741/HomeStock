@@ -1,19 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Clock, Radio, Brain } from 'lucide-react'
+import { Clock, Radio, Brain, Lock, Tags } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getModelList } from '@/api/models'
 import { FeishuBotSection } from './FeishuBotSection'
 import { WechatBotSection } from './WechatBotSection'
 import { ModelConfigSection } from './ModelConfigSection'
 import { CronConfigSection } from './CronConfigSection'
+import { ChangePasswordSection } from './ChangePasswordSection'
+import { CategorySection } from './CategorySection'
 
-type SectionId = 'channels' | 'models' | 'cron'
+type SectionId = 'channels' | 'models' | 'cron' | 'password' | 'category'
 
 const SECTION_ITEMS: { id: SectionId; labelKey: string; icon: typeof Radio }[] = [
   { id: 'channels', labelKey: 'navChannels', icon: Radio },
   { id: 'cron', labelKey: 'navCron', icon: Clock },
   { id: 'models', labelKey: 'navModels', icon: Brain },
+  { id: 'password', labelKey: 'navPassword', icon: Lock },
+  { id: 'category', labelKey: 'navCategory', icon: Tags },
 ]
 
 export default function SettingsPage() {
@@ -48,7 +52,6 @@ export default function SettingsPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-on-surface">{t('settings:title')}</h1>
-          <p className="mt-0.5 text-sm text-on-surface-variant">{t('settings:subtitle')}</p>
         </div>
       </div>
 
@@ -95,8 +98,12 @@ export default function SettingsPage() {
               </div>
             ) : activeSection === 'cron' ? (
               <CronConfigSection />
-            ) : (
+            ) : activeSection === 'models' ? (
               <ModelConfigSection />
+            ) : activeSection === 'password' ? (
+              <ChangePasswordSection />
+            ) : (
+              <CategorySection />
             )}
           </div>
         </div>

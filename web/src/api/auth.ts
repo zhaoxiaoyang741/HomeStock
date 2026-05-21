@@ -7,4 +7,7 @@ export const authApi = {
 
   me: () =>
     api.get<{ code: number; message: string; data: User }>('/v1/auth/me'),
+
+  changePassword: (payload: { old_password: string; new_password: string }) =>
+    api.put<{ code: number; message: string; data: { message: string } }>('/v1/auth/password', payload),
 }

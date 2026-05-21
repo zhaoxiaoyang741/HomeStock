@@ -17,9 +17,11 @@ import (
 )
 
 var (
-	ErrUserExists   = errors.New("username already exists")
-	ErrInvalidCreds = errors.New("invalid username or password")
-	ErrInvalidToken = errors.New("invalid or expired token")
+	ErrUserExists      = errors.New("username already exists")
+	ErrInvalidCreds    = errors.New("invalid username or password")
+	ErrInvalidToken    = errors.New("invalid or expired token")
+	ErrSamePassword    = errors.New("new password must be different from old password")
+	ErrPasswordTooShort = errors.New("password must be at least 6 characters")
 )
 
 // AuthClaims is the JWT claims payload carried in every access token.
@@ -154,6 +156,36 @@ func (s *AuthService) ValidateToken(tokenString string) (*AuthClaims, error) {
 		return nil, ErrInvalidToken
 	}
 	return claims, nil
+}
+
+// ChangePassword verifies the old password and updates to the new one.
+func (s *AuthService) ChangePassword(ctx context.Context, userID uint, oldPassword, newPassword string) error {
+	if oldPassword == newPassword {
+		return ErrSamePassword
+	}
+	if len(newPassword) < 6 {
+		return ErrPasswordTooShort
+	}
+
+	user, err := s.GetUserByID(ctx, userID)
+	if err != nil {
+		return ErrInvalidCreds
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(oldPassword)); err != nil {
+		return ErrInvalidCreds
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	if err := s.db.WithContext(ctx).Model(user).Update("password_hash", string(hash)).Error; err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+
+	return nil
 }
 
 // GetUserByID returns the user with the given primary key.
