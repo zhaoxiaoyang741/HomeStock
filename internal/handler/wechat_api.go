@@ -265,6 +265,7 @@ func (h *WechatHandler) saveWechatBinding(token, accountID string) error {
 	baseURL := weixinBaseURL
 	cdnBaseURL := "https://novac2c.cdn.weixin.qq.com/c2c"
 
+	var savedCfg config.WechatChannelConfig
 	if err := config.Save(h.configPath, func(cfg *config.Config) {
 		wechatCfg, _ := cfg.WechatConfig()
 		wechatCfg.Token = token
@@ -274,12 +275,13 @@ func (h *WechatHandler) saveWechatBinding(token, accountID string) error {
 		wechatCfg.Enabled = true
 		wechatCfg.BaseURL = baseURL
 		wechatCfg.CDNBaseURL = cdnBaseURL
+		savedCfg = wechatCfg
 		_ = cfg.SetChannelConfig("wechat", wechatCfg)
 	}); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	// Restart the channel with the new token so the ApiClient and pollLoop pick it up.
+	// Restart or create the channel with the new token.
 	if h.wxCh != nil {
 		bgCtx := context.Background()
 
@@ -287,13 +289,7 @@ func (h *WechatHandler) saveWechatBinding(token, accountID string) error {
 			_ = h.wxCh.Stop(bgCtx)
 		}
 
-		h.wxCh.SetConfig(config.WechatChannelConfig{
-			Token:      token,
-			AccountID:  accountID,
-			Enabled:    true,
-			BaseURL:    baseURL,
-			CDNBaseURL: cdnBaseURL,
-		})
+		h.wxCh.SetConfig(savedCfg)
 
 		if err := h.wxCh.Start(bgCtx); err != nil {
 			return fmt.Errorf("restart channel after binding: %w", err)
@@ -307,6 +303,12 @@ func (h *WechatHandler) saveWechatBinding(token, accountID string) error {
 		logger.InfoCF("wechat", "channel restarted with new token", map[string]any{
 			"account_id": accountID,
 		})
+	} else if h.updateChan != nil {
+		// Channel was disabled at startup (h.wxCh nil).
+		// Delegate to updateChan which creates a new channel, sets the inbound handler, etc.
+		if err := h.updateChan(savedCfg); err != nil {
+			return fmt.Errorf("create channel after binding: %w", err)
+		}
 	}
 
 	return nil

@@ -58,6 +58,7 @@ func (c *WechatChannel) Name() string { return "wechat" }
 func (c *WechatChannel) Start(ctx context.Context) error {
 	c.ctx, c.cancel = context.WithCancel(ctx)
 	c.BaseStart(c.ctx)
+	c.clearPause()
 
 	baseURL := c.cfg.BaseURL
 	if baseURL == "" {

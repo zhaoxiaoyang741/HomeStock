@@ -489,8 +489,21 @@ func initChannels(
 	feishuH.SetChannelUpdateFn(func(feishuCfg config.FeishuChannelConfig) error {
 		ctx := context.Background()
 
-		if feishuCh != nil {
-			if err := feishuCh.Reconfigure(ctx, feishuCfg.AppID, feishuCfg.AppSecret, feishuCfg.Enabled); err != nil {
+		// Try to get or create a Feishu channel if not already available
+		fc := feishuCh
+		if fc == nil {
+			if rawCh, ok := channelMgr.GetChannel("feishu"); ok {
+				fc, _ = rawCh.(*feishu.FeishuChannel)
+			}
+		}
+		if fc == nil && feishuCfg.AppID != "" && feishuCfg.AppSecret != "" {
+			fc = feishu.NewFeishuChannel(feishuCfg.AppID, feishuCfg.AppSecret)
+			fc.SetInboundHandler(inboundHandler)
+			feishuH.SetChannel(fc)
+		}
+
+		if fc != nil {
+			if err := fc.Reconfigure(ctx, feishuCfg.AppID, feishuCfg.AppSecret, feishuCfg.Enabled); err != nil {
 				return err
 			}
 		}
@@ -502,8 +515,8 @@ func initChannels(
 		}
 
 		if feishuCfg.Enabled {
-			if _, exists := channelMgr.GetChannel("feishu"); !exists && feishuCh != nil {
-				channelMgr.AddChannel(feishuCh)
+			if _, exists := channelMgr.GetChannel("feishu"); !exists && fc != nil {
+				channelMgr.AddChannel(fc)
 			}
 		} else {
 			channelMgr.RemoveChannel("feishu")

@@ -43,6 +43,12 @@ func (h *FeishuHandler) SetChannelUpdateFn(fn func(config.FeishuChannelConfig) e
 	h.updateChan = fn
 }
 
+// SetChannel updates the Feishu channel instance (used at runtime when
+// enabling a previously disabled channel).
+func (h *FeishuHandler) SetChannel(fc *feishu.FeishuChannel) {
+	h.feishuCh = fc
+}
+
 // RegisterRoutes mounts Feishu OAuth and config endpoints under the API group.
 func (h *FeishuHandler) RegisterRoutes(api *gin.RouterGroup) {
 	api.GET("/feishu/auth-url", h.AuthURL)
@@ -93,6 +99,12 @@ func (h *FeishuHandler) Callback(c *gin.Context) {
 		}
 		if !h.feishuCh.IsRunning() {
 			_ = h.feishuCh.Start(context.Background())
+		}
+	} else if h.updateChan != nil {
+		// Channel was disabled at startup (h.feishuCh nil).
+		// Delegate to updateChan which creates a new channel, sets the inbound handler, etc.
+		if cfg, ok := config.Get().FeishuConfig(); ok {
+			_ = h.updateChan(cfg)
 		}
 	}
 
