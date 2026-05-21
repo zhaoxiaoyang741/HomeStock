@@ -408,6 +408,10 @@ func firstEnabledModel(models []config.ModelConfig) *config.ModelConfig {
 			return &models[i]
 		}
 	}
+	// fall back to first model when none explicitly enabled
+	if len(models) > 0 {
+		return &models[0]
+	}
 	return nil
 }
 

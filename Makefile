@@ -3,7 +3,7 @@ CMD_SERVER := ./cmd/server
 BIN_DIR := bin
 WEB_DIR := web
 WEB_DIST_DIR := $(WEB_DIR)/dist
-WEB_EMBED_DIR := internal/webui/dist
+WEB_EMBED_DIR := pkg/webui/dist
 GO ?= go
 PNPM ?= pnpm
 THIS_FILE := $(lastword $(MAKEFILE_LIST))
@@ -12,6 +12,21 @@ ifeq ($(OS),Windows_NT)
 HOST_EXE_EXT := .exe
 else
 HOST_EXE_EXT :=
+endif
+
+# MSYS2/Cygwin make strips Windows env vars (TMP, GOPATH, etc.).
+# Detect via MSYSTEM and re-export what Go needs at runtime.
+ifdef MSYSTEM
+TMP := $(shell cygpath -w /tmp 2>/dev/null)
+export TMP
+export TEMP := $(TMP)
+_USER_HOME := $(shell mkpasswd -c 2>/dev/null | cut -d: -f6)
+_USERPROFILE := $(shell cygpath -w $(_USER_HOME) 2>/dev/null)
+export USERPROFILE := $(_USERPROFILE)
+export AppData := $(_USERPROFILE)\AppData\Roaming
+export GOPATH ?= $(_USERPROFILE)\go
+export GOMODCACHE ?= $(GOPATH)\pkg\mod
+export GOCACHE ?= $(_USERPROFILE)\AppData\Local\go-build
 endif
 
 HOST_OUTPUT := $(BIN_DIR)/$(APP_NAME)$(HOST_EXE_EXT)
@@ -72,7 +87,7 @@ else
 	@cd "$(WEB_DIR)" && "$(PNPM)" build
 endif
 
-web-sync: ## Copy web/dist into internal/webui/dist when web/dist/index.html exists.
+web-sync: ## Copy web/dist into pkg/webui/dist when web/dist/index.html exists.
 ifeq ($(OS),Windows_NT)
 	@powershell -NoProfile -Command "if (-not (Test-Path '$(WEB_DIST_DIR)/index.html')) { Write-Host 'web dist not found, skip embed sync'; exit 0 }; New-Item -ItemType Directory -Force -Path '$(WEB_EMBED_DIR)' | Out-Null; Get-ChildItem -Force '$(WEB_EMBED_DIR)' -ErrorAction SilentlyContinue | Where-Object { $$_.Name -ne '.gitkeep' } | Remove-Item -Recurse -Force; Copy-Item -Path '$(WEB_DIST_DIR)/*' -Destination '$(WEB_EMBED_DIR)' -Recurse -Force"
 else
@@ -84,6 +99,7 @@ endif
 
 # Shared frontend build step used by all build targets
 build-web:
+	@$(MAKE) --no-print-directory web-install
 	@$(MAKE) --no-print-directory web-build
 	@$(MAKE) --no-print-directory web-sync
 
@@ -127,9 +143,9 @@ build-windows-amd64: ## Cross-compile the server for Windows amd64 (includes fro
 	@$(MAKE) --no-print-directory build-web
 	@$(MAKE) --no-print-directory prepare-bin
 ifeq ($(OS),Windows_NT)
-	@powershell -NoProfile -Command "$$env:CGO_ENABLED='0'; $$env:GOOS='windows'; $$env:GOARCH='amd64'; & '$(GO)' build -o '$(BIN_DIR)/$(APP_NAME)-windows-amd64.exe' '$(CMD_SERVER)'"
+	@powershell -NoProfile -Command "$$env:CGO_ENABLED='0'; $$env:GOOS='windows'; $$env:GOARCH='amd64'; & '$(GO)' build -buildvcs=false -o '$(BIN_DIR)/$(APP_NAME)-windows-amd64.exe' '$(CMD_SERVER)'"
 else
-	@CGO_ENABLED=0 GOOS=windows GOARCH=amd64 "$(GO)" build -o "$(BIN_DIR)/$(APP_NAME)-windows-amd64.exe" "$(CMD_SERVER)"
+	@CGO_ENABLED=0 GOOS=windows GOARCH=amd64 "$(GO)" build -buildvcs=false -o "$(BIN_DIR)/$(APP_NAME)-windows-amd64.exe" "$(CMD_SERVER)"
 endif
 
 build-linux-amd64: ## Cross-compile the server for Linux amd64 (includes frontend).
@@ -137,9 +153,9 @@ build-linux-amd64: ## Cross-compile the server for Linux amd64 (includes fronten
 	@$(MAKE) --no-print-directory build-web
 	@$(MAKE) --no-print-directory prepare-bin
 ifeq ($(OS),Windows_NT)
-	@powershell -NoProfile -Command "$$env:CGO_ENABLED='0'; $$env:GOOS='linux'; $$env:GOARCH='amd64'; & '$(GO)' build -o '$(BIN_DIR)/$(APP_NAME)-linux-amd64' '$(CMD_SERVER)'"
+	@powershell -NoProfile -Command "$$env:CGO_ENABLED='0'; $$env:GOOS='linux'; $$env:GOARCH='amd64'; & '$(GO)' build -buildvcs=false -o '$(BIN_DIR)/$(APP_NAME)-linux-amd64' '$(CMD_SERVER)'"
 else
-	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "$(GO)" build -o "$(BIN_DIR)/$(APP_NAME)-linux-amd64" "$(CMD_SERVER)"
+	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 "$(GO)" build -buildvcs=false -o "$(BIN_DIR)/$(APP_NAME)-linux-amd64" "$(CMD_SERVER)"
 endif
 
 build-linux-arm64: ## Cross-compile the server for Linux arm64 (includes frontend).
@@ -147,9 +163,9 @@ build-linux-arm64: ## Cross-compile the server for Linux arm64 (includes fronten
 	@$(MAKE) --no-print-directory build-web
 	@$(MAKE) --no-print-directory prepare-bin
 ifeq ($(OS),Windows_NT)
-	@powershell -NoProfile -Command "$$env:CGO_ENABLED='0'; $$env:GOOS='linux'; $$env:GOARCH='arm64'; & '$(GO)' build -o '$(BIN_DIR)/$(APP_NAME)-linux-arm64' '$(CMD_SERVER)'"
+	@powershell -NoProfile -Command "$$env:CGO_ENABLED='0'; $$env:GOOS='linux'; $$env:GOARCH='arm64'; & '$(GO)' build -buildvcs=false -o '$(BIN_DIR)/$(APP_NAME)-linux-arm64' '$(CMD_SERVER)'"
 else
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 "$(GO)" build -o "$(BIN_DIR)/$(APP_NAME)-linux-arm64" "$(CMD_SERVER)"
+	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 "$(GO)" build -buildvcs=false -o "$(BIN_DIR)/$(APP_NAME)-linux-arm64" "$(CMD_SERVER)"
 endif
 
 build-linux-armv7: ## Cross-compile the server for Linux armv7 (includes frontend).
@@ -157,9 +173,9 @@ build-linux-armv7: ## Cross-compile the server for Linux armv7 (includes fronten
 	@$(MAKE) --no-print-directory build-web
 	@$(MAKE) --no-print-directory prepare-bin
 ifeq ($(OS),Windows_NT)
-	@powershell -NoProfile -Command "$$env:CGO_ENABLED='0'; $$env:GOOS='linux'; $$env:GOARCH='arm'; $$env:GOARM='7'; & '$(GO)' build -o '$(BIN_DIR)/$(APP_NAME)-linux-armv7' '$(CMD_SERVER)'"
+	@powershell -NoProfile -Command "$$env:CGO_ENABLED='0'; $$env:GOOS='linux'; $$env:GOARCH='arm'; $$env:GOARM='7'; & '$(GO)' build -buildvcs=false -o '$(BIN_DIR)/$(APP_NAME)-linux-armv7' '$(CMD_SERVER)'"
 else
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 "$(GO)" build -o "$(BIN_DIR)/$(APP_NAME)-linux-armv7" "$(CMD_SERVER)"
+	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 "$(GO)" build -buildvcs=false -o "$(BIN_DIR)/$(APP_NAME)-linux-armv7" "$(CMD_SERVER)"
 endif
 
 build-all: ## Build the server for Windows amd64, Linux amd64, Linux arm64, and Linux armv7.

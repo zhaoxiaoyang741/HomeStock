@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 )
@@ -163,6 +164,16 @@ func Load(path string) (*Config, error) {
 
 	if err := loadFile(path, cfg); err != nil {
 		return nil, err
+	}
+
+	// auto-create config.json on first run
+	if path != "" {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			if err := os.MkdirAll(filepath.Dir(path), 0755); err == nil {
+				data, _ := json.MarshalIndent(cfg, "", "  ")
+				_ = os.WriteFile(path, data, 0600)
+			}
+		}
 	}
 
 	if err := applyEnvOverrides(cfg); err != nil {
