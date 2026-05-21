@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Bell, Moon, Sun, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, Languages } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -19,6 +21,15 @@ export default function Header() {
   const { resolvedTheme, setTheme } = useTheme()
   const { t, i18n } = useTranslation('header')
   const user = useAuthStore((s) => s.user)
+
+  const [searchQuery, setSearchQuery] = useState('')
+  const navigate = useNavigate()
+
+  function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Enter' && searchQuery.trim()) {
+      navigate(`/inventory?keyword=${encodeURIComponent(searchQuery.trim())}`)
+    }
+  }
 
   function handleLanguageChange(lang: string) {
     void i18n.changeLanguage(lang)
@@ -47,7 +58,13 @@ export default function Header() {
       {/* Search */}
       <div className="relative w-72">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant" />
-        <Input className="pl-9 bg-surface-container-low border-outline-variant" placeholder={t('searchPlaceholder')} />
+        <Input
+          className="pl-9 bg-surface-container-low border-outline-variant"
+          placeholder={t('searchPlaceholder')}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={handleSearchKeyDown}
+        />
       </div>
 
       {/* Actions */}

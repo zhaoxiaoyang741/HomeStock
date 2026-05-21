@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Eye,
+  PackageMinus,
   PackagePlus,
   RefreshCw,
   Search,
@@ -40,13 +41,14 @@ import { materialApi } from '@/api/material'
 import { stockLotApi } from '@/api/stockLot'
 import type { Category } from '@/types/category'
 import type { InboundStockLotPayload, StockLot, UpdateStockLotPayload, AdjustStockLotPayload } from '@/types/stock'
-import type { MaterialSummary, InventoryStatus } from '@/types/material'
+import type { ConsumeMaterialPayload, MaterialSummary, InventoryStatus } from '@/types/material'
 import { getInventoryStatus } from '@/types/material'
 import InboundLotDialog from './InboundLotDialog'
 import EditLotDialog from './EditLotDialog'
 import AdjustLotDialog from './AdjustLotDialog'
 import ExpiringLotsDialog from './ExpiringLotsDialog'
 import LotDetailsDialog from './LotDetailsDialog'
+import ConsumeMaterialDialog from './ConsumeMaterialDialog'
 
 function formatLocations(locations: string[]): string {
   if (!locations ||  locations.length === 0) return '—'
@@ -63,7 +65,10 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('keyword') || ''
+  })
   const [categoryFilter, setCategoryFilter] = useState('__all__')
   const [locationFilter, setLocationFilter] = useState('__all__')
   const debouncedSearch = useDebounce(search, 300)
@@ -73,6 +78,7 @@ export default function InventoryPage() {
   const [editingLot, setEditingLot] = useState<StockLot | null>(null)
   const [adjustingLot, setAdjustingLot] = useState<StockLot | null>(null)
   const [lotDetailsOpen, setLotDetailsOpen] = useState(false)
+  const [consumingMaterial, setConsumingMaterial] = useState<MaterialSummary | null>(null)
   const [showZeroStock, setShowZeroStock] = useState(false)
 
   const [page, setPage] = useState(1)
@@ -180,6 +186,13 @@ export default function InventoryPage() {
     if (!adjustingLot) return
     await stockLotApi.adjust(adjustingLot.id, payload)
     await loadData()
+  }
+
+  async function handleConsume(payload: ConsumeMaterialPayload) {
+    if (!consumingMaterial) return
+    await materialApi.consume(consumingMaterial.id, payload)
+    await loadData()
+    setConsumingMaterial(null)
   }
 
   return (
@@ -294,17 +307,27 @@ export default function InventoryPage() {
                       <StatusBadge status={status} />
                     </TableCell>
                     <TableCell className="py-5 text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedMaterialId(material.id)
-                          setLotDetailsOpen(true)
-                        }}
-                      >
-                        <Eye className="w-4 h-4" />
-                        {t('btnViewDetails')}
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setConsumingMaterial(material)}
+                          title={t('btnConsume')}
+                        >
+                          <PackageMinus className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedMaterialId(material.id)
+                            setLotDetailsOpen(true)
+                          }}
+                        >
+                          <Eye className="w-4 h-4" />
+                          {t('btnViewDetails')}
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 )
@@ -379,6 +402,15 @@ export default function InventoryPage() {
         onClose={() => setLotDetailsOpen(false)}
         onEditLot={setEditingLot}
         onAdjustLot={setAdjustingLot}
+        onConsume={() => {
+          if (selectedMaterial) setConsumingMaterial(selectedMaterial)
+        }}
+      />
+      <ConsumeMaterialDialog
+        open={consumingMaterial !== null}
+        material={consumingMaterial}
+        onClose={() => setConsumingMaterial(null)}
+        onSubmit={handleConsume}
       />
     </div>
   )

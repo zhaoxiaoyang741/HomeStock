@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Pencil } from 'lucide-react'
+import { PackageMinus, Pencil } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -29,9 +29,10 @@ interface Props {
   onClose: () => void
   onEditLot: (lot: StockLot) => void
   onAdjustLot: (lot: StockLot) => void
+  onConsume: () => void
 }
 
-export default function LotDetailsDialog({ open, materialName, lots, onClose, onEditLot, onAdjustLot }: Props) {
+export default function LotDetailsDialog({ open, materialName, lots, onClose, onEditLot, onAdjustLot, onConsume }: Props) {
   const { t, i18n } = useTranslation('inventory')
   const [showZeroStock, setShowZeroStock] = useState(false)
 
@@ -44,7 +45,13 @@ export default function LotDetailsDialog({ open, materialName, lots, onClose, on
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>{t('lotDetails_title', { name: materialName })}</DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle>{t('lotDetails_title', { name: materialName })}</DialogTitle>
+            <Button variant="outline" size="sm" onClick={onConsume}>
+              <PackageMinus className="w-4 h-4 mr-1" />
+              {t('btnConsume')}
+            </Button>
+          </div>
         </DialogHeader>
 
         {lots.some((lot) => lot.quantity_on_hand === 0) && (
