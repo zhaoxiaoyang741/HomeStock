@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, Moon, Sun, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, Languages } from 'lucide-react'
+import { Moon, Sun, PanelLeftClose, PanelLeftOpen, Search, Languages } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
@@ -96,12 +96,6 @@ export default function Header() {
             ? <Sun className="w-5 h-5 cursor-pointer" />
             : <Moon className="w-5 h-5 cursor-pointer" />
           }
-        </button>
-        <button className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" aria-label={t('sync')}>
-          <RefreshCw className="w-5 h-5 cursor-pointer" />
-        </button>
-        <button className="p-2 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors" aria-label={t('notifications')}>
-          <Bell className="w-5 h-5 cursor-pointer" />
         </button>
         <Avatar className="w-8 h-8 ml-1 cursor-pointer">
           <AvatarImage src="" alt={t('userAvatar')} />
