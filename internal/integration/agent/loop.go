@@ -440,6 +440,31 @@ func (l *AgentLoop) nluCall(ctx context.Context, text, recentContext string, act
 // Fallback to standard LLM+tool flow
 // ---------------------------------------------------------------------------
 
+// llmErrToUserMsg converts an LLM error into a user-facing message that guides
+// the user to check their model_list configuration.
+func llmErrToUserMsg(err error) string {
+	msg := err.Error()
+
+	switch {
+	case strings.Contains(msg, "dial tcp"),
+		strings.Contains(msg, "connectex"),
+		strings.Contains(msg, "connection refused"),
+		strings.Contains(msg, "no such host"):
+		return "AI 服务连接失败，请检查 model_list 中的 api_base 地址是否正确。"
+	case strings.Contains(msg, "401"),
+		strings.Contains(msg, "Unauthorized"),
+		strings.Contains(msg, "authentication_error"),
+		strings.Contains(msg, "Incorrect API key"):
+		return "AI 服务认证失败，请检查 model_list 中的 api_key 配置是否正确。"
+	case strings.Contains(msg, "timeout"),
+		strings.Contains(msg, "Timeout"),
+		strings.Contains(msg, "context deadline exceeded"):
+		return "AI 服务请求超时，请检查网络连接或 model_list 中的 api_base 配置。"
+	default:
+		return "服务暂时不可用，请稍后重试。"
+	}
+}
+
 // fallbackToStandardFlow uses the original LLM+tool path for chitchat or NLU failures.
 func (l *AgentLoop) fallbackToStandardFlow(msg bus.InboundMessage, actor service.Actor, chatID string) {
 	l.appendHistory(chatID, llm.Message{Role: "user", Content: msg.Text})
@@ -452,7 +477,7 @@ func (l *AgentLoop) fallbackToStandardFlow(msg bus.InboundMessage, actor service
 			"chat_id": chatID,
 			"error":   err.Error(),
 		})
-		l.reply(msg, reply.Error(reply.ForChannel(msg.Channel), "服务暂时不可用，请稍后重试。"))
+		l.reply(msg, reply.Error(reply.ForChannel(msg.Channel), llmErrToUserMsg(err)))
 		return
 	}
 

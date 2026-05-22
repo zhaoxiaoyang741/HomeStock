@@ -1,16 +1,18 @@
 package agent
 
 import (
-	"context"
-	"encoding/json"
-	"sync"
-	"testing"
+		"context"
+		"encoding/json"
+		"fmt"
+		"strings"
+		"sync"
+		"testing"
 
-	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/tool"
-	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
-	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
-)
+		"github.com/zhaoxiaoyang741/HomeStock/internal/service"
+		"github.com/zhaoxiaoyang741/HomeStock/internal/integration/tool"
+		"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
+		"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
+	)
 
 // mockProvider implements llm.LLMProvider for testing.
 type mockProvider struct {
@@ -647,5 +649,51 @@ func TestParseConfirmChoice_Empty(t *testing.T) {
 	}
 	if r := parseConfirmChoice("", candidates); r != nil {
 		t.Fatalf("expected nil for empty input, got %v", r)
+	}
+}
+
+func TestLlmErrToUserMsg(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "dns lookup failure",
+			err:  fmt.Errorf("llm chat: llm: request failed: dial tcp: lookup api.example.com: no such host"),
+			want: "api_base",
+		},
+		{
+			name: "connection refused (Windows)",
+			err:  fmt.Errorf("llm chat: llm: request failed: dial tcp 127.0.0.1:8080: connectex: No connection could be made"),
+			want: "api_base",
+		},
+		{
+			name: "connection refused (Unix)",
+			err:  fmt.Errorf("llm chat: llm: request failed: dial tcp 127.0.0.1:8080: connection refused"),
+			want: "api_base",
+		},
+		{
+			name: "auth error from API",
+			err:  fmt.Errorf("llm chat: llm: API error [authentication_error] Incorrect API key provided (code=401)"),
+			want: "api_key",
+		},
+		{
+			name: "timeout",
+			err:  fmt.Errorf("llm chat: llm: request failed: Post \"https://api.openai.com/v1/chat/completions\": dial tcp: i/o timeout"),
+			want: "api_base",
+		},
+		{
+			name: "generic error",
+			err:  fmt.Errorf("llm chat: llm: parse response: unexpected EOF"),
+			want: "暂时不可用",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := llmErrToUserMsg(tt.err); !strings.Contains(got, tt.want) {
+				t.Errorf("llmErrToUserMsg(%q) = %q, want contains %q", tt.err.Error(), got, tt.want)
+			}
+		})
 	}
 }
