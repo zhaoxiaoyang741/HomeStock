@@ -13,6 +13,7 @@ concurrency:
 
 env:
   GOFLAGS: -buildvcs=false
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -171,6 +172,7 @@ jobs:
             --title "${{ github.ref_name }}" \
             --generate-notes \
             --verify-tag \
+            --overwrite \
             server-windows-amd64.exe \
             server-linux-amd64 \
             server-linux-arm64
