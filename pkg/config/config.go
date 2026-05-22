@@ -221,7 +221,7 @@ func defaultConfig() *Config {
 
 	return &Config{
 		Server: ServerConfig{
-			Port: "8888",
+			Port: "80",
 		},
 		Database: DatabaseConfig{
 			Driver: "sqlite",
@@ -233,10 +233,12 @@ func defaultConfig() *Config {
 		},
 		ModelList: []ModelConfig{
 			{
-				ModelName: "default",
-				Model:     "openai/gpt-4o",
-				Provider:  "openai",
+				ModelName: "deepseek",
+				Model:     "deepseek-v4-flash",
+				Provider:  "deepseek",
+				Enabled:   true,
 				APIKey:    "",
+				APIBase:   "https://api.deepseek.com",
 			},
 		},
 		Auth: AuthConfig{
