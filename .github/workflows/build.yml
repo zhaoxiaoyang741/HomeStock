@@ -1,0 +1,183 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  GOFLAGS: -buildvcs=false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Build the web frontend (common dependency for test and build)
+  # ---------------------------------------------------------------------------
+  build-web:
+    name: Build Web Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install web dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: web
+
+      - name: Build web
+        run: pnpm build
+        working-directory: web
+
+      - name: Prepare embed directory
+        run: mkdir -p pkg/webui/dist
+
+      - name: Copy dist to embed location
+        run: cp -R web/dist/. pkg/webui/dist/
+
+      - name: Upload web embed artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-embed
+          path: pkg/webui/dist/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Run Go tests (requires web embed for //go:embed compilation)
+  # ---------------------------------------------------------------------------
+  test:
+    name: Run Tests
+    needs: build-web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download web embed
+        uses: actions/download-artifact@v4
+        with:
+          name: web-embed
+          path: pkg/webui/dist/
+
+      - name: Run tests
+        run: go test -v -count=1 ./...
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Cross-compile binaries for all target platforms (matrix)
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.artifact-name }}
+    needs: build-web
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: windows
+            goarch: amd64
+            goarm: ''
+            ext: .exe
+            artifact-name: server-windows-amd64
+
+          - goos: linux
+            goarch: amd64
+            goarm: ''
+            ext: ''
+            artifact-name: server-linux-amd64
+
+          - goos: linux
+            goarch: arm64
+            goarm: ''
+            ext: ''
+            artifact-name: server-linux-arm64
+
+          - goos: linux
+            goarch: arm
+            goarm: '7'
+            ext: ''
+            artifact-name: server-linux-armv7
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download web embed
+        uses: actions/download-artifact@v4
+        with:
+          name: web-embed
+          path: pkg/webui/dist/
+
+      - name: Build binary
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+        run: |
+          mkdir -p bin
+          go build -o bin/${{ matrix.artifact-name }}${{ matrix.ext }} ./cmd/server
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: bin/${{ matrix.artifact-name }}${{ matrix.ext }}
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Job 4: Create GitHub Release (ONLY on tag push, AFTER tests pass)
+  # ---------------------------------------------------------------------------
+  release:
+    name: Create Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: server-*
+          merge-multiple: true
+
+      - name: Create release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            --verify-tag \
+            server-windows-amd64.exe \
+            server-linux-amd64 \
+            server-linux-arm64 \
+            server-linux-armv7
