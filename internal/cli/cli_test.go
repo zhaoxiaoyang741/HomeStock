@@ -38,7 +38,7 @@ func TestExecute_configShow(t *testing.T) {
 	}
 
 	body := stdout.String()
-	if !strings.Contains(body, `"port": "8888"`) {
+	if !strings.Contains(body, `"port": "80"`) {
 		t.Fatalf("stdout = %q", body)
 	}
 	if !strings.Contains(body, `"driver": "sqlite"`) {

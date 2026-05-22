@@ -113,12 +113,6 @@ jobs:
             ext: ''
             artifact-name: server-linux-arm64
 
-          - goos: linux
-            goarch: arm
-            goarm: '7'
-            ext: ''
-            artifact-name: server-linux-armv7
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -179,5 +173,4 @@ jobs:
             --verify-tag \
             server-windows-amd64.exe \
             server-linux-amd64 \
-            server-linux-arm64 \
-            server-linux-armv7
+            server-linux-arm64

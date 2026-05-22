@@ -207,7 +207,7 @@ func defaultConfig() *Config {
 		Enabled:     false,
 		AppID:       "",
 		AppSecret:   "",
-		RedirectURI: "http://localhost:8888/api/v1/feishu/callback",
+		RedirectURI: "http://localhost:80/api/v1/feishu/callback",
 		FrontendURL: "http://localhost:5173",
 	})
 	wechatRaw, _ := json.Marshal(WechatChannelConfig{
