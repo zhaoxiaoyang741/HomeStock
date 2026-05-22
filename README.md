@@ -103,22 +103,73 @@ pkg/                     ← 可复用基础设施（llm / channel / bus / serve
 
 ---
 
-## 快速开始
+## 快速开始（首次使用）
+
+以下步骤适合直接下载构建产物运行的场景，无需安装 Go 或 Node.js 等开发环境。
+
+### 1. 下载与运行
+
+从 [Releases 页面](https://github.com/zhaoxiaoyang741/HomeStock/releases) 下载对应平台的压缩包：
+
+| 平台 | 文件 |
+|------|------|
+| Windows x86_64 | `HomeStock-windows-amd64.zip` |
+| Linux x86_64 | `HomeStock-linux-amd64.tar.gz` |
+| Linux ARM64（树莓派等） | `HomeStock-linux-arm64.tar.gz` |
+| Linux ARMv7 | `HomeStock-linux-armv7.tar.gz` |
+
+解压后得到单个可执行文件 `server.exe`（Windows）或 `server`（Linux），直接运行：
+
+```bash
+# Windows
+server.exe
+
+# Linux
+./server
+```
+
+首次启动时程序会自动生成 `config.json` 配置文件，并根据配置初始化数据库。
+
+### 2. 获取管理员密码
+
+**首次启动时**，系统会自动创建管理员账号，密码打印在日志中。在启动输出的日志中找到如下内容：
+
+```
+INFO  app  ========================================
+INFO  app    Admin user created on first startup!
+INFO  app    Username: admin
+INFO  app    Password: a1b2c3d4e5f6    ← 这是你的初始密码
+INFO  app    Please change the password after login.
+INFO  app  ========================================
+```
+
+> 请及时登录 Web 界面修改默认密码。如果忘记密码，删除数据库文件 (`data/inventory.db`) 后重启服务即可重新生成。
+
+### 3. 访问 Web 界面
+
+启动后浏览器访问 `http://localhost:80`（默认端口），使用 `admin` 和日志中的密码登录。
+
+在 Web 设置页面可以：
+- 修改管理员密码
+- 配置 LLM 模型（DeepSeek / OpenAI / Ollama）
+- 配置飞书和微信渠道（详见 [飞书接入文档](docs/channel/feishu.md) / [微信接入文档](docs/channel/wechat.md)）
+
+---
+
+## 开发者指南
 
 ### 前置准备
 
 - Go 1.25+
 - Node.js + pnpm（前端构建）
 - Docker + Docker Compose（可选）
-- 飞书开放平台凭证（可选）
-- LLM API Key（OpenAI 或 Ollama）
 
 ### 本地开发
 
 ```bash
 # 1. 克隆仓库
 git clone <repository-url>
-cd agent
+cd HomeStock
 
 # 2. 配置
 cp config.example.json config.json
@@ -157,19 +208,6 @@ make build
 ```
 
 构建产物输出至 `bin/` 目录。
-
-### 飞书接入
-
-完整对话（事件订阅 + Agent）：
-
-1. 飞书开放平台创建自建应用，开启"接收消息"事件
-2. 配置 `config.json` 中的 `channels.feishu` 与 `model_list` 字段
-3. 在 Web 设置页面完成 OAuth 授权
-
-仅提醒推送：
-
-1. 飞书群添加自定义机器人，获取 Webhook URL
-2. 配置 `channels.feishu` 的推送相关参数
 
 ---
 
