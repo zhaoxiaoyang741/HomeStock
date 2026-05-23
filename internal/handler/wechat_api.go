@@ -105,19 +105,22 @@ func (h *WechatHandler) Status(c *gin.Context) {
 	isConnected := false
 	accountID := ""
 	hasToken := false
+	isTokenExpired := false
 	if h.wxCh != nil {
 		isConnected = h.wxCh.IsRunning()
 		_, accountID = h.wxCh.GetSelfInfo()
 		hasToken = h.wxCh.HasToken()
+		isTokenExpired = h.wxCh.IsTokenExpired()
 	}
 
 	_, enabled := h.chMgr.GetChannel("wechat")
 
 	httpresp.OK(c, gin.H{
-		"connected":  isConnected,
-		"enabled":    enabled,
-		"has_token":  hasToken,
-		"account_id": accountID,
+		"connected":     isConnected,
+		"enabled":       enabled,
+		"has_token":     hasToken,
+		"token_expired": isTokenExpired,
+		"account_id":    accountID,
 	})
 }
 
@@ -329,6 +332,11 @@ func (h *WechatHandler) Disconnect(c *gin.Context) {
 func (h *WechatHandler) Reconnect(c *gin.Context) {
 	if h.wxCh == nil {
 		httpresp.Error(c, http.StatusBadRequest, "wechat channel not initialized")
+		return
+	}
+
+	if h.wxCh.IsTokenExpired() {
+		httpresp.Error(c, http.StatusBadRequest, "token expired, please re-bind via QR code")
 		return
 	}
 

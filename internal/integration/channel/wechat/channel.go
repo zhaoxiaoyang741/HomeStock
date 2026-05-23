@@ -34,6 +34,7 @@ type WechatChannel struct {
 	syncCursor                  string
 	syncCursorMu                sync.Mutex
 	consecutiveSessionExpiries  int
+	tokenExpired                atomic.Bool
 	stopped                     chan struct{}
 	stopOnce                    sync.Once
 }
@@ -168,11 +169,22 @@ func (c *WechatChannel) SetConfig(cfg config.WechatChannelConfig) {
 	c.stateMgr = NewWechatStateManager(&cfg)
 }
 
+// IsRunning returns whether the channel is currently active.
+// Returns false when the token has expired (needs re-login).
+func (c *WechatChannel) IsRunning() bool {
+	return c.BaseChannel.IsRunning() && !c.tokenExpired.Load()
+}
+
 // HasToken returns whether the channel has a valid auth token.
 func (c *WechatChannel) HasToken() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.cfg.Token != ""
+}
+
+// IsTokenExpired returns whether the channel's token has been detected as expired.
+func (c *WechatChannel) IsTokenExpired() bool {
+	return c.tokenExpired.Load()
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +291,10 @@ func (c *WechatChannel) pollLoop(ctx context.Context) {
 		}
 
 		if isSessionExpiredStatus(resp.Ret, resp.Errcode) {
-			remaining := c.pauseSession("getupdates", resp.Ret, resp.Errcode, resp.Errmsg)
+			remaining, shouldStop := c.pauseSession("getupdates", resp.Ret, resp.Errcode, resp.Errmsg)
+			if shouldStop {
+				return
+			}
 			select {
 			case <-ctx.Done():
 				return
@@ -438,7 +453,10 @@ func (c *WechatChannel) sendTextMessage(ctx context.Context, toUserID, contextTo
 	}
 
 	if isSessionExpiredStatus(resp.Ret, resp.Errcode) {
-		c.pauseSession("sendmessage", resp.Ret, resp.Errcode, resp.Errmsg)
+		_, shouldStop := c.pauseSession("sendmessage", resp.Ret, resp.Errcode, resp.Errmsg)
+		if shouldStop {
+			return fmt.Errorf("session permanently expired; token invalid, please re-login")
+		}
 		return fmt.Errorf("session expired (ret=%d errcode=%d)", resp.Ret, resp.Errcode)
 	}
 

@@ -2,6 +2,7 @@ export interface WechatStatus {
   connected: boolean
   enabled: boolean
   has_token: boolean
+  token_expired: boolean
   account_id: string
 }
 

@@ -120,7 +120,7 @@ func (c *WechatChannel) cdnBaseURL() string {
 	return weixinDefaultCDNBaseURL
 }
 
-func (c *WechatChannel) pauseSession(operation string, ret, errcode int, errmsg string) time.Duration {
+func (c *WechatChannel) pauseSession(operation string, ret, errcode int, errmsg string) (time.Duration, bool) {
 	c.pauseMu.Lock()
 	defer c.pauseMu.Unlock()
 
@@ -134,23 +134,27 @@ func (c *WechatChannel) pauseSession(operation string, ret, errcode int, errmsg 
 	remaining := time.Until(c.pauseUntil)
 
 	fields := map[string]any{
-		"operation":      operation,
-		"ret":            ret,
-		"errcode":        errcode,
-		"errmsg":         errmsg,
-		"until":          c.pauseUntil.Format(time.RFC3339),
-		"minutes":        int((remaining + time.Minute - 1) / time.Minute),
-		"consecutive":    c.consecutiveSessionExpiries,
+		"operation":       operation,
+		"ret":             ret,
+		"errcode":         errcode,
+		"errmsg":          errmsg,
+		"until":           c.pauseUntil.Format(time.RFC3339),
+		"minutes":         int((remaining + time.Minute - 1) / time.Minute),
+		"consecutive":     c.consecutiveSessionExpiries,
 		"max_consecutive": weixinMaxConsecutiveExpiries,
 	}
 
 	if c.consecutiveSessionExpiries >= weixinMaxConsecutiveExpiries {
-		logger.ErrorCF("wechat", "Session expired repeatedly; token may be invalid, re-login required", fields)
-	} else {
-		logger.ErrorCF("wechat", "Session expired; pausing WeChat channel", fields)
+		c.tokenExpired.Store(true)
+		if c.cancel != nil {
+			c.cancel()
+		}
+		logger.ErrorCF("wechat", "Session expired repeatedly; token is invalid, channel stopped. Please re-login via QR code.", fields)
+		return remaining, true
 	}
 
-	return remaining
+	logger.ErrorCF("wechat", "Session expired; pausing WeChat channel", fields)
+	return remaining, false
 }
 
 func (c *WechatChannel) remainingPause() time.Duration {
@@ -173,6 +177,10 @@ func (c *WechatChannel) clearPause() {
 	defer c.pauseMu.Unlock()
 	c.pauseUntil = time.Time{}
 	c.consecutiveSessionExpiries = 0
+}
+
+func (c *WechatChannel) clearTokenExpired() {
+	c.tokenExpired.Store(false)
 }
 
 func (c *WechatChannel) waitWhileSessionPaused(ctx context.Context) error {
@@ -236,7 +244,7 @@ func (c *WechatChannel) getTypingTicket(ctx context.Context, userID string) (str
 	}
 
 	if resp != nil && isSessionExpiredStatus(resp.Ret, resp.Errcode) {
-		c.pauseSession("getconfig", resp.Ret, resp.Errcode, resp.Errmsg)
+		_, _ = c.pauseSession("getconfig", resp.Ret, resp.Errcode, resp.Errmsg)
 	}
 
 	if retryDelay <= 0 {

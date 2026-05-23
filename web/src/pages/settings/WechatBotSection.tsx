@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { MessageSquare, PowerOff, RefreshCw, Loader2, QrCode, Check, X } from 'lucide-react'
+import { MessageSquare, PowerOff, RefreshCw, Loader2, QrCode, Check, X, AlertTriangle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -111,8 +111,10 @@ export function WechatBotSection({ isActive, onActivate, onDeactivate }: WechatB
           setStatus(s)
           setEnabled(s.enabled)
           setError('')
-          // If already bound, show confirmed state
-          if (s.has_token && s.account_id) {
+          // If token expired, don't show confirmed state
+          if (s.token_expired) {
+            setBindState('idle')
+          } else if (s.has_token && s.account_id) {
             setBindState('confirmed')
             setAccountID(s.account_id)
           }
@@ -213,20 +215,39 @@ export function WechatBotSection({ isActive, onActivate, onDeactivate }: WechatB
 
   function handleRebind() {
     stopQrPolling()
-    setBindState('idle')
     setQrDataURI(null)
     setAccountID(null)
     setBindError('')
+    // Directly start a new QR code binding flow instead of just resetting UI
+    handleBind()
   }
 
   const isConnected = status?.connected ?? false
   const isEnabled = status?.enabled ?? false
   const nickname = status?.account_id ?? ''
   const isBound = status?.has_token ?? false
+  const tokenExpired = status?.token_expired ?? false
 
   // Render QR binding section
   const renderBindSection = () => {
     if (bindState === 'idle') {
+      if (isBound && tokenExpired) {
+        return (
+          <div className="flex flex-col items-center gap-4 py-4">
+            <div className="flex items-center gap-2 rounded-full bg-red-500/10 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400">
+              <AlertTriangle className="h-4 w-4" />
+              {t('wechatTokenExpired')}
+            </div>
+            {accountID && (
+              <p className="font-mono text-xs text-on-surface-variant">{accountID}</p>
+            )}
+            <Button onClick={() => void handleBind()} className="gap-2" variant="default">
+              <QrCode className="h-4 w-4" />
+              {t('wechatRebindAction')}
+            </Button>
+          </div>
+        )
+      }
       if (isBound) {
         return (
           <div className="flex flex-col items-center gap-3 py-4">
@@ -414,7 +435,7 @@ export function WechatBotSection({ isActive, onActivate, onDeactivate }: WechatB
                 variant="default"
                 size="sm"
                 onClick={() => void handleConnect()}
-                disabled={connecting}
+                disabled={connecting || tokenExpired}
               >
                 {connecting ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -453,6 +474,12 @@ export function WechatBotSection({ isActive, onActivate, onDeactivate }: WechatB
           {!isEnabled && !isConnected && (
             <p className="text-xs text-on-surface-variant">
               {t('wechatNotEnabledHint')}
+            </p>
+          )}
+          {/* Hint text when token expired */}
+          {tokenExpired && (
+            <p className="text-xs text-red-500">
+              {t('wechatTokenExpiredHint')}
             </p>
           )}
         </CardContent>
