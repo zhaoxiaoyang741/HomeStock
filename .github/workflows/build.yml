@@ -172,7 +172,6 @@ jobs:
             --title "${{ github.ref_name }}" \
             --generate-notes \
             --verify-tag \
-            --overwrite \
             server-windows-amd64.exe \
             server-linux-amd64 \
             server-linux-arm64
