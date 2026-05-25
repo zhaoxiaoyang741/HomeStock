@@ -8,6 +8,7 @@ import (
 	httpresp "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/response"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 )
 
 // modelListResponse is the response body for GET /models.
@@ -216,6 +217,15 @@ func (h *ModelHandler) SwapModel(c *gin.Context) {
 	_ = provider
 
 	h.activeName = req.ModelName
+
+	// Persist the active model selection so it survives restart.
+	if err := config.Save(h.configPath, func(cfg *config.Config) {
+		cfg.ActiveModel = req.ModelName
+	}); err != nil {
+		// Non-fatal: the in-memory swap already succeeded.
+		logger.WarnCF("model_api", "failed to persist active_model", map[string]any{"error": err.Error()})
+	}
+
 	httpresp.OK(c, gin.H{"message": "switched to " + req.ModelName})
 }
 

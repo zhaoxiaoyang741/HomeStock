@@ -17,17 +17,22 @@ type ConfigDiff struct {
 func CalcDiff(old, new *config.Config) ConfigDiff {
 	var diff ConfigDiff
 
-	// Model — compare the active (first enabled) model's operational fields
-	oldActive := firstEnabledModel(old.ModelList)
-	newActive := firstEnabledModel(new.ModelList)
-	if oldActive != nil && newActive != nil {
-		diff.ModelChanged = oldActive.Model != newActive.Model ||
-			oldActive.Provider != newActive.Provider ||
-			oldActive.APIKey != newActive.APIKey ||
-			oldActive.APIBase != newActive.APIBase ||
-			oldActive.Enabled != newActive.Enabled
-	} else if oldActive != nil || newActive != nil {
+	// Model — compare the active model's operational fields.
+	// First check if the active model selector itself changed.
+	if old.ActiveModel != new.ActiveModel {
 		diff.ModelChanged = true
+	} else {
+		oldActive, oldErr := old.ActiveModelConfig()
+		newActive, newErr := new.ActiveModelConfig()
+		if oldErr != nil || newErr != nil {
+			diff.ModelChanged = oldErr != newErr
+		} else {
+			diff.ModelChanged = oldActive.Model != newActive.Model ||
+				oldActive.Provider != newActive.Provider ||
+				oldActive.APIKey != newActive.APIKey ||
+				oldActive.APIBase != newActive.APIBase ||
+				oldActive.Enabled != newActive.Enabled
+		}
 	}
 
 	// Channels — generic diff by name
@@ -59,18 +64,4 @@ func CalcDiff(old, new *config.Config) ConfigDiff {
 		old.Database.DSN != new.Database.DSN
 
 	return diff
-}
-
-// firstEnabledModel returns the first enabled model, or the first entry if
-// none are explicitly enabled (backward compatibility).
-func firstEnabledModel(list []config.ModelConfig) *config.ModelConfig {
-	if len(list) == 0 {
-		return nil
-	}
-	for i := range list {
-		if list[i].Enabled {
-			return &list[i]
-		}
-	}
-	return &list[0]
 }

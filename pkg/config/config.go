@@ -11,6 +11,10 @@ import (
 )
 
 type Config struct {
+	// Version is the config schema version for migration support.
+	// Current version: 1.
+	Version int `json:"version"`
+
 	// Server controls HTTP service settings.
 	Server ServerConfig `json:"server"`
 	// Database controls storage backend settings.
@@ -20,6 +24,9 @@ type Config struct {
 	Channels map[string]json.RawMessage `json:"channels"`
 	// ModelList is the list of LLM model configurations for multi-model support.
 	ModelList []ModelConfig `json:"model_list"`
+	// ActiveModel is the model_name of the currently active model.
+	// If empty, the first enabled model in ModelList is used.
+	ActiveModel string `json:"active_model,omitempty"`
 	// Auth controls user authentication settings.
 	Auth AuthConfig `json:"auth"`
 
@@ -75,7 +82,7 @@ type FeishuChannelConfig struct {
 // CronConfig controls background scheduled task settings.
 type CronConfig struct {
 	// Enabled enables the cron scheduler. Default: true.
-	Enabled bool `json:"enabled,omitempty"`
+	Enabled bool `json:"enabled"`
 	// ExpiryCheckIntervalDays is the number of days before expiry to flag lots.
 	// Default: 7.
 	ExpiryCheckIntervalDays int `json:"expiry_check_interval_days,omitempty"`
@@ -132,6 +139,33 @@ func channelConfig[T any](c *Config, name string) (T, bool) {
 	return cfg, true
 }
 
+// ActiveModelConfig returns the currently active model configuration.
+// Resolution order:
+//  1. If ActiveModel is set, find the model with that model_name.
+//  2. Otherwise, return the first model with enabled: true.
+//  3. Returns error if no model is found or none are enabled.
+func (c *Config) ActiveModelConfig() (*ModelConfig, error) {
+	if c.ActiveModel != "" {
+		for i := range c.ModelList {
+			if c.ModelList[i].ModelName == c.ActiveModel {
+				return &c.ModelList[i], nil
+			}
+		}
+		return nil, fmt.Errorf("active model %q not found in model_list", c.ActiveModel)
+	}
+
+	for i := range c.ModelList {
+		if c.ModelList[i].Enabled {
+			return &c.ModelList[i], nil
+		}
+	}
+
+	if len(c.ModelList) > 0 {
+		return nil, fmt.Errorf("no model is enabled in model_list")
+	}
+	return nil, fmt.Errorf("model_list is empty")
+}
+
 type ModelConfig struct {
 	// ModelName is a human-readable label used to reference this model config.
 	ModelName string `json:"model_name"`
@@ -141,7 +175,7 @@ type ModelConfig struct {
 	Provider string `json:"provider,omitempty"`
 	// Enabled enables this model configuration. If false, the entry is skipped.
 	// Defaults to false for clean configs; the app falls back to the first entry if none enabled.
-	Enabled bool `json:"enabled,omitempty"`
+	Enabled bool `json:"enabled"`
 	// APIKey is the API key for the LLM provider.
 	APIKey string `json:"api_key"`
 	// APIBase is the base URL for the API, optional — defaults to the provider's default.
@@ -164,6 +198,11 @@ func Load(path string) (*Config, error) {
 
 	if err := loadFile(path, cfg); err != nil {
 		return nil, err
+	}
+
+	// version migration
+	if cfg.Version < 1 {
+		cfg.Version = 1
 	}
 
 	// auto-create config.json on first run
@@ -220,7 +259,8 @@ func defaultConfig() *Config {
 	})
 
 	return &Config{
-		Server: ServerConfig{
+		Version: 1,
+		Server:  ServerConfig{
 			Port: "80",
 		},
 		Database: DatabaseConfig{

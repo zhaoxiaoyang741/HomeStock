@@ -87,7 +87,7 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 	}
 
 	// 3. Agent system (LLM, message bus, tools)
-	modelCfg, _, msgBus, disp, agentLoop, err := initAgent(cfg.ModelList, materialSvc, inventorySvc, cfg.Server.Port)
+	modelCfg, _, msgBus, disp, agentLoop, err := initAgent(cfg, materialSvc, inventorySvc, cfg.Server.Port)
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +371,7 @@ const systemPrompt = `你是 HomeStock（变便）库存管理助手，可以通
 等用户回复确认后再调用工具执行�?如果是单个物品的简单操作或查询类请求，直接执行不需要确认。`
 
 func initAgent(
-	modelList []config.ModelConfig,
+	cfg *config.Config,
 	materialSvc *service.MaterialService,
 	inventorySvc *service.InventoryService,
 	port string,
@@ -383,9 +383,9 @@ func initAgent(
 	agentLoop *agent.AgentLoop,
 	err error,
 ) {
-	modelCfg = firstEnabledModel(modelList)
-	if modelCfg == nil {
-		return nil, nil, nil, nil, nil, errors.New("app: no model configured in model_list")
+	modelCfg, err = cfg.ActiveModelConfig()
+	if err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("app: %w", err)
 	}
 
 	llmProvider, err = llm.NewProvider(*modelCfg)
@@ -400,19 +400,6 @@ func initAgent(
 	agentLoop = agent.NewAgentLoop(msgBus, llmProvider, disp, systemPrompt, nluEngine)
 
 	return
-}
-
-func firstEnabledModel(models []config.ModelConfig) *config.ModelConfig {
-	for i := range models {
-		if models[i].Enabled {
-			return &models[i]
-		}
-	}
-	// fall back to first model when none explicitly enabled
-	if len(models) > 0 {
-		return &models[0]
-	}
-	return nil
 }
 
 func initChannels(

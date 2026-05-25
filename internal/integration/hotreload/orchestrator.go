@@ -1,4 +1,4 @@
-﻿package hotreload
+package hotreload
 
 import (
 	"context"
@@ -105,8 +105,12 @@ func (o *Orchestrator) Reload() error {
 
 	// 2. Model provider hot-swap
 	if diff.ModelChanged {
-		active := firstEnabledModel(newCfg.ModelList)
-		if active != nil {
+		active, err := newCfg.ActiveModelConfig()
+		if err != nil {
+			logger.ErrorCF("hotreload", "no active model after config change, keeping old provider", map[string]any{
+				"error": err.Error(),
+			})
+		} else {
 			provider, err := llm.NewProvider(*active)
 			if err != nil {
 				logger.ErrorCF("hotreload", "new provider creation failed, keeping old provider", map[string]any{
