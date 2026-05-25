@@ -8,61 +8,33 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sync"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	appcron "github.com/zhaoxiaoyang741/HomeStock/internal/integration/cron"
 	httpreq "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/request"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/gateway"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/agent"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/feishu"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/wechat"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/hotreload"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/tool"
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
-	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
-	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
-	"github.com/zhaoxiaoyang741/HomeStock/pkg/cron"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/database"
-	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/server"
 )
 
-// Server is the application container, owning all subsystems.
+// Server is the application container, owning the database connection, HTTP
+// server, and an embedded Gateway that manages the Agent runtime.
 type Server struct {
 	configPath string
 	server     *server.Server
 	db         *gorm.DB
 	sqlDB      *sql.DB
-
-	// Agent system
-	bus       *bus.MessageBus
-	agentLoop *agent.AgentLoop
-
-	// Channel system
-	channelMgr *channel.Manager
-	wechatCh   *wechat.WechatChannel
-
-	// Hot-reload
-	orchestrator *hotreload.Orchestrator
-	hotReloadW   *hotreload.Watcher
-
-	// Cron scheduler
-	cronSvc *cron.Service
-
-	// Outbound router lifecycle
-	outboundCtx    context.Context
-	outboundCancel context.CancelFunc
-	outboundWg     sync.WaitGroup
+	gateway    *gateway.Gateway
 }
 
-// New is the composition root. It initializes all subsystems in dependency order.
+// New is the composition root. It initializes database, services, Gateway,
+// and the HTTP server in dependency order.
 func New(cfg *config.Config, configPath string) (*Server, error) {
 	// 1. Database
 	db, sqlDB, err := initDatabase(cfg.Database)
@@ -86,221 +58,48 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 		})
 	}
 
-	// 3. Agent system (LLM, message bus, tools)
-	modelCfg, _, msgBus, disp, agentLoop, err := initAgent(cfg, materialSvc, inventorySvc, cfg.Server.Port)
+	// 3. Gateway (agent system, channels, cron, hot-reload)
+	gw, err := gateway.New(cfg, configPath, materialSvc, inventorySvc, uow)
 	if err != nil {
 		return nil, err
 	}
 
-	// 4. Channels (Feishu, WeChat, OAuth)
-	channelMgr, feishuHandler, fc, oauthSvc, wechatCh := initChannels(cfg, msgBus, uow, configPath)
-
-	// 5. Model handler
-	modelHandler := initModelHandler(configPath, modelCfg, agentLoop)
-
-	// 6. Hot-reload orchestrator
-	orch := initHotReload(configPath, agentLoop, fc, oauthSvc, modelHandler, wechatCh, channelMgr)
-
-	// 7. Cron scheduler (depends on uow, channelMgr)
-	cronSvc := initCron(uow, cfg.Cron, channelMgr)
-
-	// 8. Wire remaining model handler callbacks (depend on orch)
-	modelHandler.SetPostUpdateFn(func() {
-		if err := orch.Reload(); err != nil {
-			logger.ErrorCF("app", "hot-reload after model update failed", map[string]any{"error": err.Error()})
-		}
-	})
-	modelHandler.SetReloadTimeFn(func() string {
-		return orch.LastReloadTime().Format("2006-01-02 15:04:05")
-	})
-
-	// 8. Seed Feishu token cache from stored OAuth credentials
-	if feishuCfg, ok := cfg.FeishuConfig(); ok && feishuCfg.Enabled {
-		if err := oauthSvc.SeedTokenCache(context.Background(), fc.GetTokenCache()); err != nil {
-			logger.WarnCF("app", "feishu token cache seed failed", map[string]any{"error": err.Error()})
-		}
-	}
-
-	// 9. HTTP server
-	wechatHandler := handler.NewWechatHandler(channelMgr, wechatCh, configPath)
-	wechatHandler.SetChannelUpdateFn(func(cfg config.WechatChannelConfig) error {
-		ctx := context.Background()
-
-		if cfg.Enabled {
-			// Get existing channel from manager, or create a new one
-			wc := wechatCh
-			if wc == nil {
-				if rawCh, ok := channelMgr.GetChannel("wechat"); ok {
-					wc, _ = rawCh.(*wechat.WechatChannel)
-				}
-			}
-			if wc == nil {
-				wc = wechat.NewWechatChannel(cfg)
-				wc.SetInboundHandler(func(ctx context.Context, msg channel.InboundMessage) {
-					if err := msgBus.PublishInbound(ctx, bus.InboundMessage{
-						Channel:    msg.Channel,
-						ChatID:     msg.ChatID,
-						SenderID:   msg.SenderID,
-						SenderName: msg.SenderName,
-						Text:       msg.Text,
-						MediaType:  msg.MediaType,
-						FileKey:    msg.FileKey,
-					}); err != nil {
-						logger.ErrorCF("app", "publish inbound failed", map[string]any{
-							"channel": msg.Channel,
-							"error":   err.Error(),
-						})
-					}
-				})
-				wechatHandler.SetChannel(wc)
-				channelMgr.AddChannel(wc)
-			}
-
-			if !wc.IsRunning() {
-				wc.SetConfig(cfg)
-				if err := wc.Start(ctx); err != nil {
-					return err
-				}
-			}
-			if _, exists := channelMgr.GetChannel("wechat"); !exists {
-				channelMgr.AddChannel(wc)
-			}
-		} else {
-			if rawCh, ok := channelMgr.GetChannel("wechat"); ok {
-				if wc, ok := rawCh.(*wechat.WechatChannel); ok && wc.IsRunning() {
-					if err := wc.Stop(ctx); err != nil {
-						return err
-					}
-				}
-			}
-			channelMgr.RemoveChannel("wechat")
-		}
-
-		return nil
-	})
-	cronHandler := handler.NewCronHandler(configPath)
-	srv := initServer(cfg.Server, db, uow, authSvc, orch, materialSvc, inventorySvc, feishuHandler, modelHandler, wechatHandler, cronHandler)
-
-	// Register tool definitions on dispatcher
-	tool.RegisterInventoryTools(disp, &tool.InventoryTools{
-		InventorySvc: inventorySvc,
-		MaterialSvc:  materialSvc,
-	})
-	tool.RegisterHealthTool(disp, fmt.Sprintf("http://localhost:%s", cfg.Server.Port))
-	defs := tool.InventoryToolDefinitions()
-	defs = append(defs, tool.HealthToolDefinition())
-	disp.SetDefinitions(defs)
+	// 4. HTTP server (routes mounted from Gateway handlers + app handlers)
+	srv := initServer(cfg.Server, db, uow, authSvc, gw, materialSvc, inventorySvc)
 
 	return &Server{
-		configPath:   configPath,
-		server:       srv,
-		db:           db,
-		sqlDB:        sqlDB,
-		bus:          msgBus,
-		agentLoop:    agentLoop,
-		channelMgr:   channelMgr,
-		wechatCh:     wechatCh,
-		orchestrator: orch,
-		cronSvc:      cronSvc,
+		configPath: configPath,
+		server:     srv,
+		db:         db,
+		sqlDB:      sqlDB,
+		gateway:    gw,
 	}, nil
 }
 
-// Start begins all subsystems: agent loop, hot-reload watcher, outbound router,
-// channel manager, and the HTTP server (blocking).
+// Start begins all subsystems: Gateway (agent loop, cron, channels) and the
+// HTTP server (blocking).
 func (s *Server) Start() error {
-	ctx := context.Background()
-	s.agentLoop.Start(ctx)
-
-	// Start cron scheduler
-	s.cronSvc.Start()
-	logger.InfoCF("app", "cron scheduler started", map[string]any{"jobs": len(s.cronSvc.Jobs())})
-
-	cfg := config.Get()
-	if cfg.Server.HotReload {
-		s.hotReloadW = hotreload.NewWatcher(s.configPath, s.orchestrator.Reload)
-		s.hotReloadW.Start()
-		logger.InfoCF("app", "config hot-reload enabled (polling every 2s)", nil)
+	if err := s.gateway.Start(); err != nil {
+		return err
 	}
-
-	s.outboundCtx, s.outboundCancel = context.WithCancel(ctx)
-	s.outboundWg.Add(1)
-	go s.routeOutbound()
-
-	if err := s.channelMgr.StartAll(ctx); err != nil {
-		return fmt.Errorf("app: start channels: %w", err)
-	}
-
 	return s.server.Start()
 }
 
-// Shutdown gracefully stops all subsystems in reverse dependency order.
-// Order: HTTP �?hot-reload �?cron �?outbound/drain bus �?agent �?channels �?DB
+// Shutdown gracefully stops all subsystems in reverse dependency order:
+// HTTP server → Gateway → Database.
 func (s *Server) Shutdown(ctx context.Context) error {
-	// 1. Stop HTTP first �?no new requests
+	// 1. Stop HTTP first — no new requests
 	if err := s.server.Shutdown(ctx); err != nil {
 		logger.ErrorCF("app", "http server shutdown error", map[string]any{"error": err.Error()})
 	}
 
-	// 2. Stop hot-reload watcher (if any)
-	if s.hotReloadW != nil {
-		s.hotReloadW.Stop()
+	// 2. Stop Gateway (agent, cron, channels)
+	if err := s.gateway.Stop(ctx); err != nil {
+		logger.ErrorCF("app", "gateway stop error", map[string]any{"error": err.Error()})
 	}
 
-	// 3. Stop cron scheduler
-	s.cronSvc.Stop()
-	logger.InfoCF("app", "cron scheduler stopped", nil)
-
-	// 4. Cancel outbound router (drains bus)
-	if s.outboundCancel != nil {
-		s.outboundCancel()
-	}
-	s.outboundWg.Wait()
-	s.bus.Close()
-
-	// 5. Stop agent loop
-	s.agentLoop.Stop()
-
-	// 6. Stop channels
-	if err := s.channelMgr.StopAll(ctx); err != nil {
-		logger.ErrorCF("app", "channel manager stop error", map[string]any{"error": err.Error()})
-	}
-
-	// 7. Close DB
+	// 3. Close DB
 	return s.sqlDB.Close()
-}
-
-// routeOutbound reads agent outbound messages from the bus and routes them
-// to the appropriate channel via the Manager's per-channel worker queue.
-func (s *Server) routeOutbound() {
-	defer s.outboundWg.Done()
-	for {
-		select {
-		case msg, ok := <-s.bus.OutboundChan():
-			if !ok {
-				return
-			}
-			if err := s.channelMgr.RouteOutbound(s.outboundCtx, channel.OutboundMessage{
-				Channel: msg.Channel,
-				ChatID:  msg.ChatID,
-				Text:    msg.Text,
-			}); err != nil {
-				if err == channel.ErrNotRunning {
-					logger.WarnCF("app", "no active worker for outbound message", map[string]any{
-						"channel": msg.Channel,
-						"chat_id": msg.ChatID,
-					})
-				} else {
-					logger.ErrorCF("app", "route outbound failed", map[string]any{
-						"channel": msg.Channel,
-						"chat_id": msg.ChatID,
-						"error":   err.Error(),
-					})
-				}
-			}
-		case <-s.outboundCtx.Done():
-			return
-		}
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -358,229 +157,14 @@ func initAdminUser(authSvc *service.AuthService) error {
 	return nil
 }
 
-const systemPrompt = `你是 HomeStock（变便）库存管理助手，可以通过飞书帮助用户管理家庭库存�?你可以帮助用户：
-1. 查询库存情况
-2. 新增物品入库
-3. 消耗出�?4. 更新批次信息
-
-每次操作前先确认用户意图，操作完成后反馈结果�?回复简洁友好�?
-== 批量输入指引 ==
-用户可以一次输入多个物品，例如�?买了5斤苹果�?箱牛奶、一袋大�?�?遇到这种情况，请分别调用入库/出库工具处理每个物品，每次调用一个物品�?处理完所有物品后，汇总结果一次性回复用户�?
-== 确认为先 ==
-如果用户一次提及多个物品，或者操作可能影响较大（如大量出库）�?先列出物品让用户自然确认（如"识别到苹�?斤、牛�?箱，需要入库吗�?），
-等用户回复确认后再调用工具执行�?如果是单个物品的简单操作或查询类请求，直接执行不需要确认。`
-
-func initAgent(
-	cfg *config.Config,
-	materialSvc *service.MaterialService,
-	inventorySvc *service.InventoryService,
-	port string,
-) (
-	modelCfg *config.ModelConfig,
-	llmProvider llm.LLMProvider,
-	msgBus *bus.MessageBus,
-	disp *tool.Dispatcher,
-	agentLoop *agent.AgentLoop,
-	err error,
-) {
-	modelCfg, err = cfg.ActiveModelConfig()
-	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("app: %w", err)
-	}
-
-	llmProvider, err = llm.NewProvider(*modelCfg)
-	if err != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("app: create llm provider: %w", err)
-	}
-
-	msgBus = bus.NewMessageBus(0)
-	disp = tool.NewDispatcher()
-
-	nluEngine := agent.NewNluEngine(materialSvc)
-	agentLoop = agent.NewAgentLoop(msgBus, llmProvider, disp, systemPrompt, nluEngine)
-
-	return
-}
-
-func initChannels(
-	cfg *config.Config,
-	msgBus *bus.MessageBus,
-	uow *gormrepo.UnitOfWork,
-	configPath string,
-) (
-	channelMgr *channel.Manager,
-	feishuH *handler.FeishuHandler,
-	feishuCh *feishu.FeishuChannel,
-	oauthSvc *feishu.OAuthService,
-	wechatCh *wechat.WechatChannel,
-) {
-	channelMgr = channel.NewManager()
-
-	// Inbound handler: routes channel messages into the agent MessageBus
-	inboundHandler := func(ctx context.Context, msg channel.InboundMessage) {
-		if err := msgBus.PublishInbound(ctx, bus.InboundMessage{
-			Channel:    msg.Channel,
-			ChatID:     msg.ChatID,
-			SenderID:   msg.SenderID,
-			SenderName: msg.SenderName,
-			Text:       msg.Text,
-			MediaType:  msg.MediaType,
-			FileKey:    msg.FileKey,
-		}); err != nil {
-			logger.ErrorCF("app", "publish inbound failed", map[string]any{
-				"channel": msg.Channel,
-				"error":   err.Error(),
-			})
-		}
-	}
-
-	// Use factory registry for all channels
-	channel.RangeFactories(func(name string, factory channel.Factory) bool {
-		raw, ok := cfg.Channels[name]
-		if !ok {
-			return true // no config for this channel, skip
-		}
-		ch, err := factory(raw)
-		if err != nil {
-			logger.ErrorCF("app", "channel factory error", map[string]any{"name": name, "error": err.Error()})
-			return true
-		}
-		if ch == nil {
-			return true // factory returned nil (channel disabled)
-		}
-		if setter, ok := ch.(channel.InboundHandlerSetter); ok {
-			setter.SetInboundHandler(inboundHandler)
-		}
-		channelMgr.AddChannel(ch)
-		logger.InfoCF("app", "channel created via factory", map[string]any{"name": name})
-		return true
-	})
-
-	// Feishu OAuth service (always created, may be nil if not configured)
-	feishuCfg, _ := cfg.FeishuConfig()
-	oauthSvc = feishu.NewOAuthService(
-		feishuCfg.AppID,
-		feishuCfg.AppSecret,
-		feishuCfg.RedirectURI,
-		feishuCfg.FrontendURL,
-		uow.Repos().SystemSettings(),
-	)
-
-	// Feishu channel �?may be nil if disabled
-	if rawCh, ok := channelMgr.GetChannel("feishu"); ok {
-		feishuCh, _ = rawCh.(*feishu.FeishuChannel)
-	}
-	feishuH = handler.NewFeishuHandler(oauthSvc, channelMgr, feishuCh, feishuCfg.FrontendURL, configPath)
-
-	// Channel update callback: reconfigures Feishu channel when settings change
-	feishuH.SetChannelUpdateFn(func(feishuCfg config.FeishuChannelConfig) error {
-		ctx := context.Background()
-
-		// Try to get or create a Feishu channel if not already available
-		fc := feishuCh
-		if fc == nil {
-			if rawCh, ok := channelMgr.GetChannel("feishu"); ok {
-				fc, _ = rawCh.(*feishu.FeishuChannel)
-			}
-		}
-		if fc == nil && feishuCfg.AppID != "" && feishuCfg.AppSecret != "" {
-			fc = feishu.NewFeishuChannel(feishuCfg.AppID, feishuCfg.AppSecret)
-			fc.SetInboundHandler(inboundHandler)
-			feishuH.SetChannel(fc)
-		}
-
-		if fc != nil {
-			if err := fc.Reconfigure(ctx, feishuCfg.AppID, feishuCfg.AppSecret, feishuCfg.Enabled); err != nil {
-				return err
-			}
-		}
-
-		oauthSvc.UpdateCredentials(feishuCfg.AppID, feishuCfg.AppSecret)
-
-		if err := oauthSvc.ClearAuth(ctx); err != nil {
-			logger.WarnCF("feishu", "failed to clear stale oauth token", map[string]any{"error": err.Error()})
-		}
-
-		if feishuCfg.Enabled {
-			if _, exists := channelMgr.GetChannel("feishu"); !exists && fc != nil {
-				channelMgr.AddChannel(fc)
-			}
-		} else {
-			channelMgr.RemoveChannel("feishu")
-		}
-
-		return nil
-	})
-
-	// WeChat channel �?may be nil if disabled
-	if rawCh, ok := channelMgr.GetChannel("wechat"); ok {
-		wechatCh, _ = rawCh.(*wechat.WechatChannel)
-	}
-
-	return
-}
-
-func initModelHandler(configPath string, modelCfg *config.ModelConfig, agentLoop *agent.AgentLoop) *handler.ModelHandler {
-	modelHandler := handler.NewModelHandler(configPath)
-	if modelCfg != nil {
-		modelHandler.SetActiveName(modelCfg.ModelName)
-	}
-	modelHandler.SetSwapFn(func(name string, cfg config.ModelConfig) error {
-		provider, err := llm.NewProvider(cfg)
-		if err != nil {
-			return fmt.Errorf("create provider for model %q: %w", name, err)
-		}
-		agentLoop.SwapProvider(provider)
-		return nil
-	})
-	return modelHandler
-}
-
-func initCron(uow *gormrepo.UnitOfWork, cfg config.CronConfig, channelMgr *channel.Manager) *cron.Service {
-	svc := cron.New()
-
-	if cfg.Enabled {
-		interval, err := time.ParseDuration(cfg.ExpiryCheckPollInterval)
-		if err != nil || interval <= 0 {
-			interval = 6 * time.Hour
-		}
-		svc.Register(
-			appcron.NewExpiringStockNotifier(uow, cfg.ExpiryCheckIntervalDays, channelMgr),
-			cron.ScheduleDef{Interval: interval},
-		)
-		logger.InfoCF("app", "cron: registered expiry_notifier", map[string]any{
-			"interval":    interval.String(),
-			"expiry_days": cfg.ExpiryCheckIntervalDays,
-		})
-	}
-
-	return svc
-}
-
-func initHotReload(
-	configPath string,
-	agentLoop *agent.AgentLoop,
-	feishuCh *feishu.FeishuChannel,
-	oauthSvc *feishu.OAuthService,
-	modelHnd *handler.ModelHandler,
-	wechatCh *wechat.WechatChannel,
-	channelMgr *channel.Manager,
-) *hotreload.Orchestrator {
-	return hotreload.NewOrchestrator(configPath, agentLoop, feishuCh, oauthSvc, modelHnd, wechatCh, channelMgr)
-}
-
 func initServer(
 	cfg config.ServerConfig,
 	db *gorm.DB,
 	uow *gormrepo.UnitOfWork,
 	authSvc *service.AuthService,
-	orch *hotreload.Orchestrator,
+	gw *gateway.Gateway,
 	materialSvc *service.MaterialService,
 	inventorySvc *service.InventoryService,
-	feishuHandler *handler.FeishuHandler,
-	modelHandler *handler.ModelHandler,
-	wechatHandler *handler.WechatHandler,
-	cronHandler *handler.CronHandler,
 ) *server.Server {
 	authHandler := handler.NewAuthHandler(authSvc)
 	categoryService := service.NewCategoryService(uow)
@@ -593,29 +177,31 @@ func initServer(
 
 	authMw := httpreq.JWTAuthMiddleware(authSvc)
 
+	// Collect all route registrations: app-level handlers + Gateway webhook handlers
+	protected := []server.RegisterRoutesFunc{
+		categoryHandler.RegisterRoutes,
+		materialHandler.RegisterRoutes,
+		stockLotHandler.RegisterRoutes,
+		stockMovementHandler.RegisterRoutes,
+		auditLogHandler.RegisterRoutes,
+		handler.NewBatchHandler(inventorySvc, materialSvc).RegisterRoutes,
+		authHandler.RegisterProtectedRoutes,
+	}
+	for _, fn := range gw.GetWebhookHandlers() {
+		protected = append(protected, fn)
+	}
+
 	srv := server.New(cfg,
 		[]server.RegisterRoutesFunc{
 			authHandler.RegisterRoutes,
 		},
-		[]server.RegisterRoutesFunc{
-			categoryHandler.RegisterRoutes,
-			materialHandler.RegisterRoutes,
-			stockLotHandler.RegisterRoutes,
-			stockMovementHandler.RegisterRoutes,
-			auditLogHandler.RegisterRoutes,
-			feishuHandler.RegisterRoutes,
-			modelHandler.RegisterRoutes,
-			handler.NewBatchHandler(inventorySvc, materialSvc).RegisterRoutes,
-			wechatHandler.RegisterRoutes,
-			cronHandler.RegisterRoutes,
-			authHandler.RegisterProtectedRoutes,
-		},
+		protected,
 		server.AuthMiddleware(authMw),
 	)
 
 	// Register ops endpoint for manual config reload
 	srv.Engine().POST("/reload", func(c *gin.Context) {
-		if err := orch.Reload(); err != nil {
+		if err := gw.Reload(); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "reload failed: " + err.Error()})
 			return
 		}
