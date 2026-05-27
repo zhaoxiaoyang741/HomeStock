@@ -19,7 +19,7 @@ func TestExecute_help(t *testing.T) {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 
-	if !strings.Contains(stdout.String(), "HomeStock CLI") {
+	if !strings.Contains(stdout.String(), "Usage:") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
@@ -71,5 +71,41 @@ func TestExecute_configShowRejectsPositionalArgs(t *testing.T) {
 
 	if !strings.Contains(stderr.String(), "does not accept positional arguments") {
 		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestExecute_version(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Execute([]string{"version"}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Execute() exitCode = %d", exitCode)
+	}
+
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+
+	if !strings.Contains(stdout.String(), "HomeStock") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestExecute_status(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Execute([]string{"status", "--config", ""}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("Execute() exitCode = %d, stderr = %q", exitCode, stderr.String())
+	}
+
+	body := stdout.String()
+	if !strings.Contains(body, "CLI Version:") {
+		t.Fatalf("stdout = %q", body)
+	}
+	if !strings.Contains(body, "Active Model:") {
+		t.Fatalf("stdout = %q", body)
 	}
 }

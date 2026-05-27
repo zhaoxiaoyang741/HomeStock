@@ -2,111 +2,155 @@ package cli
 
 import (
 	"encoding/json"
-	"flag"
+	"errors"
 	"fmt"
 	"io"
+	"os"
+
+	"github.com/spf13/cobra"
 
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 )
 
+// Version information — set via -ldflags at build time.
+var (
+	Version = "dev"
+	Commit  = "none"
+	Date    = "unknown"
+)
+
 const defaultConfigPath = "config.json"
 
-// Execute runs the HomeStock CLI and returns an exit code.
+// runtimeError marks an error as a runtime failure (exit code 1) as opposed to
+// a CLI usage error (exit code 2).
+type runtimeError struct{ error }
+
+func (e *runtimeError) Unwrap() error { return e.error }
+
+func asRuntimeError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &runtimeError{err}
+}
+
+func isRuntimeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var e *runtimeError
+	return errors.As(err, &e)
+}
+
+// Execute is the single entry point. It returns an exit code suitable for
+// os.Exit: 0 on success, 1 for runtime errors, 2 for CLI usage errors.
 func Execute(args []string, stdout, stderr io.Writer) int {
-	runner := runner{
-		stdout: stdout,
-		stderr: stderr,
+	rootCmd := newRootCmd()
+	rootCmd.SetOut(stdout)
+	rootCmd.SetErr(stderr)
+
+	if args == nil {
+		args = []string{}
 	}
+	rootCmd.SetArgs(args)
 
-	return runner.execute(args)
-}
-
-type runner struct {
-	stdout io.Writer
-	stderr io.Writer
-}
-
-func (r runner) execute(args []string) int {
-	if len(args) == 0 {
-		r.printUsage()
-		return 0
-	}
-
-	switch args[0] {
-	case "help", "-h", "--help":
-		r.printUsage()
-		return 0
-	case "config":
-		return r.runConfig(args[1:])
-	default:
-		fmt.Fprintf(r.stderr, "unknown command %q\n\n", args[0])
-		r.printUsage()
-		return 2
-	}
-}
-
-func (r runner) runConfig(args []string) int {
-	if len(args) == 0 {
-		r.printConfigUsage()
-		return 0
-	}
-
-	switch args[0] {
-	case "show":
-		return r.runConfigShow(args[1:])
-	case "help", "-h", "--help":
-		r.printConfigUsage()
-		return 0
-	default:
-		fmt.Fprintf(r.stderr, "unknown config command %q\n\n", args[0])
-		r.printConfigUsage()
-		return 2
-	}
-}
-
-func (r runner) runConfigShow(args []string) int {
-	fs := flag.NewFlagSet("config show", flag.ContinueOnError)
-	fs.SetOutput(r.stderr)
-
-	configPath := fs.String("config", defaultConfigPath, "Path to config JSON file")
-
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-
-	if fs.NArg() != 0 {
-		fmt.Fprintf(r.stderr, "config show does not accept positional arguments: %v\n", fs.Args())
-		return 2
-	}
-
-	cfg, err := config.Load(*configPath)
+	_, err := rootCmd.ExecuteC()
 	if err != nil {
-		fmt.Fprintf(r.stderr, "load config: %v\n", err)
-		return 1
+		fmt.Fprintln(stderr, "Error:", err)
+		if isRuntimeError(err) {
+			return 1
+		}
+		return 2
 	}
-
-	encoder := json.NewEncoder(r.stdout)
-	encoder.SetIndent("", "  ")
-
-	if err := encoder.Encode(cfg); err != nil {
-		fmt.Fprintf(r.stderr, "write config: %v\n", err)
-		return 1
-	}
-
 	return 0
 }
 
-func (r runner) printUsage() {
-	fmt.Fprintln(r.stdout, "HomeStock CLI")
-	fmt.Fprintln(r.stdout)
-	fmt.Fprintln(r.stdout, "Usage:")
-	fmt.Fprintln(r.stdout, "  homestock <command> [flags]")
-	fmt.Fprintln(r.stdout)
-	fmt.Fprintln(r.stdout, "Available Commands:")
-	fmt.Fprintln(r.stdout, "  config show   Print the effective configuration as JSON")
+func newRootCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "homestock",
+		Short: "HomeStock inventory management bot",
+		Long: "HomeStock is an inventory management bot that integrates with " +
+			"Feishu and WeChat for tracking material stock, inbound/outbound " +
+			"movements, and expiry notifications.",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+
+	cmd.PersistentFlags().String("config", "", "Path to config JSON file")
+
+	cmd.AddCommand(newConfigCmd())
+	cmd.AddCommand(newServerCmd())
+	cmd.AddCommand(newGatewayCmd())
+	cmd.AddCommand(newStatusCmd())
+	cmd.AddCommand(newVersionCmd())
+
+	return cmd
 }
 
-func (r runner) printConfigUsage() {
-	fmt.Fprintln(r.stdout, "Usage:")
-	fmt.Fprintln(r.stdout, "  homestock config show [--config path]")
+// ---------------------------------------------------------------------------
+// Config commands
+// ---------------------------------------------------------------------------
+
+func newConfigCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "config",
+		Short: "Manage configuration",
+		Args:  cobra.NoArgs,
+	}
+	cmd.AddCommand(newConfigShowCmd())
+	return cmd
+}
+
+func newConfigShowCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "show",
+		Short: "Print the effective configuration as JSON",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("config show does not accept positional arguments: %v", args)
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Backward compatible config path resolution:
+			//   — if --config was explicitly passed (even ""), use it verbatim
+			//   — otherwise default to "config.json"
+			f := cmd.Root().PersistentFlags().Lookup("config")
+			cfgPath := defaultConfigPath
+			if f.Changed {
+				cfgPath = f.Value.String()
+			}
+
+			cfg, err := config.Load(cfgPath)
+			if err != nil {
+				return asRuntimeError(fmt.Errorf("load config: %w", err))
+			}
+
+			encoder := json.NewEncoder(cmd.OutOrStdout())
+			encoder.SetIndent("", "  ")
+			if err := encoder.Encode(cfg); err != nil {
+				return asRuntimeError(fmt.Errorf("write config: %w", err))
+			}
+			return nil
+		},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// resolveConfigPath resolves the config path with the fallback chain:
+//  1. --config flag value (non-empty)
+//  2. HOMESTOCK_CONFIG_PATH environment variable
+//  3. default "config.json"
+func resolveConfigPath(cmd *cobra.Command) string {
+	path, _ := cmd.Root().PersistentFlags().GetString("config")
+	if path == "" {
+		path = os.Getenv("HOMESTOCK_CONFIG_PATH")
+	}
+	if path == "" {
+		path = defaultConfigPath
+	}
+	return path
 }
