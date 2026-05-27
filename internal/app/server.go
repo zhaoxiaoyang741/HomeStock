@@ -65,7 +65,7 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 	}
 
 	// 4. HTTP server (routes mounted from Gateway handlers + app handlers)
-	srv := initServer(cfg.Server, db, uow, authSvc, gw, materialSvc, inventorySvc)
+	srv := initServer(cfg.Server, configPath, db, uow, authSvc, gw, materialSvc, inventorySvc)
 
 	return &Server{
 		configPath: configPath,
@@ -159,6 +159,7 @@ func initAdminUser(authSvc *service.AuthService) error {
 
 func initServer(
 	cfg config.ServerConfig,
+	configPath string,
 	db *gorm.DB,
 	uow *gormrepo.UnitOfWork,
 	authSvc *service.AuthService,
@@ -166,7 +167,7 @@ func initServer(
 	materialSvc *service.MaterialService,
 	inventorySvc *service.InventoryService,
 ) *server.Server {
-	authHandler := handler.NewAuthHandler(authSvc)
+	authHandler := handler.NewAuthHandler(authSvc, configPath)
 	categoryService := service.NewCategoryService(uow)
 	categoryHandler := handler.NewCategoryHandler(categoryService)
 	materialHandler := handler.NewMaterialHandler(materialSvc, inventorySvc)
@@ -174,10 +175,13 @@ func initServer(
 	stockMovementHandler := handler.NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
 	auditService := service.NewAuditService(uow)
 	auditLogHandler := handler.NewAuditLogHandler(auditService)
+	dashboardHandler := handler.NewDashboardHandler(uow, config.Get())
+	stockSummaryHandler := handler.NewStockSummaryHandler(uow)
+	outboundHandler := handler.NewOutboundHandler(configPath, gw.OutboundManager())
 
 	authMw := httpreq.JWTAuthMiddleware(authSvc)
 
-	// Collect all route registrations: app-level handlers + Gateway webhook handlers
+	// Collect all route registrations: app-level handlers
 	protected := []server.RegisterRoutesFunc{
 		categoryHandler.RegisterRoutes,
 		materialHandler.RegisterRoutes,
@@ -186,6 +190,9 @@ func initServer(
 		auditLogHandler.RegisterRoutes,
 		handler.NewBatchHandler(inventorySvc, materialSvc).RegisterRoutes,
 		authHandler.RegisterProtectedRoutes,
+		dashboardHandler.RegisterRoutes,
+		stockSummaryHandler.RegisterRoutes,
+		outboundHandler.RegisterRoutes,
 	}
 
 	srv := server.New(cfg,

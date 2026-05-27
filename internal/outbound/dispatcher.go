@@ -15,15 +15,17 @@ const (
 	retryBackoffSec = 1
 )
 
-type httpEndpoint struct {
+// HTTPEndpoint sends events to a single URL via HTTP POST with retry logic.
+type HTTPEndpoint struct {
 	name       string
 	url        string
 	client     *http.Client
 	maxRetries int
 }
 
-func newHTTPEndpoint(name, url string) *httpEndpoint {
-	return &httpEndpoint{
+// NewHTTPEndpoint creates an HTTPEndpoint with the given name and URL.
+func NewHTTPEndpoint(name, url string) *HTTPEndpoint {
+	return &HTTPEndpoint{
 		name: name,
 		url:  url,
 		client: &http.Client{
@@ -33,9 +35,9 @@ func newHTTPEndpoint(name, url string) *httpEndpoint {
 	}
 }
 
-func (e *httpEndpoint) Name() string { return e.name }
+func (e *HTTPEndpoint) Name() string { return e.name }
 
-func (e *httpEndpoint) Send(ctx context.Context, event OutboundEvent) error {
+func (e *HTTPEndpoint) Send(ctx context.Context, event OutboundEvent) error {
 	body, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("marshal event: %w", err)

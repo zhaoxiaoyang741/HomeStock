@@ -36,7 +36,7 @@ func (m *Manager) reload() {
 	m.endpoints = make(map[string]Endpoint, len(m.cfg.Endpoints))
 	for _, ep := range m.cfg.Endpoints {
 		if ep.Enabled {
-			m.endpoints[ep.Name] = newHTTPEndpoint(ep.Name, ep.URL)
+			m.endpoints[ep.Name] = NewHTTPEndpoint(ep.Name, ep.URL)
 		}
 	}
 }

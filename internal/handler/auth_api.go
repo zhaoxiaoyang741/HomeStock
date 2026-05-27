@@ -3,22 +3,25 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	httpreq "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/request"
 	httpresp "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/response"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 )
 
-// AuthHandler serves user registration and login endpoints.
+// AuthHandler serves user registration, login, and API key management endpoints.
 type AuthHandler struct {
-	svc *service.AuthService
+	svc        *service.AuthService
+	configPath string
 }
 
 // NewAuthHandler creates an AuthHandler.
-func NewAuthHandler(svc *service.AuthService) *AuthHandler {
-	return &AuthHandler{svc: svc}
+func NewAuthHandler(svc *service.AuthService, configPath string) *AuthHandler {
+	return &AuthHandler{svc: svc, configPath: configPath}
 }
 
 // RegisterRoutes mounts public auth endpoints (no JWT required).
@@ -30,6 +33,9 @@ func (h *AuthHandler) RegisterRoutes(api *gin.RouterGroup) {
 func (h *AuthHandler) RegisterProtectedRoutes(api *gin.RouterGroup) {
 	api.GET("/auth/me", h.Me)
 	api.PUT("/auth/password", h.ChangePassword)
+	api.GET("/auth/api-keys", h.ListAPIKeys)
+	api.POST("/auth/api-keys", h.AddAPIKey)
+	api.DELETE("/auth/api-keys/:key", h.DeleteAPIKey)
 }
 
 type loginRequest struct {
@@ -117,4 +123,60 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	}
 
 	httpresp.OK(c, gin.H{"message": "密码修改成功"})
+}
+
+// ListAPIKeys handles GET /auth/api-keys.
+func (h *AuthHandler) ListAPIKeys(c *gin.Context) {
+	cfg := config.Get()
+	httpresp.OK(c, cfg.Auth.APIKeys)
+}
+
+type addAPIKeyRequest struct {
+	Key string `json:"key" binding:"required"`
+}
+
+// AddAPIKey handles POST /auth/api-keys.
+func (h *AuthHandler) AddAPIKey(c *gin.Context) {
+	var req addAPIKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpresp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := config.Save(h.configPath, func(cfg *config.Config) {
+		for _, k := range cfg.Auth.APIKeys {
+			if k == req.Key {
+				return
+			}
+		}
+		cfg.Auth.APIKeys = append(cfg.Auth.APIKeys, req.Key)
+	}); err != nil {
+		httpresp.Error(c, http.StatusInternalServerError, "save config failed: "+err.Error())
+		return
+	}
+
+	httpresp.Created(c, gin.H{"message": "API key added"})
+}
+
+// DeleteAPIKey handles DELETE /auth/api-keys/:key.
+func (h *AuthHandler) DeleteAPIKey(c *gin.Context) {
+	key := strings.TrimSpace(c.Param("key"))
+	if key == "" {
+		httpresp.Error(c, http.StatusBadRequest, "key is required")
+		return
+	}
+
+	if err := config.Save(h.configPath, func(cfg *config.Config) {
+		for i, k := range cfg.Auth.APIKeys {
+			if k == key {
+				cfg.Auth.APIKeys = append(cfg.Auth.APIKeys[:i], cfg.Auth.APIKeys[i+1:]...)
+				return
+			}
+		}
+	}); err != nil {
+		httpresp.Error(c, http.StatusInternalServerError, "save config failed: "+err.Error())
+		return
+	}
+
+	httpresp.OK(c, gin.H{"message": "API key deleted"})
 }
