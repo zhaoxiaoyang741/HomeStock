@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { forwardRef, useEffect, useState, useCallback, useRef, useImperativeHandle } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MessageSquare, PowerOff, RefreshCw, Loader2, QrCode, Check, X, AlertTriangle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -18,7 +18,12 @@ interface WechatBotSectionProps {
   onDeactivate: () => void
 }
 
-export function WechatBotSection({ isActive, onActivate, onDeactivate }: WechatBotSectionProps) {
+export interface WechatBotSectionHandle {
+  save: () => Promise<void>
+}
+
+export const WechatBotSection = forwardRef<WechatBotSectionHandle, WechatBotSectionProps>(
+  ({ isActive, onActivate, onDeactivate }, ref) => {
   const { t } = useTranslation('settings')
   const [status, setStatus] = useState<WechatStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -105,7 +110,8 @@ export function WechatBotSection({ isActive, onActivate, onDeactivate }: WechatB
 
   // Status polling
   useEffect(() => {
-    const poll = () => {
+    // Initial load - sets everything including enabled
+    const initialLoad = () => {
       getWechatStatus()
         .then((s) => {
           setStatus(s)
@@ -129,8 +135,25 @@ export function WechatBotSection({ isActive, onActivate, onDeactivate }: WechatB
           setLoading(false)
         })
     }
-    poll()
-    pollingRef.current = setInterval(poll, 10000)
+    initialLoad()
+
+    // Polling - only updates status, doesn't overwrite local enabled state
+    pollingRef.current = setInterval(() => {
+      getWechatStatus()
+        .then((s) => {
+          setStatus(s)
+          setError('')
+          if (s.token_expired) {
+            setBindState('idle')
+          } else if (s.has_token && s.account_id) {
+            setBindState('confirmed')
+            setAccountID(s.account_id)
+          }
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : t('wechatStatusFailed'))
+        })
+    }, 10000)
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current)
     }
@@ -149,23 +172,17 @@ export function WechatBotSection({ isActive, onActivate, onDeactivate }: WechatB
   // Auto-disable when another channel takes over
   useEffect(() => {
     if (prevActiveRef.current && !isActive) {
-      updateWechatConfig({ enabled: false }).catch(() => {})
       setEnabled(false)
     }
     prevActiveRef.current = isActive
   }, [isActive])
 
-  async function handleToggle(checked: boolean) {
+  function handleToggle(checked: boolean) {
     setEnabled(checked)
-    try {
-      await updateWechatConfig({ enabled: checked })
-      if (checked) {
-        onActivate()
-      } else {
-        onDeactivate()
-      }
-    } catch {
-      setEnabled(!checked)
+    if (checked) {
+      onActivate()
+    } else {
+      onDeactivate()
     }
   }
 
@@ -196,6 +213,22 @@ export function WechatBotSection({ isActive, onActivate, onDeactivate }: WechatB
       setDisconnecting(false)
     }
   }
+
+  async function handleSave() {
+    setError('')
+    try {
+      await updateWechatConfig({ enabled })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('wechatSaveFailed'))
+    }
+  }
+
+  // Expose save to parent (SettingsPage unified save button)
+  const handleSaveRef = useRef(handleSave)
+  handleSaveRef.current = handleSave
+  useImperativeHandle(ref, () => ({
+    save: () => handleSaveRef.current(),
+  }), [])
 
   async function handleBind() {
     setBindState('loading')
@@ -387,8 +420,7 @@ export function WechatBotSection({ isActive, onActivate, onDeactivate }: WechatB
           </div>
         </CardHeader>
 
-        {isActive && (
-        <CardContent className="space-y-5">
+        {enabled && <CardContent className="space-y-5">
           <Separator />
 
           {/* QR Code Binding Section */}
@@ -482,9 +514,8 @@ export function WechatBotSection({ isActive, onActivate, onDeactivate }: WechatB
               {t('wechatTokenExpiredHint')}
             </p>
           )}
-        </CardContent>
-        )}
+        </CardContent>}
       </Card>
     </div>
   )
-}
+})

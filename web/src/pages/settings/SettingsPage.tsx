@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Clock, Radio, Brain, Lock, Tags } from 'lucide-react'
+import { Clock, Radio, Brain, Lock, Tags, Save, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getModelList } from '@/api/models'
 import { FeishuBotSection } from './FeishuBotSection'
+import type { FeishuBotSectionHandle } from './FeishuBotSection'
 import { WechatBotSection } from './WechatBotSection'
+import type { WechatBotSectionHandle } from './WechatBotSection'
+import { Button } from '@/components/ui/button'
 import { ModelConfigSection } from './ModelConfigSection'
 import { CronConfigSection } from './CronConfigSection'
 import { ChangePasswordSection } from './ChangePasswordSection'
@@ -25,7 +28,10 @@ export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState<SectionId>('channels')
   const [activeChannel, setActiveChannel] = useState<'feishu' | 'wechat' | null>(null)
   const [lastReloadTime, setLastReloadTime] = useState('')
+  const [savingChannels, setSavingChannels] = useState(false)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const feishuRef = useRef<FeishuBotSectionHandle>(null)
+  const wechatRef = useRef<WechatBotSectionHandle>(null)
 
   const fetchReloadTime = async () => {
     try {
@@ -46,6 +52,16 @@ export default function SettingsPage() {
       if (pollingRef.current) clearInterval(pollingRef.current)
     }
   }, [])
+
+  const handleSaveChannels = async () => {
+    setSavingChannels(true)
+    try {
+      await feishuRef.current?.save()
+      await wechatRef.current?.save()
+    } finally {
+      setSavingChannels(false)
+    }
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-6">
@@ -86,15 +102,18 @@ export default function SettingsPage() {
             {activeSection === 'channels' ? (
               <div className="space-y-6">
                 <FeishuBotSection
+                  ref={feishuRef}
                   isActive={activeChannel === 'feishu'}
                   onActivate={() => setActiveChannel('feishu')}
                   onDeactivate={() => setActiveChannel(null)}
                 />
                 <WechatBotSection
+                  ref={wechatRef}
                   isActive={activeChannel === 'wechat'}
                   onActivate={() => setActiveChannel('wechat')}
                   onDeactivate={() => setActiveChannel(null)}
                 />
+                <div className="h-4" />
               </div>
             ) : activeSection === 'cron' ? (
               <CronConfigSection />
@@ -106,6 +125,23 @@ export default function SettingsPage() {
               <CategorySection />
             )}
           </div>
+
+          {/* Floating save bar for channels section */}
+          {activeSection === 'channels' && (
+            <div className="flex shrink-0 items-center justify-end border-t border-outline-variant/20 bg-surface-container-lowest pt-4">
+              <Button
+                onClick={() => void handleSaveChannels()}
+                disabled={savingChannels}
+              >
+                {savingChannels ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                {t('common:save')}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>

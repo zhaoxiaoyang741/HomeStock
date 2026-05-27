@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { forwardRef, useEffect, useState, useCallback, useRef, useImperativeHandle } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bot, PowerOff, RefreshCw, ExternalLink, Loader2, Save, Pencil } from 'lucide-react'
+import { Bot, PowerOff, RefreshCw, ExternalLink, Loader2, Pencil } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -18,7 +18,12 @@ interface FeishuBotSectionProps {
   onDeactivate: () => void
 }
 
-export function FeishuBotSection({ isActive, onActivate, onDeactivate }: FeishuBotSectionProps) {
+export interface FeishuBotSectionHandle {
+  save: () => Promise<void>
+}
+
+export const FeishuBotSection = forwardRef<FeishuBotSectionHandle, FeishuBotSectionProps>(
+  ({ isActive, onActivate, onDeactivate }, ref) => {
   const { t } = useTranslation('settings')
   const [status, setStatus] = useState<FeishuStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -32,7 +37,6 @@ export function FeishuBotSection({ isActive, onActivate, onDeactivate }: FeishuB
   const [appId, setAppId] = useState('')
   const [appSecret, setAppSecret] = useState('')
   const [editingSecret, setEditingSecret] = useState(false)
-  const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState('')
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -58,11 +62,26 @@ export function FeishuBotSection({ isActive, onActivate, onDeactivate }: FeishuB
     }
   }, [loading, t])
 
+  // Lightweight poll that doesn't overwrite local enabled state
+  const pollStatus = useCallback(async () => {
+    try {
+      const s = await getFeishuStatus()
+      setStatus(s)
+      // Pre-populate app_id so user always sees current configured value
+      if (s.app_id) {
+        setAppId(s.app_id)
+      }
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('feishuStatusFailed'))
+    }
+  }, [t])
+
   useEffect(() => {
     void fetchStatus()
 
     pollingRef.current = setInterval(() => {
-      void fetchStatus()
+      void pollStatus()
     }, 10000)
 
     return () => {
@@ -70,7 +89,7 @@ export function FeishuBotSection({ isActive, onActivate, onDeactivate }: FeishuB
         clearInterval(pollingRef.current)
       }
     }
-  }, [fetchStatus])
+  }, [fetchStatus, pollStatus])
 
   // Sync initial enabled state to parent
   useEffect(() => {
@@ -85,7 +104,7 @@ export function FeishuBotSection({ isActive, onActivate, onDeactivate }: FeishuB
   // Auto-disable when another channel takes over
   useEffect(() => {
     if (prevActiveRef.current && !isActive) {
-      updateFeishuConfig({ enabled: false }).catch(() => {})
+      setEnabled(false)
     }
     prevActiveRef.current = isActive
   }, [isActive])
@@ -114,7 +133,6 @@ export function FeishuBotSection({ isActive, onActivate, onDeactivate }: FeishuB
   }, [fetchStatus])
 
   async function handleSave() {
-    setSaving(true)
     setError('')
     setSaveSuccess('')
     try {
@@ -131,24 +149,22 @@ export function FeishuBotSection({ isActive, onActivate, onDeactivate }: FeishuB
       await fetchStatus()
     } catch (err) {
       setError(err instanceof Error ? err.message : t('feishuSaveFailed'))
-    } finally {
-      setSaving(false)
     }
   }
 
-  async function handleToggle(checked: boolean) {
+  // Expose save to parent (SettingsPage unified save button)
+  const handleSaveRef = useRef(handleSave)
+  handleSaveRef.current = handleSave
+  useImperativeHandle(ref, () => ({
+    save: () => handleSaveRef.current(),
+  }), [])
+
+  function handleToggle(checked: boolean) {
     setEnabled(checked)
-    try {
-      await updateFeishuConfig({ enabled: checked })
-      if (checked) {
-        onActivate()
-      } else {
-        onDeactivate()
-      }
-    } catch (err) {
-      // Revert local state on failure
-      setEnabled(!checked)
-      setError(err instanceof Error ? err.message : t('feishuSaveFailed'))
+    if (checked) {
+      onActivate()
+    } else {
+      onDeactivate()
     }
   }
 
@@ -215,8 +231,7 @@ export function FeishuBotSection({ isActive, onActivate, onDeactivate }: FeishuB
           </div>
         </CardHeader>
 
-        {isActive && (
-        <CardContent className="space-y-5">
+        {enabled && <CardContent className="space-y-5">
           <Separator />
 
           {/* Connection status indicator */}
@@ -323,8 +338,8 @@ export function FeishuBotSection({ isActive, onActivate, onDeactivate }: FeishuB
             </div>
 
             {/* App ID */}
-            <div className="space-y-1.5">
-              <Label htmlFor="feishu-app-id">{t('feishuAppIdInput')}</Label>
+            <div className="grid grid-cols-[120px_1fr] items-center gap-3">
+              <Label htmlFor="feishu-app-id" className="text-right">{t('feishuAppIdInput')}</Label>
               <Input
                 id="feishu-app-id"
                 placeholder={t('feishuPlaceholderKeep')}
@@ -334,10 +349,10 @@ export function FeishuBotSection({ isActive, onActivate, onDeactivate }: FeishuB
             </div>
 
             {/* App Secret */}
-            <div className="space-y-1.5">
-              <Label htmlFor="feishu-app-secret">{t('feishuAppSecretInput')}</Label>
+            <div className="grid grid-cols-[120px_1fr] items-center gap-3">
+              <Label htmlFor="feishu-app-secret" className="text-right">{t('feishuAppSecretInput')}</Label>
               {editingSecret ? (
-                <>
+                <div className="space-y-1.5">
                   <Input
                     id="feishu-app-secret"
                     type="password"
@@ -346,7 +361,7 @@ export function FeishuBotSection({ isActive, onActivate, onDeactivate }: FeishuB
                     onChange={(e) => setAppSecret(e.target.value)}
                   />
                   <p className="text-xs text-on-surface-variant">{t('feishuAppSecretHint')}</p>
-                </>
+                </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-on-surface-variant">••••••••</span>
@@ -363,28 +378,14 @@ export function FeishuBotSection({ isActive, onActivate, onDeactivate }: FeishuB
               )}
             </div>
 
-            {/* Save button */}
-            <Button
-              size="sm"
-              onClick={() => void handleSave()}
-              disabled={saving || (enabled === status?.enabled && appId === status?.app_id && !appSecret)}
-            >
-              {saving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-2 h-4 w-4" />
-              )}
-              {saving ? t('feishuSaving') : t('common:save')}
-            </Button>
           </div>
 
           {/* Hint text */}
           {!isConfigured && (
             <p className="text-xs text-on-surface-variant">{t('feishuNotConfiguredHint')}</p>
           )}
-        </CardContent>
-        )}
+        </CardContent>}
       </Card>
     </div>
   )
-}
+})
