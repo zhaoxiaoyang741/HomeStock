@@ -105,7 +105,7 @@ func TestExecute_status(t *testing.T) {
 	if !strings.Contains(body, "CLI Version:") {
 		t.Fatalf("stdout = %q", body)
 	}
-	if !strings.Contains(body, "Active Model:") {
+	if !strings.Contains(body, "Outbound Endpoints:") {
 		t.Fatalf("stdout = %q", body)
 	}
 }
