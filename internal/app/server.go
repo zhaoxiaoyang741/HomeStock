@@ -58,8 +58,8 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 		})
 	}
 
-	// 3. Gateway (agent system, channels, cron, hot-reload)
-	gw, err := gateway.New(cfg, configPath, materialSvc, inventorySvc, uow, db)
+	// 3. Gateway (cron, outbound, hot-reload)
+	gw, err := gateway.New(cfg, configPath, uow)
 	if err != nil {
 		return nil, err
 	}
@@ -186,9 +186,6 @@ func initServer(
 		auditLogHandler.RegisterRoutes,
 		handler.NewBatchHandler(inventorySvc, materialSvc).RegisterRoutes,
 		authHandler.RegisterProtectedRoutes,
-	}
-	for _, fn := range gw.GetWebhookHandlers() {
-		protected = append(protected, fn)
 	}
 
 	srv := server.New(cfg,

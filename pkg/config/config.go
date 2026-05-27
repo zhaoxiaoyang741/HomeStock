@@ -20,14 +20,6 @@ type Config struct {
 	Server ServerConfig `json:"server"`
 	// Database controls storage backend settings.
 	Database DatabaseConfig `json:"database"`
-	// Channels maps channel name to its raw JSON configuration.
-	// Each channel factory decides how to unmarshal its own section.
-	Channels map[string]json.RawMessage `json:"channels"`
-	// ModelList is the list of LLM model configurations for multi-model support.
-	ModelList []ModelConfig `json:"model_list"`
-	// ActiveModel is the model_name of the currently active model.
-	// If empty, the first enabled model in ModelList is used.
-	ActiveModel string `json:"active_model,omitempty"`
 	// Auth controls user authentication settings.
 	Auth AuthConfig `json:"auth"`
 
@@ -80,23 +72,6 @@ type DatabaseConfig struct {
 	DSN string `json:"dsn"`
 }
 
-type WechatChannelConfig struct {
-	Enabled    bool   `json:"enabled"`
-	Token      string `json:"token"`
-	AccountID  string `json:"account_id"`
-	BaseURL    string `json:"base_url"`
-	CDNBaseURL string `json:"cdn_base_url"`
-	Proxy      string `json:"proxy"`
-}
-
-type FeishuChannelConfig struct {
-	Enabled     bool   `json:"enabled"`
-	AppID       string `json:"app_id"`
-	AppSecret   string `json:"app_secret"`
-	RedirectURI string `json:"redirect_uri,omitempty"`
-	FrontendURL string `json:"frontend_url,omitempty"`
-}
-
 // CronConfig controls background scheduled task settings.
 type CronConfig struct {
 	// Enabled enables the cron scheduler. Default: true.
@@ -107,81 +82,20 @@ type CronConfig struct {
 	// ExpiryCheckPollInterval is how often the expiry scanner runs.
 	// Accepts Go duration strings: "30m", "1h", "6h". Default: "6h".
 	ExpiryCheckPollInterval string `json:"expiry_check_poll_interval,omitempty"`
-	// NotifyEnabled controls whether expiry notifications are sent via channels.
+	// NotifyEnabled controls whether expiry notifications are sent.
 	// Default: false.
 	NotifyEnabled bool `json:"notify_enabled,omitempty"`
 	// NotifyTimeStart is the start of the notification time window in HH:MM format.
-	// Notifications are only sent within [NotifyTimeStart, NotifyTimeEnd).
 	// Default: "09:00".
 	NotifyTimeStart string `json:"notify_time_start,omitempty"`
 	// NotifyTimeEnd is the end of the notification time window in HH:MM format.
-	// Notifications are only sent within [NotifyTimeStart, NotifyTimeEnd).
 	// Default: "21:00".
 	NotifyTimeEnd string `json:"notify_time_end,omitempty"`
 }
 
-// FeishuConfig returns the deserialized Feishu channel configuration.
-func (c *Config) FeishuConfig() (FeishuChannelConfig, bool) {
-	return channelConfig[FeishuChannelConfig](c, "feishu")
-}
-
-// WechatConfig returns the deserialized WeChat channel configuration.
-func (c *Config) WechatConfig() (WechatChannelConfig, bool) {
-	return channelConfig[WechatChannelConfig](c, "wechat")
-}
-
-// SetChannelConfig marshals and stores a typed channel config into the config map.
-func (c *Config) SetChannelConfig(name string, cfg any) error {
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		return fmt.Errorf("marshal channel config %q: %w", name, err)
-	}
-	if c.Channels == nil {
-		c.Channels = make(map[string]json.RawMessage)
-	}
-	c.Channels[name] = data
-	return nil
-}
-
-// channelConfig is a generic helper to unmarshal a named channel config from the map.
-func channelConfig[T any](c *Config, name string) (T, bool) {
-	var zero T
-	raw, ok := c.Channels[name]
-	if !ok {
-		return zero, false
-	}
-	var cfg T
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return zero, false
-	}
-	return cfg, true
-}
-
-// ActiveModelConfig returns the currently active model configuration.
-// Resolution order:
-//  1. If ActiveModel is set, find the model with that model_name.
-//  2. Otherwise, return the first model with enabled: true.
-//  3. Returns error if no model is found or none are enabled.
-func (c *Config) ActiveModelConfig() (*ModelConfig, error) {
-	if c.ActiveModel != "" {
-		for i := range c.ModelList {
-			if c.ModelList[i].ModelName == c.ActiveModel {
-				return &c.ModelList[i], nil
-			}
-		}
-		return nil, fmt.Errorf("active model %q not found in model_list", c.ActiveModel)
-	}
-
-	for i := range c.ModelList {
-		if c.ModelList[i].Enabled {
-			return &c.ModelList[i], nil
-		}
-	}
-
-	if len(c.ModelList) > 0 {
-		return nil, fmt.Errorf("no model is enabled in model_list")
-	}
-	return nil, fmt.Errorf("model_list is empty")
+type LogConfig struct {
+	Level int    `json:"level"`
+	Path  string `json:"path"`
 }
 
 // IsValidAPIKey checks whether the given key is in the configured API key list.
@@ -192,27 +106,6 @@ func (c *Config) IsValidAPIKey(key string) bool {
 		}
 	}
 	return false
-}
-
-type ModelConfig struct {
-	// ModelName is a human-readable label used to reference this model config.
-	ModelName string `json:"model_name"`
-	// Model is the model identifier passed to the API, e.g. "openai/gpt-4o" or "gpt-4o".
-	Model string `json:"model"`
-	// Provider specifies the LLM provider type: "openai" (default), "ollama", or "deepseek".
-	Provider string `json:"provider,omitempty"`
-	// Enabled enables this model configuration. If false, the entry is skipped.
-	// Defaults to false for clean configs; the app falls back to the first entry if none enabled.
-	Enabled bool `json:"enabled"`
-	// APIKey is the API key for the LLM provider.
-	APIKey string `json:"api_key"`
-	// APIBase is the base URL for the API, optional — defaults to the provider's default.
-	APIBase string `json:"api_base,omitempty"`
-}
-
-type LogConfig struct {
-	Level int    `json:"level"`
-	Path  string `json:"path"`
 }
 
 var (
@@ -270,44 +163,14 @@ func Get() *Config {
 }
 
 func defaultConfig() *Config {
-	feishuRaw, _ := json.Marshal(FeishuChannelConfig{
-		Enabled:     false,
-		AppID:       "",
-		AppSecret:   "",
-		RedirectURI: "http://localhost:80/api/v1/feishu/callback",
-		FrontendURL: "http://localhost:5173",
-	})
-	wechatRaw, _ := json.Marshal(WechatChannelConfig{
-		Enabled:    false,
-		Token:      "",
-		AccountID:  "",
-		BaseURL:    "https://ilinkai.weixin.qq.com/",
-		CDNBaseURL: "https://novac2c.cdn.weixin.qq.com/c2c",
-		Proxy:      "",
-	})
-
 	return &Config{
 		Version: 1,
-		Server:  ServerConfig{
+		Server: ServerConfig{
 			Port: "80",
 		},
 		Database: DatabaseConfig{
 			Driver: "sqlite",
 			DSN:    "./data/inventory.db",
-		},
-		Channels: map[string]json.RawMessage{
-			"feishu": feishuRaw,
-			"wechat": wechatRaw,
-		},
-		ModelList: []ModelConfig{
-			{
-				ModelName: "deepseek",
-				Model:     "deepseek-v4-flash",
-				Provider:  "deepseek",
-				Enabled:   true,
-				APIKey:    "",
-				APIBase:   "https://api.deepseek.com",
-			},
 		},
 		Auth: AuthConfig{
 			JWTSecret:            "",
@@ -376,16 +239,6 @@ func cloneConfig(cfg *Config) *Config {
 	}
 
 	cloned := *cfg
-	cloned.Channels = make(map[string]json.RawMessage, len(cfg.Channels))
-	for k, v := range cfg.Channels {
-		data := make(json.RawMessage, len(v))
-		copy(data, v)
-		cloned.Channels[k] = data
-	}
-	if cfg.ModelList != nil {
-		cloned.ModelList = make([]ModelConfig, len(cfg.ModelList))
-		copy(cloned.ModelList, cfg.ModelList)
-	}
 	if cfg.Outbound.Endpoints != nil {
 		cloned.Outbound.Endpoints = make([]EndpointConfig, len(cfg.Outbound.Endpoints))
 		copy(cloned.Outbound.Endpoints, cfg.Outbound.Endpoints)
@@ -395,26 +248,6 @@ func cloneConfig(cfg *Config) *Config {
 
 // validateConfig checks that the config is internally consistent.
 func validateConfig(cfg *Config) error {
-	if len(cfg.ModelList) == 0 {
-		cfg.ModelList = []ModelConfig{
-			{
-				ModelName: "default",
-				Model:     "gpt-4o",
-				Provider:  "openai",
-			},
-		}
-	}
-	for i, m := range cfg.ModelList {
-		if m.ModelName == "" {
-			return fmt.Errorf("model_list[%d].model_name is required", i)
-		}
-		if m.Model == "" {
-			return fmt.Errorf("model_list[%d].model is required", i)
-		}
-		if m.Provider == "" {
-			cfg.ModelList[i].Provider = "openai"
-		}
-	}
 	return nil
 }
 

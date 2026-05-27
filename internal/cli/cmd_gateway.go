@@ -18,7 +18,6 @@ import (
 	_ "github.com/zhaoxiaoyang741/HomeStock/internal/app"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/gateway"
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/database"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
@@ -58,10 +57,8 @@ func newGatewayCmd() *cobra.Command {
 			defer sqlDB.Close()
 
 			uow := gormrepo.NewUnitOfWork(db)
-			materialSvc := service.NewMaterialService(uow)
-			inventorySvc := service.NewInventoryService(uow)
 
-			gw, err := gateway.New(cfg, absConfigPath, materialSvc, inventorySvc, uow, db)
+			gw, err := gateway.New(cfg, absConfigPath, uow)
 			if err != nil {
 				return asRuntimeError(fmt.Errorf("create gateway: %w", err))
 			}
