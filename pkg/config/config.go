@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -30,13 +31,16 @@ type Config struct {
 	// Auth controls user authentication settings.
 	Auth AuthConfig `json:"auth"`
 
+	// Outbound controls outbound event push endpoint settings.
+	Outbound OutboundConfig `json:"outbound"`
+
 	// Cron controls background scheduled task settings.
 	Cron CronConfig `json:"cron"`
 
 	Log LogConfig `json:"log"`
 }
 
-// AuthConfig configures JWT-based user authentication.
+// AuthConfig configures JWT-based user authentication and API key access.
 type AuthConfig struct {
 	// JWTSecret is the HMAC signing key for JWT tokens.
 	// If empty (the default), a random key is generated at startup.
@@ -44,6 +48,20 @@ type AuthConfig struct {
 	JWTSecret string `json:"jwt_secret,omitempty"`
 	// TokenDurationMinutes controls JWT token lifetime. Default: 1440 (24 h).
 	TokenDurationMinutes int `json:"token_duration_minutes,omitempty"`
+	// APIKeys is a list of static API keys for programmatic access.
+	APIKeys []string `json:"api_keys,omitempty"`
+}
+
+// EndpointConfig defines an outbound push endpoint.
+type EndpointConfig struct {
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Enabled bool   `json:"enabled"`
+}
+
+// OutboundConfig controls outbound event push settings.
+type OutboundConfig struct {
+	Endpoints []EndpointConfig `json:"endpoints,omitempty"`
 }
 
 type ServerConfig struct {
@@ -166,6 +184,16 @@ func (c *Config) ActiveModelConfig() (*ModelConfig, error) {
 	return nil, fmt.Errorf("model_list is empty")
 }
 
+// IsValidAPIKey checks whether the given key is in the configured API key list.
+func (c *Config) IsValidAPIKey(key string) bool {
+	for _, k := range c.Auth.APIKeys {
+		if k == key {
+			return true
+		}
+	}
+	return false
+}
+
 type ModelConfig struct {
 	// ModelName is a human-readable label used to reference this model config.
 	ModelName string `json:"model_name"`
@@ -285,6 +313,7 @@ func defaultConfig() *Config {
 			JWTSecret:            "",
 			TokenDurationMinutes: 1440, // 24 h
 		},
+		Outbound: OutboundConfig{},
 		Cron: CronConfig{
 			Enabled:                 true,
 			ExpiryCheckIntervalDays: 7,
@@ -357,6 +386,10 @@ func cloneConfig(cfg *Config) *Config {
 		cloned.ModelList = make([]ModelConfig, len(cfg.ModelList))
 		copy(cloned.ModelList, cfg.ModelList)
 	}
+	if cfg.Outbound.Endpoints != nil {
+		cloned.Outbound.Endpoints = make([]EndpointConfig, len(cfg.Outbound.Endpoints))
+		copy(cloned.Outbound.Endpoints, cfg.Outbound.Endpoints)
+	}
 	return &cloned
 }
 
@@ -421,6 +454,10 @@ func applyEnvOverrides(cfg *Config) error {
 
 	if value, ok := os.LookupEnv("HOMESTOCK_AUTH_JWT_SECRET"); ok {
 		cfg.Auth.JWTSecret = value
+	}
+
+	if value, ok := os.LookupEnv("HOMESTOCK_AUTH_API_KEYS"); ok {
+		cfg.Auth.APIKeys = strings.Split(value, ",")
 	}
 
 	if value, ok := os.LookupEnv("HOMESTOCK_CRON_EXPIRY_DAYS"); ok {
