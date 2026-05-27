@@ -10,11 +10,12 @@ import (
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
-	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/cron"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
+
+	"github.com/zhaoxiaoyang741/HomeStock/internal/outbound"
 )
 
 const systemPrompt = `你是 HomeStock（变便）库存管理助手，可以通过飞书帮助用户管理家庭库存。你可以帮助用户：
@@ -64,7 +65,7 @@ func initAgent(
 }
 
 // initCron creates the cron scheduler and registers the expiry stock notifier.
-func initCron(uow *gormrepo.UnitOfWork, cfg config.CronConfig, channelMgr *channel.Manager) *cron.Service {
+func initCron(uow *gormrepo.UnitOfWork, cfg config.CronConfig, outboundMgr *outbound.Manager) *cron.Service {
 	svc := cron.New()
 
 	if cfg.Enabled {
@@ -73,7 +74,7 @@ func initCron(uow *gormrepo.UnitOfWork, cfg config.CronConfig, channelMgr *chann
 			interval = 6 * time.Hour
 		}
 		svc.Register(
-			appcron.NewExpiringStockNotifier(uow, cfg.ExpiryCheckIntervalDays, channelMgr),
+			appcron.NewExpiringStockNotifier(uow, cfg.ExpiryCheckIntervalDays, outboundMgr),
 			cron.ScheduleDef{Interval: interval},
 		)
 		logger.InfoCF("gateway", "cron: registered expiry_notifier", map[string]any{

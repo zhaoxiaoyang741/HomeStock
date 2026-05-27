@@ -5,35 +5,50 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/reply"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/model"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/outbound"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/repository"
-	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 )
 
-// ExpiringStockNotifier checks for near-expiry stock lots and sends notifications
-// via enabled channels within the configured time window.
+// ExpiringStockNotifier checks for near-expiry stock lots and pushes
+// expiry alerts via the outbound manager.
 type ExpiringStockNotifier struct {
 	uow        repository.UnitOfWork
 	expiryDays int
-	channelMgr *channel.Manager
+	outboundMgr *outbound.Manager
 }
 
 // NewExpiringStockNotifier creates a notifier that flags lots expiring within expiryDays.
-func NewExpiringStockNotifier(uow repository.UnitOfWork, expiryDays int, channelMgr *channel.Manager) *ExpiringStockNotifier {
+func NewExpiringStockNotifier(uow repository.UnitOfWork, expiryDays int, outboundMgr *outbound.Manager) *ExpiringStockNotifier {
 	if expiryDays <= 0 {
 		expiryDays = 7
 	}
 	return &ExpiringStockNotifier{
-		uow:        uow,
-		expiryDays: expiryDays,
-		channelMgr: channelMgr,
+		uow:         uow,
+		expiryDays:  expiryDays,
+		outboundMgr: outboundMgr,
 	}
 }
 
 func (n *ExpiringStockNotifier) Name() string { return "expiry_notifier" }
+
+// ExpiryAlertPayload is the structured payload sent in an expiry alert event.
+type ExpiryAlertPayload struct {
+	Summary string          `json:"summary"`
+	Count   int             `json:"count"`
+	Lots    []ExpiryLotItem `json:"lots"`
+}
+
+// ExpiryLotItem describes a single near-expiry stock lot.
+type ExpiryLotItem struct {
+	Name     string  `json:"name"`
+	Spec     string  `json:"spec"`
+	Quantity float64 `json:"quantity"`
+	Unit     string  `json:"unit"`
+	Location string  `json:"location"`
+	ExpireAt string  `json:"expire_at"`
+}
 
 func (n *ExpiringStockNotifier) Run(ctx context.Context) error {
 	lots, err := n.uow.Repos().StockLots().List(repository.StockLotFilter{
@@ -81,7 +96,40 @@ func (n *ExpiringStockNotifier) Run(ctx context.Context) error {
 		return nil
 	}
 
-	n.sendNotifications(ctx, lots)
+	items := make([]ExpiryLotItem, 0, len(lots))
+	for _, lot := range lots {
+		expireStr := "未知"
+		if lot.ExpireAt != nil {
+			expireStr = lot.ExpireAt.Format("2006-01-02")
+		}
+		items = append(items, ExpiryLotItem{
+			Name:     lot.Material.Name,
+			Spec:     lot.Material.Spec,
+			Quantity: lot.QuantityOnHand,
+			Unit:     lot.Unit,
+			Location: lot.Location,
+			ExpireAt: expireStr,
+		})
+	}
+
+	event := outbound.OutboundEvent{
+		Type:      outbound.EventExpiryAlert,
+		Timestamp: time.Now(),
+		Payload: ExpiryAlertPayload{
+			Summary: fmt.Sprintf("%d 个批次将在 %d 天内过期", len(items), n.expiryDays),
+			Count:   len(items),
+			Lots:    items,
+		},
+	}
+
+	if err := n.outboundMgr.Send(ctx, event); err != nil {
+		logger.ErrorCF("cron", "failed to send expiry alert via outbound",
+			map[string]any{"error": err.Error()})
+	} else {
+		logger.InfoCF("cron", "expiry alert sent via outbound",
+			map[string]any{"count": len(items)})
+	}
+
 	return nil
 }
 
@@ -96,14 +144,11 @@ func isWithinTimeWindow(start, end string) bool {
 	endMinutes := parseHHMM(end)
 
 	if startMinutes == endMinutes {
-		// Same value: no restriction.
 		return true
 	}
 	if startMinutes < endMinutes {
-		// Normal window: same day.
 		return currentMinutes >= startMinutes && currentMinutes < endMinutes
 	}
-	// Cross-day window: e.g. 22:00-06:00.
 	return currentMinutes >= startMinutes || currentMinutes < endMinutes
 }
 
@@ -118,59 +163,4 @@ func parseHHMM(s string) int {
 		return 0
 	}
 	return h*60 + m
-}
-
-// buildExpiryMessage creates a formatted notification message from expiring lots.
-// channelName is used to select the appropriate formatting (plain text vs markdown table).
-func buildExpiryMessage(lots []model.StockLot, channelName string) string {
-	items := make([]reply.ExpiryItemData, 0, len(lots))
-	for _, lot := range lots {
-		expireStr := "未知"
-		if lot.ExpireAt != nil {
-			expireStr = lot.ExpireAt.Format("2006-01-02")
-		}
-		items = append(items, reply.ExpiryItemData{
-			Name:     lot.Material.Name,
-			Spec:     lot.Material.Spec,
-			Quantity: lot.QuantityOnHand,
-			Unit:     lot.Unit,
-			Location: lot.Location,
-			ExpireAt: expireStr,
-		})
-	}
-	rc := reply.ForChannel(channelName)
-	return reply.ExpiryWarning(rc, items)
-}
-
-// sendNotifications builds per-channel expiry messages and sends them.
-func (n *ExpiringStockNotifier) sendNotifications(ctx context.Context, lots []model.StockLot) {
-	for _, name := range n.channelMgr.GetEnabledChannels() {
-		ch, ok := n.channelMgr.GetChannel(name)
-		if !ok {
-			continue
-		}
-		provider, ok := ch.(channel.NotifyTargetProvider)
-		if !ok {
-			logger.DebugCF("cron", "channel does not implement NotifyTargetProvider, skipping",
-				map[string]any{"channel": name})
-			continue
-		}
-		chatID := provider.NotifyChatID()
-		if chatID == "" {
-			logger.WarnCF("cron", "channel has no notification target (no messages received yet), skipping",
-				map[string]any{"channel": name})
-			continue
-		}
-		if err := n.channelMgr.RouteOutbound(ctx, channel.OutboundMessage{
-			Channel: name,
-			ChatID:  chatID,
-			Text:    buildExpiryMessage(lots, name),
-		}); err != nil {
-			logger.ErrorCF("cron", "failed to send expiry notification",
-				map[string]any{"channel": name, "chat_id": chatID, "error": err.Error()})
-		} else {
-			logger.InfoCF("cron", "expiry notification sent",
-				map[string]any{"channel": name, "chat_id": chatID})
-		}
-	}
 }

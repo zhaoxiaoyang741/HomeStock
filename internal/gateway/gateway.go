@@ -13,6 +13,7 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/agent"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/hotreload"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/tool"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/outbound"
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
@@ -202,7 +203,8 @@ func New(
 	// Cron
 	// -----------------------------------------------------------------------
 	cronHandler := handler.NewCronHandler(configPath)
-	cronSvc := initCron(uow, cfg.Cron, channelMgr)
+	outboundMgr := outbound.NewManager(&cfg.Outbound)
+	cronSvc := initCron(uow, cfg.Cron, outboundMgr)
 
 	// -----------------------------------------------------------------------
 	// Register tool definitions on dispatcher
