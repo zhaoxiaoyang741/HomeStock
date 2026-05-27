@@ -5,16 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkdispatcher "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
+	gorillaws "github.com/gorilla/websocket"
 
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
@@ -79,6 +82,7 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 		c.appID,
 		c.appSecret,
 		larkws.WithEventHandler(dispatcher),
+		larkws.WithAutoReconnect(false), // handle reconnection ourselves since the SDK has no Close/Stop API
 	)
 	wsClient := c.wsClient
 	c.mu.Unlock()
@@ -116,8 +120,18 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 		c.cancel()
 		c.cancel = nil
 	}
+	wsClient := c.wsClient
 	c.wsClient = nil
 	c.mu.Unlock()
+
+	// Close the underlying WebSocket connection to stop the SDK's internal
+	// goroutines (receiveMessageLoop, pingLoop). The SDK's Start() never
+	// returns (blocked on select{}), so we must close the raw WebSocket to
+	// prevent the old connection from lingering and causing conflicts when
+	// the channel is restarted.
+	if wsClient != nil {
+		closeWSClientConn(wsClient)
+	}
 
 	c.BaseStop()
 	logger.InfoC("feishu", "Feishu channel stopped")
@@ -422,5 +436,24 @@ func (c *FeishuChannel) NotifyChatID() string {
 
 // GetTokenCache returns the internal token cache for seeding OAuth tokens.
 func (c *FeishuChannel) GetTokenCache() *tokenCache { return c.tokenCache }
+
+// closeWSClientConn closes the underlying WebSocket connection of a lark ws Client.
+// This is a workaround since lark SDK's ws.Client has no public Close/Stop method;
+// its Start() blocks forever on select{} and its internal goroutines don't check
+// ctx.Done(). Closing the raw WebSocket unblocks receiveMessageLoop and prevents
+// the old connection from persisting across channel restarts.
+func closeWSClientConn(wsClient *larkws.Client) {
+	v := reflect.ValueOf(wsClient).Elem()
+	connField := v.FieldByName("conn")
+	if !connField.IsValid() || connField.IsNil() {
+		return
+	}
+	// conn is an unexported *gorillaws.Conn field, so we use UnsafeAddr to
+	// bypass the reflect restriction on Interface() for unexported fields.
+	conn := *(**gorillaws.Conn)(unsafe.Pointer(connField.UnsafeAddr()))
+	if conn != nil {
+		_ = conn.Close()
+	}
+}
 
 var _ channel.Channel = (*FeishuChannel)(nil)
