@@ -1,67 +1,26 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Clock, Radio, Brain, Lock, Tags, Save, Loader2 } from 'lucide-react'
+import { Clock, Send, Key, Lock, Tags } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { getModelList } from '@/api/models'
-import { FeishuBotSection } from './FeishuBotSection'
-import type { FeishuBotSectionHandle } from './FeishuBotSection'
-import { WechatBotSection } from './WechatBotSection'
-import type { WechatBotSectionHandle } from './WechatBotSection'
-import { Button } from '@/components/ui/button'
-import { ModelConfigSection } from './ModelConfigSection'
+import { OutboundSection } from './OutboundSection'
+import { ApiKeySection } from './ApiKeySection'
 import { CronConfigSection } from './CronConfigSection'
 import { ChangePasswordSection } from './ChangePasswordSection'
 import { CategorySection } from './CategorySection'
 
-type SectionId = 'channels' | 'models' | 'cron' | 'password' | 'category'
+type SectionId = 'outbound' | 'apikey' | 'cron' | 'password' | 'category'
 
-const SECTION_ITEMS: { id: SectionId; labelKey: string; icon: typeof Radio }[] = [
-  { id: 'channels', labelKey: 'navChannels', icon: Radio },
+const SECTION_ITEMS: { id: SectionId; labelKey: string; icon: typeof Send }[] = [
+  { id: 'outbound', labelKey: 'navOutbound', icon: Send },
+  { id: 'apikey', labelKey: 'navApiKey', icon: Key },
   { id: 'cron', labelKey: 'navCron', icon: Clock },
-  { id: 'models', labelKey: 'navModels', icon: Brain },
   { id: 'password', labelKey: 'navPassword', icon: Lock },
   { id: 'category', labelKey: 'navCategory', icon: Tags },
 ]
 
 export default function SettingsPage() {
   const { t } = useTranslation('settings')
-  const [activeSection, setActiveSection] = useState<SectionId>('channels')
-  const [activeChannel, setActiveChannel] = useState<'feishu' | 'wechat' | null>(null)
-  const [lastReloadTime, setLastReloadTime] = useState('')
-  const [savingChannels, setSavingChannels] = useState(false)
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const feishuRef = useRef<FeishuBotSectionHandle>(null)
-  const wechatRef = useRef<WechatBotSectionHandle>(null)
-
-  const fetchReloadTime = async () => {
-    try {
-      const data = await getModelList()
-      setLastReloadTime(data.last_reload_time)
-    } catch {
-      // Child sections show their own error state.
-    }
-  }
-
-  useEffect(() => {
-    void fetchReloadTime()
-    pollingRef.current = setInterval(() => {
-      void fetchReloadTime()
-    }, 10000)
-
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current)
-    }
-  }, [])
-
-  const handleSaveChannels = async () => {
-    setSavingChannels(true)
-    try {
-      await feishuRef.current?.save()
-      await wechatRef.current?.save()
-    } finally {
-      setSavingChannels(false)
-    }
-  }
+  const [activeSection, setActiveSection] = useState<SectionId>('outbound')
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-6">
@@ -90,57 +49,17 @@ export default function SettingsPage() {
           ))}
         </nav>
 
-        <div className="flex min-h-0 flex-1 flex-col p-6">
-          {lastReloadTime && (
-            <div className="flex shrink-0 items-center gap-2 border-b border-outline-variant/20 pb-2 text-xs text-on-surface-variant">
-              <Clock className="h-3.5 w-3.5 shrink-0" />
-              <span>{t('lastReloadTime')}: {lastReloadTime}</span>
-            </div>
-          )}
-
-          <div className="min-h-0 flex-1 overflow-y-auto pt-6">
-            {activeSection === 'channels' ? (
-              <div className="space-y-6">
-                <FeishuBotSection
-                  ref={feishuRef}
-                  isActive={activeChannel === 'feishu'}
-                  onActivate={() => setActiveChannel('feishu')}
-                  onDeactivate={() => setActiveChannel(null)}
-                />
-                <WechatBotSection
-                  ref={wechatRef}
-                  isActive={activeChannel === 'wechat'}
-                  onActivate={() => setActiveChannel('wechat')}
-                  onDeactivate={() => setActiveChannel(null)}
-                />
-                <div className="h-4" />
-              </div>
-            ) : activeSection === 'cron' ? (
-              <CronConfigSection />
-            ) : activeSection === 'models' ? (
-              <ModelConfigSection />
-            ) : activeSection === 'password' ? (
-              <ChangePasswordSection />
-            ) : (
-              <CategorySection />
-            )}
-          </div>
-
-          {/* Floating save bar for channels section */}
-          {activeSection === 'channels' && (
-            <div className="flex shrink-0 items-center justify-end border-t border-outline-variant/20 bg-surface-container-lowest pt-4">
-              <Button
-                onClick={() => void handleSaveChannels()}
-                disabled={savingChannels}
-              >
-                {savingChannels ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="mr-2 h-4 w-4" />
-                )}
-                {t('common:save')}
-              </Button>
-            </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+          {activeSection === 'outbound' ? (
+            <OutboundSection />
+          ) : activeSection === 'apikey' ? (
+            <ApiKeySection />
+          ) : activeSection === 'cron' ? (
+            <CronConfigSection />
+          ) : activeSection === 'password' ? (
+            <ChangePasswordSection />
+          ) : (
+            <CategorySection />
           )}
         </div>
       </div>
