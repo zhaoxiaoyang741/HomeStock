@@ -14,6 +14,18 @@ const DefaultWorkerQueueSize = 32
 // DefaultMaxRetries is the default number of send retries for transient errors.
 const DefaultMaxRetries = 3
 
+// ManagerOption configures a Manager at creation time.
+type ManagerOption func(*Manager)
+
+// WithDefaultInboundHandler sets a default inbound handler that is
+// automatically wired to any channel added to the manager that implements
+// InboundHandlerSetter.
+func WithDefaultInboundHandler(fn func(ctx context.Context, msg InboundMessage)) ManagerOption {
+	return func(m *Manager) {
+		m.defaultInboundHandler = fn
+	}
+}
+
 // channelWorker manages a per-channel goroutine for outbound message delivery
 // with retry logic for transient errors.
 type channelWorker struct {
@@ -37,12 +49,16 @@ type Manager struct {
 	// outboundHandler is set by the app layer when MessageBus is available.
 	outboundHandler func(ctx context.Context, msg OutboundMessage)
 
+	// defaultInboundHandler is automatically wired to channels that implement
+	// InboundHandlerSetter when they are added via AddChannel.
+	defaultInboundHandler func(ctx context.Context, msg InboundMessage)
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
-// NewManager creates a Manager with the given channels.
+// NewManager creates a Manager with the given channels and options.
 func NewManager(channels ...Channel) *Manager {
 	m := &Manager{
 		channels: make(map[string]Channel),
@@ -56,15 +72,44 @@ func NewManager(channels ...Channel) *Manager {
 	return m
 }
 
+// NewManagerWithOpts creates a Manager with functional options.
+// Options are applied before adding any channels.
+func NewManagerWithOpts(channels []Channel, opts ...ManagerOption) *Manager {
+	m := &Manager{
+		channels: make(map[string]Channel),
+		workers:  make(map[string]*channelWorker),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	for _, ch := range channels {
+		if ch != nil {
+			m.channels[ch.Name()] = ch
+		}
+	}
+	return m
+}
+
 // AddChannel adds a channel to the manager. If a channel with the same name
 // already exists, it is replaced. If the manager is already started, a worker
 // goroutine is also started for the new channel.
+//
+// If a default inbound handler is set and the channel implements
+// InboundHandlerSetter, the handler is wired automatically.
 func (m *Manager) AddChannel(ch Channel) {
 	if ch == nil {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Wire default inbound handler if available
+	if m.defaultInboundHandler != nil {
+		if setter, ok := ch.(InboundHandlerSetter); ok {
+			setter.SetInboundHandler(m.defaultInboundHandler)
+		}
+	}
+
 	m.channels[ch.Name()] = ch
 
 	// If the manager is already running, start a worker for this channel.

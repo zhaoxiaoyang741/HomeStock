@@ -7,11 +7,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/agent"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/feishu"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/wechat"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/hotreload"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/tool"
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
@@ -39,8 +38,9 @@ type Gateway struct {
 	channelMgr *channel.Manager
 
 	// Hot-reload
-	orchestrator *hotreload.Orchestrator
-	hotReloadW   *hotreload.Watcher
+	orchestrator       *hotreload.Orchestrator
+	hotReloadW         *hotreload.Watcher
+	configChangeHandlers []channel.ConfigChangeHandler
 
 	// Cron scheduler
 	cronSvc *cron.Service
@@ -50,11 +50,12 @@ type Gateway struct {
 	outboundCancel context.CancelFunc
 	outboundWg     sync.WaitGroup
 
-	// Handlers — owned by Gateway but exposed to the HTTP layer.
-	feishuHandler *handler.FeishuHandler
-	modelHandler  *handler.ModelHandler
-	wechatHandler *handler.WechatHandler
-	cronHandler   *handler.CronHandler
+	// Handlers created via factory registry — used for route registration
+	channelHandlers []channel.WebhookRegistrar
+
+	// Directly-created handlers (non-channel)
+	modelHandler *handler.ModelHandler
+	cronHandler  *handler.CronHandler
 
 	// Tool dispatcher (definitions are set during New)
 	dispatcher *tool.Dispatcher
@@ -63,14 +64,15 @@ type Gateway struct {
 }
 
 // New creates a Gateway and all its subsystems. It takes the application
-// config, the config file path, and the services required by the agent loop
-// and cron scheduler.
+// config, the config file path, the database connection, the services
+// required by the agent loop and cron scheduler.
 func New(
 	cfg *config.Config,
 	configPath string,
 	materialSvc *service.MaterialService,
 	inventorySvc *service.InventoryService,
 	uow *gormrepo.UnitOfWork,
+	db *gorm.DB,
 ) (*Gateway, error) {
 	// -----------------------------------------------------------------------
 	// Agent system
@@ -83,7 +85,6 @@ func New(
 	// -----------------------------------------------------------------------
 	// Channel system
 	// -----------------------------------------------------------------------
-	channelMgr := channel.NewManager()
 
 	// Inbound handler: routes channel messages into the agent MessageBus
 	inboundHandler := func(ctx context.Context, msg channel.InboundMessage) {
@@ -103,7 +104,14 @@ func New(
 		}
 	}
 
-	// Use factory registry for all channels
+	// Create channel manager with the default inbound handler wired to all
+	// channels added via AddChannel.
+	channelMgr := channel.NewManagerWithOpts(
+		nil,
+		channel.WithDefaultInboundHandler(inboundHandler),
+	)
+
+	// Use factory registry to create all channel instances from config
 	channel.RangeFactories(func(name string, factory channel.Factory) bool {
 		raw, ok := cfg.Channels[name]
 		if !ok {
@@ -117,135 +125,46 @@ func New(
 		if ch == nil {
 			return true
 		}
-		if setter, ok := ch.(channel.InboundHandlerSetter); ok {
-			setter.SetInboundHandler(inboundHandler)
-		}
+		// Inbound handler is wired automatically by channelMgr.AddChannel
 		channelMgr.AddChannel(ch)
 		logger.InfoCF("gateway", "channel created via factory", map[string]any{"name": name})
 		return true
 	})
 
-	// Feishu OAuth service
-	feishuCfg, _ := cfg.FeishuConfig()
-	oauthSvc := feishu.NewOAuthService(
-		feishuCfg.AppID,
-		feishuCfg.AppSecret,
-		feishuCfg.RedirectURI,
-		feishuCfg.FrontendURL,
-		uow.Repos().SystemSettings(),
-	)
+	// -----------------------------------------------------------------------
+	// Handler factories — create channel-specific HTTP handlers and
+	// config-change handlers via the registry.
+	// -----------------------------------------------------------------------
+	var channelHandlers []channel.WebhookRegistrar
+	var configChangeHandlers []channel.ConfigChangeHandler
 
-	// Feishu channel — may be nil if disabled
-	var feishuCh *feishu.FeishuChannel
-	if rawCh, ok := channelMgr.GetChannel("feishu"); ok {
-		feishuCh, _ = rawCh.(*feishu.FeishuChannel)
+	handlerDeps := &channel.HandlerDeps{
+		Config:     cfg,
+		ConfigPath: configPath,
+		ChannelMgr: channelMgr,
+		MsgBus:     msgBus,
+		DB:         db,
 	}
 
-	feishuHandler := handler.NewFeishuHandler(oauthSvc, channelMgr, feishuCh, feishuCfg.FrontendURL, configPath)
-
-	// Feishu channel update callback: reconfigures the Feishu channel when settings change
-	feishuHandler.SetChannelUpdateFn(func(feishuCfg config.FeishuChannelConfig) error {
-		ctx := context.Background()
-
-		fc := feishuCh
-		if fc == nil {
-			if rawCh, ok := channelMgr.GetChannel("feishu"); ok {
-				fc, _ = rawCh.(*feishu.FeishuChannel)
-			}
+	channel.RangeHandlerFactories(func(name string, factory channel.HandlerFactory) bool {
+		handler, cch, err := factory(handlerDeps)
+		if err != nil {
+			logger.ErrorCF("gateway", "handler factory error", map[string]any{"name": name, "error": err.Error()})
+			return true
 		}
-		if fc == nil && feishuCfg.AppID != "" && feishuCfg.AppSecret != "" {
-			fc = feishu.NewFeishuChannel(feishuCfg.AppID, feishuCfg.AppSecret)
-			fc.SetInboundHandler(inboundHandler)
-			feishuHandler.SetChannel(fc)
+		if handler != nil {
+			channelHandlers = append(channelHandlers, handler)
+			logger.InfoCF("gateway", "handler created via factory", map[string]any{"name": name})
 		}
-
-		if fc != nil {
-			if err := fc.Reconfigure(ctx, feishuCfg.AppID, feishuCfg.AppSecret, feishuCfg.Enabled); err != nil {
-				return err
-			}
+		if cch != nil {
+			configChangeHandlers = append(configChangeHandlers, cch)
 		}
-
-		oauthSvc.UpdateCredentials(feishuCfg.AppID, feishuCfg.AppSecret)
-		if err := oauthSvc.ClearAuth(ctx); err != nil {
-			logger.WarnCF("gateway", "failed to clear stale oauth token", map[string]any{"error": err.Error()})
-		}
-
-		if feishuCfg.Enabled {
-			if _, exists := channelMgr.GetChannel("feishu"); !exists && fc != nil {
-				channelMgr.AddChannel(fc)
-			}
-		} else {
-			channelMgr.RemoveChannel("feishu")
-		}
-
-		return nil
+		return true
 	})
 
-	// WeChat channel — may be nil if disabled
-	var wechatCh *wechat.WechatChannel
-	if rawCh, ok := channelMgr.GetChannel("wechat"); ok {
-		wechatCh, _ = rawCh.(*wechat.WechatChannel)
-	}
-
-	wechatHandler := handler.NewWechatHandler(channelMgr, wechatCh, configPath)
-
-	// WeChat channel update callback: manages WeChat channel enable/disable
-	wechatHandler.SetChannelUpdateFn(func(wechatCfg config.WechatChannelConfig) error {
-		ctx := context.Background()
-
-		if wechatCfg.Enabled {
-			wc := wechatCh
-			if wc == nil {
-				if rawCh, ok := channelMgr.GetChannel("wechat"); ok {
-					wc, _ = rawCh.(*wechat.WechatChannel)
-				}
-			}
-			if wc == nil {
-				wc = wechat.NewWechatChannel(wechatCfg)
-				wc.SetInboundHandler(func(ctx context.Context, msg channel.InboundMessage) {
-					if err := msgBus.PublishInbound(ctx, bus.InboundMessage{
-						Channel:    msg.Channel,
-						ChatID:     msg.ChatID,
-						SenderID:   msg.SenderID,
-						SenderName: msg.SenderName,
-						Text:       msg.Text,
-						MediaType:  msg.MediaType,
-						FileKey:    msg.FileKey,
-					}); err != nil {
-						logger.ErrorCF("gateway", "publish inbound failed", map[string]any{
-							"channel": msg.Channel,
-							"error":   err.Error(),
-						})
-					}
-				})
-				wechatHandler.SetChannel(wc)
-				channelMgr.AddChannel(wc)
-			}
-
-			if !wc.IsRunning() {
-				wc.SetConfig(wechatCfg)
-				if err := wc.Start(ctx); err != nil {
-					return err
-				}
-			}
-			if _, exists := channelMgr.GetChannel("wechat"); !exists {
-				channelMgr.AddChannel(wc)
-			}
-		} else {
-			if rawCh, ok := channelMgr.GetChannel("wechat"); ok {
-				if wc, ok := rawCh.(*wechat.WechatChannel); ok && wc.IsRunning() {
-					if err := wc.Stop(ctx); err != nil {
-						return err
-					}
-				}
-			}
-			channelMgr.RemoveChannel("wechat")
-		}
-
-		return nil
-	})
-
+	// -----------------------------------------------------------------------
 	// Model handler
+	// -----------------------------------------------------------------------
 	modelHandler := handler.NewModelHandler(configPath)
 	if modelCfg != nil {
 		modelHandler.SetActiveName(modelCfg.ModelName)
@@ -262,7 +181,12 @@ func New(
 	// -----------------------------------------------------------------------
 	// Hot-reload orchestrator
 	// -----------------------------------------------------------------------
-	orch := hotreload.NewOrchestrator(configPath, agentLoop, feishuCh, oauthSvc, modelHandler, wechatCh, channelMgr)
+	orch := hotreload.NewOrchestrator(configPath, agentLoop, modelHandler, channelMgr)
+
+	// Register all config change handlers
+	for _, cch := range configChangeHandlers {
+		orch.RegisterConfigChangeHandler(cch)
+	}
 
 	// Wire model handler callbacks (depend on orchestrator)
 	modelHandler.SetPostUpdateFn(func() {
@@ -281,15 +205,6 @@ func New(
 	cronSvc := initCron(uow, cfg.Cron, channelMgr)
 
 	// -----------------------------------------------------------------------
-	// Seed Feishu token cache from stored OAuth credentials
-	// -----------------------------------------------------------------------
-	if feishuCfg, ok := cfg.FeishuConfig(); ok && feishuCfg.Enabled && oauthSvc != nil && feishuCh != nil {
-		if err := oauthSvc.SeedTokenCache(context.Background(), feishuCh.GetTokenCache()); err != nil {
-			logger.WarnCF("gateway", "feishu token cache seed failed", map[string]any{"error": err.Error()})
-		}
-	}
-
-	// -----------------------------------------------------------------------
 	// Register tool definitions on dispatcher
 	// -----------------------------------------------------------------------
 	tool.RegisterInventoryTools(disp, &tool.InventoryTools{
@@ -302,17 +217,17 @@ func New(
 	disp.SetDefinitions(defs)
 
 	return &Gateway{
-		configPath:     configPath,
-		bus:            msgBus,
-		agentLoop:      agentLoop,
-		channelMgr:     channelMgr,
-		orchestrator:   orch,
-		cronSvc:        cronSvc,
-		feishuHandler:  feishuHandler,
-		modelHandler:   modelHandler,
-		wechatHandler:  wechatHandler,
-		cronHandler:    cronHandler,
-		dispatcher:     disp,
+		configPath:         configPath,
+		bus:                msgBus,
+		agentLoop:          agentLoop,
+		channelMgr:         channelMgr,
+		orchestrator:       orch,
+		configChangeHandlers: configChangeHandlers,
+		cronSvc:            cronSvc,
+		channelHandlers:    channelHandlers,
+		modelHandler:       modelHandler,
+		cronHandler:        cronHandler,
+		dispatcher:         disp,
 	}, nil
 }
 
@@ -392,10 +307,8 @@ func (g *Gateway) Status() GatewayStatus {
 		st.ActiveModel = active.ModelName
 	}
 
-	// Collect channel statuses
-	// channel.Manager doesn't expose iteration, so use known names
-	known := []string{"feishu", "wechat"}
-	for _, name := range known {
+	// Collect channel statuses from the manager (no hardcoded names)
+	for _, name := range g.channelMgr.GetEnabledChannels() {
 		if rawCh, ok := g.channelMgr.GetChannel(name); ok {
 			st.Channels = append(st.Channels, ChannelStatus{
 				Name:    name,
@@ -445,21 +358,28 @@ func (g *Gateway) routeOutbound() {
 // Accessor methods — expose Gateway internals to the HTTP layer.
 // ---------------------------------------------------------------------------
 
-func (g *Gateway) FeishuHandler() *handler.FeishuHandler     { return g.feishuHandler }
-func (g *Gateway) ModelHandler() *handler.ModelHandler        { return g.modelHandler }
-func (g *Gateway) WechatHandler() *handler.WechatHandler      { return g.wechatHandler }
-func (g *Gateway) CronHandler() *handler.CronHandler          { return g.cronHandler }
-func (g *Gateway) Orchestrator() *hotreload.Orchestrator      { return g.orchestrator }
-func (g *Gateway) Dispatcher() *tool.Dispatcher               { return g.dispatcher }
+func (g *Gateway) ModelHandler() *handler.ModelHandler                  { return g.modelHandler }
+func (g *Gateway) CronHandler() *handler.CronHandler                    { return g.cronHandler }
+func (g *Gateway) Orchestrator() *hotreload.Orchestrator                { return g.orchestrator }
+func (g *Gateway) Dispatcher() *tool.Dispatcher                         { return g.dispatcher }
 
-// GetWebhookHandlers returns handler RegisterRoutesFunc values that need
-// Gateway-internal state (feishu, wechat, model, cron). The HTTP layer
-// mounts these alongside app-level handlers.
+// GetWebhookHandlers returns route registration functions for all handlers
+// that need Gateway-internal state. The HTTP layer mounts these alongside
+// app-level handlers.
 func (g *Gateway) GetWebhookHandlers() []func(api *gin.RouterGroup) {
-	return []func(api *gin.RouterGroup){
-		g.feishuHandler.RegisterRoutes,
-		g.modelHandler.RegisterRoutes,
-		g.wechatHandler.RegisterRoutes,
-		g.cronHandler.RegisterRoutes,
+	handlers := make([]func(api *gin.RouterGroup), 0, len(g.channelHandlers)+2)
+
+	// Channel handlers from factory registry
+	for _, h := range g.channelHandlers {
+		h := h
+		handlers = append(handlers, func(api *gin.RouterGroup) {
+			h.RegisterRoutes(api)
+		})
 	}
+
+	// Directly-created handlers
+	handlers = append(handlers, g.modelHandler.RegisterRoutes)
+	handlers = append(handlers, g.cronHandler.RegisterRoutes)
+
+	return handlers
 }

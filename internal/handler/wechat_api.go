@@ -36,6 +36,9 @@ type WechatHandler struct {
 	updateChan func(config.WechatChannelConfig) error
 }
 
+// Name returns the handler name. Implements channel.WebhookRegistrar.
+func (h *WechatHandler) Name() string { return "wechat" }
+
 // SetChannelUpdateFn registers the callback for reconfiguring the channel
 // after a config update.
 func (h *WechatHandler) SetChannelUpdateFn(fn func(config.WechatChannelConfig) error) {
@@ -487,5 +490,86 @@ func newWeixinFlowID() string {
 	return "wx_" + hex.EncodeToString(buf)
 }
 
-// Ensure WechatHandler implements the registration interface.
+// ---------------------------------------------------------------------------
+// Handler factory registration
+// ---------------------------------------------------------------------------
+
+func init() {
+	channel.RegisterHandlerFactory("wechat", func(deps *channel.HandlerDeps) (channel.WebhookRegistrar, channel.ConfigChangeHandler, error) {
+		_, ok := deps.Config.WechatConfig()
+		if !ok {
+			return nil, nil, nil
+		}
+
+		var wxCh *wx.WechatChannel
+		if rawCh, ok := deps.ChannelMgr.GetChannel("wechat"); ok {
+			wxCh, _ = rawCh.(*wx.WechatChannel)
+		}
+
+		handler := NewWechatHandler(deps.ChannelMgr, wxCh, deps.ConfigPath)
+
+		handler.SetChannelUpdateFn(func(savedCfg config.WechatChannelConfig) error {
+			ctx := context.Background()
+
+			if savedCfg.Enabled {
+				wc := wxCh
+				if wc == nil {
+					if rawCh, ok := deps.ChannelMgr.GetChannel("wechat"); ok {
+						wc, _ = rawCh.(*wx.WechatChannel)
+					}
+				}
+				if wc == nil {
+					wc = wx.NewWechatChannel(savedCfg)
+					handler.SetChannel(wc)
+					deps.ChannelMgr.AddChannel(wc)
+				}
+
+				if !wc.IsRunning() {
+					wc.SetConfig(savedCfg)
+					if err := wc.Start(ctx); err != nil {
+						return err
+					}
+				}
+				if _, exists := deps.ChannelMgr.GetChannel("wechat"); !exists {
+					deps.ChannelMgr.AddChannel(wc)
+				}
+			} else {
+				if rawCh, ok := deps.ChannelMgr.GetChannel("wechat"); ok {
+					if wc, ok := rawCh.(*wx.WechatChannel); ok && wc.IsRunning() {
+						if err := wc.Stop(ctx); err != nil {
+							return err
+						}
+					}
+				}
+				deps.ChannelMgr.RemoveChannel("wechat")
+			}
+
+			return nil
+		})
+
+		cch := &wechatConfigChangeHandler{
+			updateFn: handler.updateChan,
+		}
+		return handler, cch, nil
+	})
+}
+
+// wechatConfigChangeHandler adapts the wechat update callback to the
+// ConfigChangeHandler interface for hot-reload support.
+type wechatConfigChangeHandler struct {
+	updateFn func(config.WechatChannelConfig) error
+}
+
+func (h *wechatConfigChangeHandler) Name() string { return "wechat" }
+
+func (h *wechatConfigChangeHandler) HandleConfigChange(ctx context.Context, oldCfg, newCfg *config.Config) error {
+	wechatCfg, ok := newCfg.WechatConfig()
+	if !ok {
+		return nil
+	}
+	return h.updateFn(wechatCfg)
+}
+
+// Compile-time interface checks.
+var _ interface{ RegisterRoutes(*gin.RouterGroup) } = (*FeishuHandler)(nil)
 var _ interface{ RegisterRoutes(*gin.RouterGroup) } = (*WechatHandler)(nil)

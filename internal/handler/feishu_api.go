@@ -7,8 +7,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	httpresp "github.com/zhaoxiaoyang741/HomeStock/internal/api/http/response"
-	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/feishu"
+	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/logger"
 )
@@ -48,6 +49,9 @@ func (h *FeishuHandler) SetChannelUpdateFn(fn func(config.FeishuChannelConfig) e
 func (h *FeishuHandler) SetChannel(fc *feishu.FeishuChannel) {
 	h.feishuCh = fc
 }
+
+// Name returns the handler name. Implements channel.WebhookRegistrar.
+func (h *FeishuHandler) Name() string { return "feishu" }
 
 // RegisterRoutes mounts Feishu OAuth and config endpoints under the API group.
 func (h *FeishuHandler) RegisterRoutes(api *gin.RouterGroup) {
@@ -232,4 +236,96 @@ func (h *FeishuHandler) UpdateConfig(c *gin.Context) {
 	}
 
 	httpresp.OK(c, gin.H{"message": "config updated"})
+}
+
+// ---------------------------------------------------------------------------
+// Handler factory registration
+// ---------------------------------------------------------------------------
+
+func init() {
+	channel.RegisterHandlerFactory("feishu", func(deps *channel.HandlerDeps) (channel.WebhookRegistrar, channel.ConfigChangeHandler, error) {
+		feishuCfg, ok := deps.Config.FeishuConfig()
+		if !ok {
+			return nil, nil, nil
+		}
+
+		oauthSvc := feishu.NewOAuthService(
+			feishuCfg.AppID,
+			feishuCfg.AppSecret,
+			feishuCfg.RedirectURI,
+			feishuCfg.FrontendURL,
+			gormrepo.NewSystemSettingRepository(deps.DB),
+		)
+
+		var feishuCh *feishu.FeishuChannel
+		if rawCh, ok := deps.ChannelMgr.GetChannel("feishu"); ok {
+			feishuCh, _ = rawCh.(*feishu.FeishuChannel)
+		}
+
+		handler := NewFeishuHandler(oauthSvc, deps.ChannelMgr, feishuCh, feishuCfg.FrontendURL, deps.ConfigPath)
+
+		handler.SetChannelUpdateFn(func(savedCfg config.FeishuChannelConfig) error {
+			ctx := context.Background()
+
+			fc := feishuCh
+			if fc == nil {
+				if rawCh, ok := deps.ChannelMgr.GetChannel("feishu"); ok {
+					fc, _ = rawCh.(*feishu.FeishuChannel)
+				}
+			}
+			if fc == nil && savedCfg.AppID != "" && savedCfg.AppSecret != "" {
+				fc = feishu.NewFeishuChannel(savedCfg.AppID, savedCfg.AppSecret)
+				handler.SetChannel(fc)
+			}
+
+			if fc != nil {
+				if err := fc.Reconfigure(ctx, savedCfg.AppID, savedCfg.AppSecret, savedCfg.Enabled); err != nil {
+					return err
+				}
+			}
+
+			oauthSvc.UpdateCredentials(savedCfg.AppID, savedCfg.AppSecret)
+			if err := oauthSvc.ClearAuth(ctx); err != nil {
+				logger.WarnCF("feishu_handler", "failed to clear stale oauth token", map[string]any{"error": err.Error()})
+			}
+
+			if savedCfg.Enabled {
+				if _, exists := deps.ChannelMgr.GetChannel("feishu"); !exists && fc != nil {
+					deps.ChannelMgr.AddChannel(fc)
+				}
+			} else {
+				deps.ChannelMgr.RemoveChannel("feishu")
+			}
+
+			return nil
+		})
+
+		// Seed token cache from stored OAuth credentials
+		if feishuCfg.Enabled && oauthSvc != nil && feishuCh != nil {
+			if err := oauthSvc.SeedTokenCache(context.Background(), feishuCh.GetTokenCache()); err != nil {
+				logger.WarnCF("feishu_handler", "token cache seed failed", map[string]any{"error": err.Error()})
+			}
+		}
+
+		cch := &feishuConfigChangeHandler{
+			updateFn: handler.updateChan,
+		}
+		return handler, cch, nil
+	})
+}
+
+// feishuConfigChangeHandler adapts the feishu update callback to the
+// ConfigChangeHandler interface for hot-reload support.
+type feishuConfigChangeHandler struct {
+	updateFn func(config.FeishuChannelConfig) error
+}
+
+func (h *feishuConfigChangeHandler) Name() string { return "feishu" }
+
+func (h *feishuConfigChangeHandler) HandleConfigChange(ctx context.Context, oldCfg, newCfg *config.Config) error {
+	feishuCfg, ok := newCfg.FeishuConfig()
+	if !ok {
+		return nil
+	}
+	return h.updateFn(feishuCfg)
 }

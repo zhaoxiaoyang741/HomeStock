@@ -59,7 +59,7 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 	}
 
 	// 3. Gateway (agent system, channels, cron, hot-reload)
-	gw, err := gateway.New(cfg, configPath, materialSvc, inventorySvc, uow)
+	gw, err := gateway.New(cfg, configPath, materialSvc, inventorySvc, uow, db)
 	if err != nil {
 		return nil, err
 	}

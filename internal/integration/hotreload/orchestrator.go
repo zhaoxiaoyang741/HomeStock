@@ -5,10 +5,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/agent"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/feishu"
-	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/channel/wechat"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/agent"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/channel"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/llm"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
@@ -23,39 +21,45 @@ import (
 type Orchestrator struct {
 	configPath string
 	agentLoop  *agent.AgentLoop
-	feishuCh   *feishu.FeishuChannel
-	oauthSvc   *feishu.OAuthService
 	modelHnd   *handler.ModelHandler
-	wechatCh   *wechat.WechatChannel
 	channelMgr *channel.Manager
 
-	lastCfg        atomic.Value // stores *config.Config 鈥?the last successfully applied config
+	// configChangeHandlers maps channel name to its config change handler,
+	// registered by handler factories at startup.
+	configChangeHandlers map[string]channel.ConfigChangeHandler
+
+	lastCfg        atomic.Value // stores *config.Config — the last successfully applied config
 	reloading      atomic.Bool  // prevents concurrent reloads
-	lastReloadTime atomic.Value // stores time.Time 鈥?when the last reload completed
+	lastReloadTime atomic.Value // stores time.Time — when the last reload completed
 }
 
 // NewOrchestrator creates an Orchestrator and seeds it with the initial config.
+// The feishuCh, oauthSvc, and wechatCh parameters have been removed — channel
+// lifecycle is now managed via ConfigChangeHandler registrations.
 func NewOrchestrator(
 	configPath string,
 	agentLoop *agent.AgentLoop,
-	feishuCh *feishu.FeishuChannel,
-	oauthSvc *feishu.OAuthService,
 	modelHnd *handler.ModelHandler,
-	wechatCh *wechat.WechatChannel,
 	channelMgr *channel.Manager,
 ) *Orchestrator {
 	o := &Orchestrator{
-		configPath: configPath,
-		agentLoop:  agentLoop,
-		feishuCh:   feishuCh,
-		oauthSvc:   oauthSvc,
-		modelHnd:   modelHnd,
-		wechatCh:   wechatCh,
-		channelMgr: channelMgr,
+		configPath:           configPath,
+		agentLoop:            agentLoop,
+		modelHnd:             modelHnd,
+		channelMgr:           channelMgr,
+		configChangeHandlers: make(map[string]channel.ConfigChangeHandler),
 	}
 	o.lastCfg.Store(config.Get())
 	o.lastReloadTime.Store(time.Now())
 	return o
+}
+
+// RegisterConfigChangeHandler registers a handler for runtime config changes.
+// The handler is called from Reload() when its channel's config changes.
+func (o *Orchestrator) RegisterConfigChangeHandler(hdl channel.ConfigChangeHandler) {
+	if hdl != nil {
+		o.configChangeHandlers[hdl.Name()] = hdl
+	}
 }
 
 // LastReloadTime returns the time of the last successful config reload.
@@ -130,106 +134,58 @@ func (o *Orchestrator) Reload() error {
 		}
 	}
 
-	// 3. Channel hot-reconfigure via factory-based generic loop
-	feishuCfg, _ := newCfg.FeishuConfig()
-	wechatCfg, _ := newCfg.WechatConfig()
-
+	// 3. Channel hot-reconfigure via registered ConfigChangeHandlers
 	for name, changed := range diff.ChannelsChanged {
 		if !changed {
 			continue
 		}
 
+		if hdl, ok := o.configChangeHandlers[name]; ok {
+			// Channel-specific handler knows how to reconfigure its channel
+			if err := hdl.HandleConfigChange(context.Background(), oldCfg, newCfg); err != nil {
+				logger.ErrorCF("hotreload", "config change handler failed", map[string]any{
+					"name":  name,
+					"error": err.Error(),
+				})
+			} else {
+				logger.InfoCF("hotreload", "channel reconfigured via handler", map[string]any{
+					"name": name,
+				})
+			}
+			continue
+		}
+
+		// Generic channel (no registered handler): stop old → recreate from factory → start new
 		raw, hasNew := newCfg.Channels[name]
 
-		switch name {
-		case "feishu":
-			// Feishu has OAuth dependencies 鈥?use the existing path
-			if o.feishuCh != nil && o.oauthSvc != nil {
-				ctx := context.Background()
+		if o.channelMgr != nil {
+			ctx := context.Background()
 
-				if err := o.feishuCh.Reconfigure(ctx, feishuCfg.AppID, feishuCfg.AppSecret, feishuCfg.Enabled); err != nil {
-					logger.ErrorCF("hotreload", "feishu reconfigure failed", map[string]any{"error": err.Error()})
-				}
-
-				o.oauthSvc.UpdateCredentials(feishuCfg.AppID, feishuCfg.AppSecret)
-				_ = o.oauthSvc.ClearAuth(ctx)
-
-				if feishuCfg.Enabled {
-					if _, exists := o.channelMgr.GetChannel("feishu"); !exists {
-						o.channelMgr.AddChannel(o.feishuCh)
-					}
-				} else {
-					o.channelMgr.RemoveChannel("feishu")
-				}
+			// Stop old instance
+			if ch, ok := o.channelMgr.GetChannel(name); ok {
+				_ = ch.Stop(ctx)
+				o.channelMgr.RemoveChannel(name)
 			}
-			logger.InfoCF("hotreload", "feishu channel reconfigured", map[string]any{
-				"enabled": feishuCfg.Enabled,
-			})
 
-		case "wechat":
-			// WeChat has login state -- restart to pick up config changes (token etc.)
-			if wechatCfg.Enabled {
-				ctx := context.Background()
-				if o.wechatCh != nil {
-					if o.wechatCh.IsRunning() {
-						_ = o.wechatCh.Stop(ctx)
-					}
-					o.wechatCh.SetConfig(wechatCfg)
-					if err := o.wechatCh.Start(ctx); err != nil {
-						logger.ErrorCF("hotreload", "wechat start failed", map[string]any{"error": err.Error()})
-					}
-				}
-				if _, exists := o.channelMgr.GetChannel("wechat"); !exists {
-					o.channelMgr.AddChannel(o.wechatCh)
-				}
-			} else {
-				if o.wechatCh != nil && o.wechatCh.IsRunning() {
-					ctx := context.Background()
-					if err := o.wechatCh.Stop(ctx); err != nil {
-						logger.ErrorCF("hotreload", "wechat stop failed", map[string]any{"error": err.Error()})
-					}
-				}
-				o.channelMgr.RemoveChannel("wechat")
+			if !hasNew {
+				continue // channel was removed from config
 			}
-			logger.InfoCF("hotreload", "wechat channel reconfigured", map[string]any{
-				"enabled": wechatCfg.Enabled,
-			})
-		default:
-			// Generic channel: stop old 鈫?recreate from factory 鈫?start new
-			if o.channelMgr != nil {
-				ctx := context.Background()
 
-				// Stop old instance
-				if ch, ok := o.channelMgr.GetChannel(name); ok {
-					_ = ch.Stop(ctx)
-					o.channelMgr.RemoveChannel(name)
-				}
-
-				if !hasNew {
-					continue // channel was removed
-				}
-
-				// Re-create from factory
-				factory, ok := channel.GetFactory(name)
-				if !ok {
-					continue
-				}
-				ch, err := factory(raw)
-				if err != nil || ch == nil {
-					continue
-				}
-				if setter, ok := ch.(channel.InboundHandlerSetter); ok {
-					setter.SetInboundHandler(func(ctx context.Context, msg channel.InboundMessage) {
-						// inbound routing placeholder 鈥?wired via manager in normal flow
-					})
-				}
-				o.channelMgr.AddChannel(ch)
-				if err := ch.Start(ctx); err != nil {
-					logger.ErrorCF("hotreload", "channel start failed after reload", map[string]any{
-						"name":  name,
-						"error": err.Error(),
-					})
-				}
+			// Re-create from factory
+			factory, ok := channel.GetFactory(name)
+			if !ok {
+				continue
+			}
+			ch, err := factory(raw)
+			if err != nil || ch == nil {
+				continue
+			}
+			o.channelMgr.AddChannel(ch)
+			if err := ch.Start(ctx); err != nil {
+				logger.ErrorCF("hotreload", "channel start failed after reload", map[string]any{
+					"name":  name,
+					"error": err.Error(),
+				})
 			}
 		}
 	}
@@ -252,4 +208,3 @@ func (o *Orchestrator) Reload() error {
 	o.lastReloadTime.Store(time.Now())
 	return nil
 }
-
