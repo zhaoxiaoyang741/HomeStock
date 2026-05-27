@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
+	"github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 )
 
 // JWTAuthMiddleware returns a Gin middleware that validates a Bearer JWT
@@ -39,6 +40,33 @@ func JWTAuthMiddleware(authSvc *service.AuthService) gin.HandlerFunc {
 			UserName: claims.Username,
 			UserID:   fmt.Sprintf("%d", claims.UserID),
 			Channel:  "web",
+			TenantID: "default",
+		}
+		ctx := context.WithValue(c.Request.Context(), ctxKeyActor, actor)
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	}
+}
+
+// APIKeyAuthMiddleware returns a Gin middleware that validates the X-API-Key
+// header against the configured API keys and injects an API Actor.
+func APIKeyAuthMiddleware(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		key := c.GetHeader("X-API-Key")
+		if key == "" {
+			c.AbortWithStatusJSON(401, gin.H{"code": 401, "message": "missing X-API-Key header"})
+			return
+		}
+
+		if !cfg.IsValidAPIKey(key) {
+			c.AbortWithStatusJSON(401, gin.H{"code": 401, "message": "invalid API key"})
+			return
+		}
+
+		actor := Actor{
+			UserName: "api",
+			UserID:   "api",
+			Channel:  "api",
 			TenantID: "default",
 		}
 		ctx := context.WithValue(c.Request.Context(), ctxKeyActor, actor)
