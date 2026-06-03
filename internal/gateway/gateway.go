@@ -78,7 +78,7 @@ func New(
 	// -----------------------------------------------------------------------
 	// Agent system
 	// -----------------------------------------------------------------------
-	modelCfg, _, msgBus, disp, agentLoop, err := initAgent(cfg, materialSvc, inventorySvc, cfg.Server.Port)
+	modelCfg, _, msgBus, disp, agentLoop, err := initAgent(cfg, materialSvc, inventorySvc, cfg.Server.Port, gormrepo.NewSystemSettingRepository(db))
 	if err != nil {
 		return nil, err
 	}

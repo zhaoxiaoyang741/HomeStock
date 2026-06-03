@@ -24,32 +24,45 @@ func (h *StockLotHandler) RegisterRoutes(api *gin.RouterGroup) {
 	api.PUT("/stock-lots/:id", h.Update)
 	api.POST("/stock-lots/:id/adjust", h.Adjust)
 	api.POST("/stock-lots/:id/void", h.Void)
+	api.POST("/stock-lots/:id/open", h.Open)
+	api.POST("/stock-lots/:id/transfer", h.Transfer)
 }
 
 type inboundStockLotRequest struct {
-	MaterialID  string  `json:"material_id"`
-	Name        string  `json:"name"`
-	Spec        string  `json:"spec"`
-	CategoryID  string  `json:"category_id"`
-	Quantity    float64 `json:"quantity"`
-	Unit        string  `json:"unit"`
-	Location    string  `json:"location"`
-	ExpireAt    string  `json:"expire_at"`
-	PurchasedAt string  `json:"purchased_at"`
-	Notes       string  `json:"notes"`
+	MaterialID      string  `json:"material_id"`
+	Name            string  `json:"name"`
+	Spec            string  `json:"spec"`
+	CategoryID      string  `json:"category_id"`
+	Quantity        float64 `json:"quantity"`
+	Unit            string  `json:"unit"`
+	Price           float64 `json:"price"`
+	ShoppingLocation string `json:"shopping_location"`
+	Location        string  `json:"location"`
+	ExpireAt        string  `json:"expire_at"`
+	PurchasedAt     string  `json:"purchased_at"`
+	Notes           string  `json:"notes"`
 }
 
 type updateStockLotRequest struct {
-	ExpireAt    *string `json:"expire_at"`
-	PurchasedAt *string `json:"purchased_at"`
-	Location    *string `json:"location"`
-	Notes       *string `json:"notes"`
+	ExpireAt         *string `json:"expire_at"`
+	PurchasedAt      *string `json:"purchased_at"`
+	Location         *string `json:"location"`
+	Notes            *string `json:"notes"`
+	ShoppingLocation *string `json:"shopping_location"`
 }
 
 type adjustStockLotRequest struct {
 	TargetQuantity float64 `json:"target_quantity"`
 	Reason         string  `json:"reason"`
 	Remark         string  `json:"remark"`
+}
+
+type openStockLotRequest struct {
+	NewBestBeforeDays *int `json:"new_best_before_days"` // 可选：开封后重新计算保质期
+}
+
+type transferStockLotRequest struct {
+	TargetLocation string `json:"target_location" binding:"required"`
 }
 
 func (h *StockLotHandler) List(c *gin.Context) {
@@ -95,14 +108,26 @@ func (h *StockLotHandler) Inbound(c *gin.Context) {
 		httpresp.Error(c, http.StatusBadRequest, "invalid purchased_at, must be RFC3339")
 		return
 	}
-	lot, err := h.inventory.Inbound(c.Request.Context(), actor, service.InboundInput{
-		TenantID: actor.TenantID, Name: req.Name, Spec: req.Spec, CategoryID: req.CategoryID, MaterialID: req.MaterialID, Quantity: req.Quantity, Unit: req.Unit, Location: req.Location, ExpireAt: expireAt, PurchasedAt: purchasedAt, Notes: req.Notes,
+	lots, err := h.inventory.Inbound(c.Request.Context(), actor, service.InboundInput{
+		TenantID:        actor.TenantID,
+		Name:            req.Name,
+		Spec:            req.Spec,
+		CategoryID:      req.CategoryID,
+		MaterialID:      req.MaterialID,
+		Quantity:        req.Quantity,
+		Unit:            req.Unit,
+		Price:           req.Price,
+		ShoppingLocation: req.ShoppingLocation,
+		Location:        req.Location,
+		ExpireAt:        expireAt,
+		PurchasedAt:     purchasedAt,
+		Notes:           req.Notes,
 	})
 	if err != nil {
 		handleStockLotRepositoryError(c, err, "inbound stock lot failed")
 		return
 	}
-	httpresp.Created(c, lot)
+	httpresp.Created(c, lots)
 }
 
 func (h *StockLotHandler) Update(c *gin.Context) {
@@ -128,7 +153,13 @@ func (h *StockLotHandler) Update(c *gin.Context) {
 			return
 		}
 	}
-	updated, err := h.inventory.UpdateLot(c.Request.Context(), actor, strings.TrimSpace(c.Param("id")), actor.TenantID, service.UpdateLotInput{ExpireAt: expireAt, PurchasedAt: purchasedAt, Location: req.Location, Notes: req.Notes})
+	updated, err := h.inventory.UpdateLot(c.Request.Context(), actor, strings.TrimSpace(c.Param("id")), actor.TenantID, service.UpdateLotInput{
+		ExpireAt:         expireAt,
+		PurchasedAt:      purchasedAt,
+		Location:         req.Location,
+		Notes:            req.Notes,
+		ShoppingLocation: req.ShoppingLocation,
+	})
 	if err != nil {
 		handleStockLotRepositoryError(c, err, "update stock lot failed")
 		return
@@ -165,6 +196,33 @@ func (h *StockLotHandler) Adjust(c *gin.Context) {
 	httpresp.OK(c, updated)
 }
 
+func (h *StockLotHandler) Open(c *gin.Context) {
+	var req openStockLotRequest
+	_ = c.ShouldBindJSON(&req) // body is optional
+	actor := svcActorFromRequest(c)
+	updated, err := h.inventory.OpenProduct(c.Request.Context(), actor, strings.TrimSpace(c.Param("id")), actor.TenantID, req.NewBestBeforeDays)
+	if err != nil {
+		handleStockLotRepositoryError(c, err, "open stock lot failed")
+		return
+	}
+	httpresp.OK(c, updated)
+}
+
+func (h *StockLotHandler) Transfer(c *gin.Context) {
+	var req transferStockLotRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpresp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	actor := svcActorFromRequest(c)
+	updated, err := h.inventory.TransferLot(c.Request.Context(), actor, strings.TrimSpace(c.Param("id")), actor.TenantID, strings.TrimSpace(req.TargetLocation))
+	if err != nil {
+		handleStockLotRepositoryError(c, err, "transfer stock lot failed")
+		return
+	}
+	httpresp.OK(c, updated)
+}
+
 func handleStockLotRepositoryError(c *gin.Context, err error, fallbackMessage string) {
 	switch {
 	case repository.IsNotFound(err):
@@ -172,6 +230,8 @@ func handleStockLotRepositoryError(c *gin.Context, err error, fallbackMessage st
 	case err == repository.ErrInvalidCategoryID:
 		httpresp.Error(c, http.StatusBadRequest, err.Error())
 	case err == repository.ErrMaterialUnitMismatch:
+		httpresp.Error(c, http.StatusBadRequest, err.Error())
+	case err == repository.ErrInsufficientStock:
 		httpresp.Error(c, http.StatusBadRequest, err.Error())
 	default:
 		httpresp.Error(c, http.StatusInternalServerError, fallbackMessage)

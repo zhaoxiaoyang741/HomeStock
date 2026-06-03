@@ -555,7 +555,7 @@ func (l *AgentLoop) resolveItemNames(actions []ExtractedAction, actor service.Ac
 				candidates = exact
 			}
 
-			if needsConfirmation(candidates) {
+			if l.nlu != nil && l.nlu.needsConfirmation(candidates) {
 				return &PendingConfirmItem{
 					ActionIdx:  i,
 					ItemIdx:    j,

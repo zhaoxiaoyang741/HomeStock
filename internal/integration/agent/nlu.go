@@ -48,19 +48,33 @@ type ExtractedItem struct {
 // NluEngine builds NLU prompts and parses structured responses.
 // It does NOT make LLM calls — that is AgentLoop's responsibility.
 type NluEngine struct {
-	materialSvc    *service.MaterialService
-	memoryBasePath string // directory for per-user memory files
-	writeCh        chan func()
-	writeWg        sync.WaitGroup
-	writerOnce     sync.Once
+	materialSvc         *service.MaterialService
+	memoryBasePath      string // directory for per-user memory files
+	writeCh             chan func()
+	writeWg             sync.WaitGroup
+	writerOnce          sync.Once
+	AutoSelectThreshold float64 // name resolution: auto-select if top score >= this
+	AutoSelectLead      float64 // name resolution: auto-select if gap between top 2 >= this
 }
 
 // NewNluEngine creates an NluEngine.
 func NewNluEngine(materialSvc *service.MaterialService) *NluEngine {
 	return &NluEngine{
-		materialSvc:    materialSvc,
-		memoryBasePath: "data/memories",
-		writeCh:        make(chan func(), memoryWriteBufSize),
+		materialSvc:         materialSvc,
+		memoryBasePath:      "data/memories",
+		writeCh:             make(chan func(), memoryWriteBufSize),
+		AutoSelectThreshold: 0.85,
+		AutoSelectLead:      0.15,
+	}
+}
+
+// SetAutoSelectConfig updates the name resolution auto-select thresholds.
+func (e *NluEngine) SetAutoSelectConfig(threshold, lead float64) {
+	if threshold > 0 && threshold <= 1 {
+		e.AutoSelectThreshold = threshold
+	}
+	if lead > 0 && lead <= threshold {
+		e.AutoSelectLead = lead
 	}
 }
 
@@ -451,27 +465,28 @@ func DefaultNameResolver(materialSvc *service.MaterialService) NameResolver {
 }
 
 // needsConfirmation returns true if name ambiguity requires user confirmation.
-// Uses lead margin to auto-resolve clear winners.
-func needsConfirmation(candidates []ResolveResult) bool {
+// Uses configurable lead margin and threshold to auto-resolve clear winners.
+func (e *NluEngine) needsConfirmation(candidates []ResolveResult) bool {
 	if len(candidates) <= 1 {
 		return false
 	}
 
-	// If the top candidate leads by >= 0.25, auto-select
 	lead := candidates[0].Score - candidates[1].Score
-	if lead >= 0.25 {
+
+	// Use configured threshold and lead for auto-select
+	if candidates[0].Score >= e.AutoSelectThreshold && lead >= e.AutoSelectLead {
 		return false
 	}
 
-	// If top candidate is >= 0.90 and leads by >= 0.15, auto-select
-	if candidates[0].Score >= 0.90 && lead >= 0.15 {
+	// Also auto-select if lead is very large (>2x the configured lead)
+	if lead >= e.AutoSelectLead*2 {
 		return false
 	}
 
-	// Otherwise, count how many candidates are above the threshold
+	// Otherwise, count how many candidates are above a reasonable threshold
 	count := 0
 	for _, c := range candidates {
-		if c.Score >= 0.6 {
+		if c.Score >= e.AutoSelectThreshold*0.7 {
 			count++
 		}
 	}

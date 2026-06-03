@@ -174,6 +174,7 @@ func initServer(
 	stockMovementHandler := handler.NewStockMovementHandler(gormrepo.NewStockMovementRepository(db))
 	auditService := service.NewAuditService(uow)
 	auditLogHandler := handler.NewAuditLogHandler(auditService)
+	inventorySettingHandler := handler.NewInventorySettingHandler(gormrepo.NewSystemSettingRepository(db))
 
 	authMw := httpreq.JWTAuthMiddleware(authSvc)
 
@@ -185,6 +186,7 @@ func initServer(
 		stockMovementHandler.RegisterRoutes,
 		auditLogHandler.RegisterRoutes,
 		handler.NewBatchHandler(inventorySvc, materialSvc).RegisterRoutes,
+		inventorySettingHandler.RegisterRoutes,
 		authHandler.RegisterProtectedRoutes,
 	}
 	for _, fn := range gw.GetWebhookHandlers() {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Clock, Radio, Brain, Lock, Tags, Save, Loader2 } from 'lucide-react'
+import { Clock, Radio, Brain, Settings, Save, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getModelList } from '@/api/models'
 import { FeishuBotSection } from './FeishuBotSection'
@@ -8,20 +8,20 @@ import type { FeishuBotSectionHandle } from './FeishuBotSection'
 import { WechatBotSection } from './WechatBotSection'
 import type { WechatBotSectionHandle } from './WechatBotSection'
 import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
 import { ModelConfigSection } from './ModelConfigSection'
 import { CronConfigSection } from './CronConfigSection'
 import { ChangePasswordSection } from './ChangePasswordSection'
 import { CategorySection } from './CategorySection'
+import { InventoryConfigSection } from './InventoryConfigSection'
 
-type SectionId = 'channels' | 'models' | 'cron' | 'password' | 'category'
+type SectionId = 'models' | 'channels' | 'cron' | 'system'
 
-const SECTION_ITEMS: { id: SectionId; labelKey: string; icon: typeof Radio }[] = [
-  { id: 'channels', labelKey: 'navChannels', icon: Radio },
-  { id: 'cron', labelKey: 'navCron', icon: Clock },
-  { id: 'models', labelKey: 'navModels', icon: Brain },
-  { id: 'password', labelKey: 'navPassword', icon: Lock },
-  { id: 'category', labelKey: 'navCategory', icon: Tags },
-]
+interface NavItem {
+  id: SectionId
+  labelKey: string
+  icon: typeof Radio
+}
 
 export default function SettingsPage() {
   const { t } = useTranslation('settings')
@@ -32,6 +32,13 @@ export default function SettingsPage() {
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const feishuRef = useRef<FeishuBotSectionHandle>(null)
   const wechatRef = useRef<WechatBotSectionHandle>(null)
+
+  const navItems: NavItem[] = [
+    { id: 'models', labelKey: 'navModels', icon: Brain },
+    { id: 'channels', labelKey: 'navChannels', icon: Radio },
+    { id: 'cron', labelKey: 'navCron', icon: Clock },
+    { id: 'system', labelKey: 'navSystem', icon: Settings },
+  ]
 
   const fetchReloadTime = async () => {
     try {
@@ -63,6 +70,65 @@ export default function SettingsPage() {
     }
   }
 
+  function handleNavClick(id: SectionId) {
+    setActiveSection(id)
+  }
+
+  function renderSection() {
+    switch (activeSection) {
+      case 'channels':
+        return (
+          <div className="space-y-6">
+            <FeishuBotSection
+              ref={feishuRef}
+              isActive={activeChannel === 'feishu'}
+              onActivate={() => setActiveChannel('feishu')}
+              onDeactivate={() => setActiveChannel(null)}
+            />
+            <WechatBotSection
+              ref={wechatRef}
+              isActive={activeChannel === 'wechat'}
+              onActivate={() => setActiveChannel('wechat')}
+              onDeactivate={() => setActiveChannel(null)}
+            />
+            <div className="h-4" />
+          </div>
+        )
+      case 'cron':
+        return <CronConfigSection />
+      case 'models':
+        return <ModelConfigSection />
+      case 'system':
+        return (
+          <div className="space-y-8">
+            <div>
+              <h2 className="text-base font-semibold text-on-surface mb-4 flex items-center gap-2">
+                <span className="inline-block w-1 h-4 bg-primary rounded-full" />
+                {t('navCategory')}
+              </h2>
+              <CategorySection />
+            </div>
+            <Separator />
+            <div>
+              <h2 className="text-base font-semibold text-on-surface mb-4 flex items-center gap-2">
+                <span className="inline-block w-1 h-4 bg-primary rounded-full" />
+                {t('navInventory')}
+              </h2>
+              <InventoryConfigSection />
+            </div>
+            <Separator />
+            <div>
+              <h2 className="text-base font-semibold text-on-surface mb-4 flex items-center gap-2">
+                <span className="inline-block w-1 h-4 bg-primary rounded-full" />
+                {t('navUser')}
+              </h2>
+              <ChangePasswordSection />
+            </div>
+          </div>
+        )
+    }
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -72,11 +138,11 @@ export default function SettingsPage() {
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-outline-variant/20 bg-surface-container-lowest shadow-sm">
-        <nav className="flex w-40 shrink-0 flex-col border-r border-outline-variant/20 py-2">
-          {SECTION_ITEMS.map((item) => (
+        <nav className="flex w-44 shrink-0 flex-col border-r border-outline-variant/20 py-2">
+          {navItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => setActiveSection(item.id)}
+              onClick={() => handleNavClick(item.id)}
               className={cn(
                 'flex w-full items-center gap-3 px-4 py-3 text-sm transition-colors',
                 'text-on-surface-variant hover:bg-surface-container',
@@ -99,31 +165,7 @@ export default function SettingsPage() {
           )}
 
           <div className="min-h-0 flex-1 overflow-y-auto pt-6">
-            {activeSection === 'channels' ? (
-              <div className="space-y-6">
-                <FeishuBotSection
-                  ref={feishuRef}
-                  isActive={activeChannel === 'feishu'}
-                  onActivate={() => setActiveChannel('feishu')}
-                  onDeactivate={() => setActiveChannel(null)}
-                />
-                <WechatBotSection
-                  ref={wechatRef}
-                  isActive={activeChannel === 'wechat'}
-                  onActivate={() => setActiveChannel('wechat')}
-                  onDeactivate={() => setActiveChannel(null)}
-                />
-                <div className="h-4" />
-              </div>
-            ) : activeSection === 'cron' ? (
-              <CronConfigSection />
-            ) : activeSection === 'models' ? (
-              <ModelConfigSection />
-            ) : activeSection === 'password' ? (
-              <ChangePasswordSection />
-            ) : (
-              <CategorySection />
-            )}
+            {renderSection()}
           </div>
 
           {/* Floating save bar for channels section */}

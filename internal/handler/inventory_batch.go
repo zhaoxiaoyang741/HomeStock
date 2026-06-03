@@ -72,7 +72,7 @@ func (h *BatchHandler) BatchInbound(c *gin.Context) {
 			continue
 		}
 
-		lot, err := h.inventory.Inbound(c.Request.Context(), actor, service.InboundInput{
+		lots, err := h.inventory.Inbound(c.Request.Context(), actor, service.InboundInput{
 			TenantID:   actor.TenantID,
 			Name:       item.Name,
 			Spec:       item.Spec,
@@ -87,7 +87,7 @@ func (h *BatchHandler) BatchInbound(c *gin.Context) {
 		if err != nil {
 			results = append(results, batchItemResult{Index: i, Error: err.Error()})
 		} else {
-			results = append(results, batchItemResult{Index: i, Data: lot})
+			results = append(results, batchItemResult{Index: i, Data: lots})
 		}
 	}
 

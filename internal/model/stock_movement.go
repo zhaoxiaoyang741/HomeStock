@@ -18,6 +18,7 @@ type StockMovement struct {
 	MovementType  string    `gorm:"type:varchar(20);not null;index" json:"movement_type"`
 	QuantityDelta float64   `gorm:"not null" json:"quantity_delta"`
 	Unit          string    `gorm:"type:varchar(20);not null;default:'件'" json:"unit"`
+	Price         float64   `gorm:"not null;default:0" json:"price"`     // 单价
 	Reason        string    `gorm:"type:varchar(50);not null;default:''" json:"reason"`
 	Channel       string    `gorm:"type:varchar(50);not null;default:'web'" json:"channel"`
 	UserName      string    `gorm:"type:varchar(255);default:''" json:"user_name"`

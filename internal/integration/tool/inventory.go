@@ -42,7 +42,7 @@ func (it *InventoryTools) InboundStock(ctx context.Context, actor service.Actor,
 		}
 	}
 
-	lot, err := it.InventorySvc.Inbound(ctx, actor, service.InboundInput{
+	svcLots, err := it.InventorySvc.Inbound(ctx, actor, service.InboundInput{
 		TenantID:   actor.TenantID,
 		Name:       name,
 		Spec:       spec,
@@ -57,18 +57,27 @@ func (it *InventoryTools) InboundStock(ctx context.Context, actor service.Actor,
 	if err != nil {
 		return "", fmt.Errorf("入库失败: %w", err)
 	}
+	if len(svcLots) == 0 {
+		return "", fmt.Errorf("入库失败: 未创建任何批次")
+	}
 
+	// Use first lot for summary display
+	first := svcLots[0]
+	totalQty := 0.0
+	for _, l := range svcLots {
+		totalQty += l.QuantityOnHand
+	}
 	expireStr := ""
-	if lot.ExpireAt != nil {
-		expireStr = lot.ExpireAt.Format("2006-01-02")
+	if first.ExpireAt != nil {
+		expireStr = first.ExpireAt.Format("2006-01-02")
 	}
 	rc := reply.ForChannel(actor.Channel)
 	return reply.InboundSuccess(rc, reply.InventoryItemData{
-		Name:     lot.Material.Name,
-		Spec:     lot.Material.Spec,
-		Quantity: lot.QuantityOnHand,
-		Unit:     lot.Unit,
-		Location: lot.Location,
+		Name:     first.Material.Name,
+		Spec:     first.Material.Spec,
+		Quantity: totalQty,
+		Unit:     first.Unit,
+		Location: first.Location,
 		ExpireAt: expireStr,
 	}), nil
 }

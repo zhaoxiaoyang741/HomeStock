@@ -136,29 +136,32 @@ func TestComputeMatchScore_NoMatch(t *testing.T) {
 }
 
 func TestNeedsConfirmation_Ambiguous(t *testing.T) {
+	engine := NewNluEngine(nil)
 	candidates := []ResolveResult{
 		{Name: "牛奶A", Score: 0.8},
 		{Name: "牛奶B", Score: 0.8},
 	}
-	if !needsConfirmation(candidates) {
-		t.Fatal("expected confirmation needed for 2 candidates with score >= 0.6")
+	if !engine.needsConfirmation(candidates) {
+		t.Fatal("expected confirmation needed for 2 candidates with score >= threshold")
 	}
 }
 
 func TestNeedsConfirmation_Unique(t *testing.T) {
+	engine := NewNluEngine(nil)
 	candidates := []ResolveResult{
 		{Name: "牛奶", Score: 1.0},
 	}
-	if needsConfirmation(candidates) {
+	if engine.needsConfirmation(candidates) {
 		t.Fatal("expected no confirmation for single candidate")
 	}
 }
 
 func TestNeedsConfirmation_NoMatch(t *testing.T) {
+	engine := NewNluEngine(nil)
 	candidates := []ResolveResult{
 		{Name: "牛奶", Score: 0.3},
 	}
-	if needsConfirmation(candidates) {
+	if engine.needsConfirmation(candidates) {
 		t.Fatal("expected no confirmation for low-score candidate")
 	}
 }
@@ -175,22 +178,24 @@ func TestBuildConfirmMessage(t *testing.T) {
 }
 
 func TestNeedsConfirmation_LargeLead(t *testing.T) {
+	engine := NewNluEngine(nil)
 	candidates := []ResolveResult{
 		{Name: "蒙牛纯牛奶", Score: 1.0},
 		{Name: "其他牛奶", Score: 0.5},
 	}
-	if needsConfirmation(candidates) {
-		t.Fatal("expected no confirmation when lead >= 0.25")
+	if engine.needsConfirmation(candidates) {
+		t.Fatal("expected no confirmation when lead is large")
 	}
 }
 
 func TestNeedsConfirmation_HighScoreLead(t *testing.T) {
+	engine := NewNluEngine(nil)
 	candidates := []ResolveResult{
 		{Name: "伊利牛奶", Score: 0.92},
 		{Name: "蒙牛牛奶", Score: 0.75},
 	}
-	if needsConfirmation(candidates) {
-		t.Fatal("expected no confirmation when top >= 0.90 and lead >= 0.15")
+	if engine.needsConfirmation(candidates) {
+		t.Fatal("expected no confirmation when top score >= threshold with enough lead")
 	}
 }
 

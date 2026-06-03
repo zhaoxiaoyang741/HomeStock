@@ -7,6 +7,7 @@ import (
 	appcron "github.com/zhaoxiaoyang741/HomeStock/internal/integration/cron"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/agent"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/integration/tool"
+	"github.com/zhaoxiaoyang741/HomeStock/internal/handler"
 	gormrepo "github.com/zhaoxiaoyang741/HomeStock/internal/repository/gorm"
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	"github.com/zhaoxiaoyang741/HomeStock/pkg/bus"
@@ -37,6 +38,7 @@ func initAgent(
 	materialSvc *service.MaterialService,
 	inventorySvc *service.InventoryService,
 	port string,
+	settingsRepo *gormrepo.SystemSettingRepository,
 ) (
 	modelCfg *config.ModelConfig,
 	llmProvider llm.LLMProvider,
@@ -60,6 +62,16 @@ func initAgent(
 
 	nluEngine := agent.NewNluEngine(materialSvc)
 	agentLoop = agent.NewAgentLoop(msgBus, llmProvider, disp, systemPrompt, nluEngine)
+
+	// Read NLU auto-select config from inventory settings
+	if settingsRepo != nil {
+		invCfg := handler.GetInventoryConfig(settingsRepo)
+		nluEngine.SetAutoSelectConfig(invCfg.NluAutoSelectThreshold, invCfg.NluAutoSelectLead)
+		logger.InfoCF("gateway", "NLU auto-select config applied", map[string]any{
+			"threshold": nluEngine.AutoSelectThreshold,
+			"lead":      nluEngine.AutoSelectLead,
+		})
+	}
 
 	return
 }

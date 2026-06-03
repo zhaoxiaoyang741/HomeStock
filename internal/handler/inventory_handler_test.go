@@ -1,4 +1,4 @@
-﻿package handler
+package handler
 
 import (
 	"bytes"
@@ -18,6 +18,21 @@ import (
 	"github.com/zhaoxiaoyang741/HomeStock/internal/service"
 	appconfig "github.com/zhaoxiaoyang741/HomeStock/pkg/config"
 )
+
+// firstLotID extracts the first lot's ID from an inbound response (now returns an array).
+func firstLotID(resp map[string]any) string {
+	data, ok := resp["data"].([]any)
+	if !ok || len(data) == 0 {
+		return ""
+	}
+	first, ok := data[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+	id, _ := first["id"].(string)
+	return id
+}
+
 func TestCategoryHandler_CRUDAndMaterialAssociation(t *testing.T) {
 	server, cleanup := newTestServer(t)
 	defer cleanup()
@@ -51,7 +66,7 @@ func TestInventoryFlow_InboundConsumeAdjustAndHistory(t *testing.T) {
 	}, http.StatusCreated)
 	categoryID, _ := category["data"].(map[string]any)["id"].(string)
 
-	firstLot := performJSONRequest(t, server, http.MethodPost, "/api/v1/stock-lots/inbound", "", map[string]any{
+	firstResp := performJSONRequest(t, server, http.MethodPost, "/api/v1/stock-lots/inbound", "", map[string]any{
 		"name":         "milk",
 		"spec":         "1L",
 		"category_id":  categoryID,
@@ -61,7 +76,9 @@ func TestInventoryFlow_InboundConsumeAdjustAndHistory(t *testing.T) {
 		"purchased_at": time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		"expire_at":    time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
 	}, http.StatusCreated)
-	secondLot := performJSONRequest(t, server, http.MethodPost, "/api/v1/stock-lots/inbound", "", map[string]any{
+	firstLotIDVal := firstLotID(firstResp)
+
+	secondResp := performJSONRequest(t, server, http.MethodPost, "/api/v1/stock-lots/inbound", "", map[string]any{
 		"name":         "milk",
 		"spec":         "1L",
 		"category_id":  categoryID,
@@ -71,6 +88,7 @@ func TestInventoryFlow_InboundConsumeAdjustAndHistory(t *testing.T) {
 		"purchased_at": time.Date(2026, 4, 2, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
 		"expire_at":    time.Date(2026, 4, 12, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
 	}, http.StatusCreated)
+	secondLotIDVal := firstLotID(secondResp)
 
 	materials := performJSONRequest(t, server, http.MethodGet, "/api/v1/materials", "", nil, http.StatusOK)
 	page := materials["data"].(map[string]any)
@@ -94,11 +112,11 @@ func TestInventoryFlow_InboundConsumeAdjustAndHistory(t *testing.T) {
 		t.Fatalf("consumed_lots len = %d", len(consumedLots))
 	}
 	firstConsumed := consumedLots[0].(map[string]any)
-	if firstConsumed["lot_id"] != firstLot["data"].(map[string]any)["id"] {
+	if firstConsumed["lot_id"] != firstLotIDVal {
 		t.Fatalf("expected first lot to be consumed first, got %v", firstConsumed["lot_id"])
 	}
 
-	adjusted := performJSONRequest(t, server, http.MethodPost, "/api/v1/stock-lots/"+secondLot["data"].(map[string]any)["id"].(string)+"/adjust", "", map[string]any{
+	adjusted := performJSONRequest(t, server, http.MethodPost, "/api/v1/stock-lots/"+secondLotIDVal+"/adjust", "", map[string]any{
 		"target_quantity": 5,
 		"reason":          "count",
 		"remark":          "restock correction",
@@ -118,22 +136,25 @@ func TestStockLotUpdateDoesNotTouchOtherLots(t *testing.T) {
 	server, cleanup := newTestServer(t)
 	defer cleanup()
 
-	firstLot := performJSONRequest(t, server, http.MethodPost, "/api/v1/stock-lots/inbound", "", map[string]any{
+	firstResp := performJSONRequest(t, server, http.MethodPost, "/api/v1/stock-lots/inbound", "", map[string]any{
 		"name":     "rice",
 		"spec":     "5kg",
 		"quantity": 1,
 		"unit":     "bag",
 		"location": "cabinet",
 	}, http.StatusCreated)
-	secondLot := performJSONRequest(t, server, http.MethodPost, "/api/v1/stock-lots/inbound", "", map[string]any{
+	firstLotIDVal := firstLotID(firstResp)
+
+	secondResp := performJSONRequest(t, server, http.MethodPost, "/api/v1/stock-lots/inbound", "", map[string]any{
 		"name":     "rice",
 		"spec":     "5kg",
 		"quantity": 1,
 		"unit":     "bag",
 		"location": "storage",
 	}, http.StatusCreated)
+	secondLotIDVal := firstLotID(secondResp)
 
-	updated := performJSONRequest(t, server, http.MethodPut, "/api/v1/stock-lots/"+firstLot["data"].(map[string]any)["id"].(string), "", map[string]any{
+	updated := performJSONRequest(t, server, http.MethodPut, "/api/v1/stock-lots/"+firstLotIDVal, "", map[string]any{
 		"location": "kitchen",
 		"notes":    "opened",
 	}, http.StatusOK)
@@ -149,7 +170,7 @@ func TestStockLotUpdateDoesNotTouchOtherLots(t *testing.T) {
 	}
 	for _, raw := range lots {
 		lot := raw.(map[string]any)
-		if lot["id"] == secondLot["data"].(map[string]any)["id"] && lot["location"] != "storage" {
+		if lot["id"] == secondLotIDVal && lot["location"] != "storage" {
 			t.Fatalf("second lot location changed unexpectedly: %v", lot["location"])
 		}
 	}
@@ -239,13 +260,3 @@ func performJSONRequest(
 	if err := json.Unmarshal(rec.Body.Bytes(), &decoded); err != nil { t.Fatalf("json.Unmarshal() error = %v, body = %q", err, rec.Body.String()) }
 	return decoded
 }
-
-
-
-
-
-
-
-
-
-
